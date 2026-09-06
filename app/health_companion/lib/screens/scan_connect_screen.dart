@@ -3,7 +3,6 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 
 import '../ble/ble_service.dart';
-import 'dashboard_screen.dart';
 
 class ScanConnectScreen extends StatefulWidget {
   const ScanConnectScreen({super.key});
@@ -110,10 +109,10 @@ class _ScanConnectScreenState extends State<ScanConnectScreen> {
               : const Icon(Icons.chevron_right),
           onTap: () async {
             await ble.connect(result.device);
+            // Reached via a button push from the dashboard now, not the
+            // app's home route — return to wherever it was opened from.
             if (ble.status == ConnectionStatus.connected && mounted) {
-              Navigator.of(context).pushReplacement(
-                MaterialPageRoute(builder: (_) => const DashboardScreen()),
-              );
+              Navigator.of(context).pop();
             }
           },
         );

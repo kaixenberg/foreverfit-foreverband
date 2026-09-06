@@ -49,56 +49,172 @@ free-fall-then-impact signature.
   `health_companion.ino`) because the MAX30205 on hand doesn't work. Swap in
   a real driver call there if it's replaced.
 
+## On-device fall-detection CNN (implemented, currently phone-only)
+
+**Update**: the wearable's MPU6050 died on the breadboard build (confirmed
+via an I2C bus scan added to `health_companion.ino` — `scanI2CBus()`
+found no device at all where it should be), so the app currently runs a
+**phone-only** fall-detection model rather than the wrist+phone fusion
+this section originally described. The wrist+phone design and pipeline
+are kept intact and documented below — they're the better long-term
+approach and easy to resume once the wearable's IMU is replaced — but
+right now `fall_detector_service.dart` loads
+`fall_detector_phone_only.tflite`, trained on real phone accelerometer +
+a waist-sensor gyro proxy (see `ml/README.md`), and needs no BLE
+connection to work at all. Held-out test performance: 99% accuracy, 88%
+fall precision, 94% fall recall — see `ml/README.md` for the labeling fix
+(only windows containing the actual impact are labeled Fall, not every
+window in a Fall trial) that a live test on real hardware caught and
+this number reflects.
+
+Original design, on hold: a small 1D-CNN fuses the wearable's wrist
+motion (streaming over BLE at 20Hz) with the phone's own accelerometer
+for a second, independent view of the same physical event — a wrist-only
+signal can't easily tell "arm swung hard" from "whole body fell," but a
+synchronized phone signal resolves that ambiguity.
+
+- **Training data**: [UMAFall](https://figshare.com/articles/dataset/UMA_ADL_FALL_Dataset_zip/4214283)
+  (Casilari et al.) — 19 subjects, 746 short single-movement trials (208
+  falls, ~507 ADLs), with synchronized wrist + phone-pocket sensors. Chosen
+  after directly inspecting the raw CSVs (not just the paper) to confirm
+  the phone channel really is simultaneous with the wrist channel for the
+  same fall events — no other public dataset has this combination (checked
+  WEDA-FALL, MobiFall, FallAllD; see `ml/README.md`).
+- **9 trained channels**: wrist accel(x,y,z) + wrist gyro(x,y,z) + phone
+  accel(x,y,z) — not 12. UMAFall's phone channel has no gyroscope (a
+  hardware limitation of the phone used to collect it in 2016), and no
+  dataset anywhere pairs wrist + phone-gyro for the same falls. Training a
+  channel that's always zero would leave its weights at random
+  initialization, worse than omitting it.
+- **The phone's real gyroscope isn't wasted**, though: a fast phone
+  rotation is itself physical evidence of a tumble, so it corroborates a
+  borderline CNN score via a rule-based check rather than a fabricated
+  trained input — see `fall_detector_service.dart`.
+- **Two unit mismatches** were found by inspecting raw values (not just
+  docs) and corrected during training data prep: the dataset's
+  accelerometer is in **G** and gyroscope in **deg/s**; `Adafruit_MPU6050`
+  (firmware) and `sensors_plus` (phone) both report **m/s²** and **rad/s**
+  natively. Skipping this wouldn't error — it would train a model on the
+  wrong scale that looks fine in evaluation and fails on real device data.
+- **Labels only mark windows that actually contain the impact**, not every
+  window in a Fall trial (each trial is ~15s but the tumble itself is only
+  1-2s) — see `ml/README.md` for how a live hardware test caught this the
+  first time around. Held-out test performance (subjects never seen in
+  training): 94% accuracy, 58% fall precision, 90% fall recall — a real,
+  honest result from a 19-subject dataset, not a clinical-grade guarantee,
+  and this version's threshold choice (below) predates the labeling fix
+  and should be revisited before this model is put back into the app.
+- Full pipeline (`ml/download_dataset.py` → `prepare_windows.py` →
+  `train_fall_model.py` → `convert_to_tflite.py`) and rationale in
+  `ml/README.md`. Output: `app/health_companion/assets/models/fall_detector.tflite`.
+- **Alert UX**: detection latches an alert open (deliberately independent
+  of the live cnnProb, which drops back to normal within ~1s of the phone
+  settling — an earlier version auto-dismissed the banner before a real
+  user could react). A 10s countdown gives the user a chance to tap "I'm
+  OK"; if ignored, it escalates to a **dummy** emergency call (logged
+  only, no real call placed) — see `fall_detector_service.dart`. Wiring
+  that escalation to a real SMS/call is the SOS item below, not yet built.
+
+## App navigation (implemented)
+
+The app opens into `HomeShell` (`lib/screens/home_shell.dart`), a bottom
+`NavigationBar` with three tabs — Dashboard, Map, Health Log (placeholder)
+— all reachable with or without a wearable connected. Previously the app
+opened straight into the BLE scan screen and `DashboardScreen` bounced
+back to it whenever disconnected, which made features that don't need a
+wearable at all (fall detection, and now the map) unreachable without
+one. `ScanConnectScreen` is now a pushed route reached via a "Connect"
+button/banner on the dashboard, not the app's home.
+
+## Disaster risk map (implemented, phone-only, no wearable needed)
+
+GPS-driven, India-focused disaster awareness: live data when online,
+falling back to cached-then-static data when not — see
+`lib/disaster/disaster_service.dart` and `lib/screens/map_screen.dart`.
+
+- **Live signals** (fetched fresh when online, each independently cached
+  with a timestamp for offline fallback):
+  - [Open-Meteo](https://open-meteo.com/) for today's max precipitation
+    probability and current wind speed — free, no API key, no signup,
+    verified with a live test call before use.
+  - USGS Earthquake API for M4.0+ events within 200km in the last 30
+    days — free, global, no key, verified with a live test call (returned
+    a real M4.3 event near Barkot, India).
+  - [Nominatim](https://nominatim.org/) (OpenStreetMap) reverse geocoding
+    to resolve GPS → state name, respecting its usage policy (only
+    re-queried after >2km of movement or a 10-minute cooldown, with a
+    descriptive User-Agent header — not queried on every GPS update).
+- **Static offline baseline** (`lib/disaster/india_hazard_data.dart`): a
+  hardcoded state-level table of seismic zone (BIS IS 1893:2016,
+  approximate — a state's predominant zone, not district-level), cyclone
+  exposure, and flood-proneness. Used as the fallback of last resort (no
+  cache, never been online) and to add static context alongside live
+  weather always. Chosen over bundling an official dataset after
+  data.gov.in's seismic-zone resource returned HTTP 403 on direct fetch,
+  and the only India-wide flood dataset actually confirmed downloadable
+  via GitHub's API (not just a page's description of it — a smaller
+  ready-made district/state flood-risk JSON that a page summary described
+  turned out not to actually exist as a release asset when checked
+  against the real API) was a 28.6MB historical flood-event file not
+  worth bundling for this pass.
+- **Data-first, offline-fallback rule, applied uniformly**: attempt each
+  live HTTP call with a short timeout; on success, use it and cache it;
+  on failure, fall back to the last cached value (shown with a
+  "cached from Nm/h/d ago" label so staleness is visible, never silently
+  presented as live); if there's never been a successful fetch, fall back
+  to the static table alone. No connectivity-check package — attempting
+  the fetch and catching failure *is* the check, and more accurate than a
+  package that can report "connected" on a network with no real internet.
+- **Offline map tiles**: `flutter_map` + `flutter_map_cache` (chosen over
+  the heavier `flutter_map_tile_caching` — this app's pattern is "cache
+  what's actually been viewed while online," not bulk region
+  pre-downloads) backed by `http_cache_file_store` in the app's
+  persistent support directory (not a temp dir, which the OS can clear).
+- **Warning banner**: shown when precipitation probability >70%, a
+  nearby M4.5+ quake in the last 30 days, or high wind in a cyclone-prone
+  state — dismissible, no countdown/escalation (an area-awareness
+  warning, not the fall detector's emergency-response flow).
+
 ## Roadmap (not yet implemented)
 
-### 1. On-device CNNs for anomaly detection
+### 1. On-device vitals/heat-stress anomaly CNN
 
-Two small 1D-CNNs, trained offline in Python on public datasets, exported to
-TensorFlow Lite, bundled as Flutter assets, and run via `tflite_flutter`:
+Multi-class classifier over a sliding window (e.g. last 2–5 minutes) of
+HR, SpO2, body temp, ambient temp, humidity. Training data: **WESAD**
+(wearable stress/affect, has physiological signals under thermal/physical
+stress) as a starting point, plus heat-index-labeled synthetic
+augmentation since WESAD alone won't cover heat-stress specifically.
+Output classes: normal / possible heat stress / possible dehydration /
+possible respiratory or cardiac concern. Same small-CNN-via-TFLite
+approach as the fall detector above.
 
-- **Fall detection** (binary). Input: a sliding window of the 6 motion
-  channels (~40–60 samples, 2–3s @ 20Hz), normalized per-channel. Training
-  data: **SisFall** or **MobiFall** (labeled accelerometer fall/ADL traces).
-  Output: fall probability → triggers the SOS flow below if it crosses a
-  threshold and the user doesn't cancel within a short countdown.
-- **Vitals / heat-stress anomaly** (multi-class). Input: a sliding window
-  (e.g. last 2–5 minutes) of HR, SpO2, body temp, ambient temp, humidity.
-  Training data: **WESAD** (wearable stress/affect, has physiological
-  signals under thermal/physical stress) as a starting point, plus
-  heat-index-labeled synthetic augmentation since WESAD alone won't cover
-  heat-stress specifically. Output classes: normal / possible heat stress /
-  possible dehydration / possible respiratory or cardiac concern.
+### 2. Wearable-sensor disaster heuristics
 
-Both models are small enough (a few conv1d layers + global pooling + dense)
-to run in a few ms on a modern phone CPU via TFLite, well within an
-offline-first, no-cloud-dependency constraint.
-
-### 2. Disaster-specific heuristics (rule-based first, per team decision)
-
-Given the time budget, disaster classification starts as **explicit
-formulas**, not learned models — they're well-established, explainable, and
-need no training data:
-
+The disaster map above uses live weather + static state data, not the
+wearable's own sensors yet. Two refinements once the wearable's IMU is
+back (see fall-detection CNN's "on hold" state):
 - **Heat-wave risk**: standard heat-index formula from `ambientTempC` +
-  `humidity` (BME280), thresholded per IMD heat-wave guidance.
-- **Cyclone/storm risk**: BME280 pressure **drop-rate** over a rolling
-  window (a fast, sustained fall in hPa/hour is a classic pre-storm signal),
-  combined with phone GPS to check proximity to known coastal/cyclone-prone
-  regions.
-- **Flood risk**: sustained high humidity + rainfall/AQI data when online,
-  combined with a bundled static flood-plain layer (see maps, below) when
-  offline.
-- These heuristics can be replaced or augmented by a learned model later
-  once labeled disaster-event sensor data is available — not a hackathon-
-  timeline task.
+  `humidity` (BME280, already streaming over BLE), thresholded per IMD
+  heat-wave guidance — more locally accurate than the phone-GPS-based
+  Open-Meteo call for a wearable actually on the body.
+- **Cyclone/storm risk refinement**: BME280 pressure **drop-rate** over a
+  rolling window (a fast, sustained fall in hPa/hour is a classic
+  pre-storm signal) as a supplementary signal alongside the map's
+  wind-speed-based check.
 
-### 3. Offline maps
+### 3. Health tracking (weight, height, meds, insulin, etc.)
 
-`flutter_map` + `flutter_map_tile_caching` for pre-downloaded/cached raster
-tiles of the demo region, overlaid with a **bundled GeoJSON hazard layer**
-(flood-prone zones, heat-vulnerable areas) shipped as an app asset so the
-map and hazard context work with zero connectivity. Live disaster-agency
-data feeds (e.g. IMD, CWC) are an optional enhancement only when online.
+`HealthLogScreen` is currently a placeholder tab. Ideas gathered so far:
+core tracking (weight/height with auto-BMI, blood pressure, blood
+glucose, insulin dosing log, medication reminders, sleep, hydration,
+symptom journal); safety-oriented additions that double as real SOS
+infrastructure (a **Medical ID** card — blood type, allergies, conditions,
+current meds, visible to a responder in an emergency; proper **emergency
+contacts management**, which item 4 below needs anyway; caregiver/family
+sharing for remote monitoring); and disaster tie-ins (flag extra
+heat-stress risk for a diabetic during a heatwave, extra caution for a
+respiratory condition on a high-AQI day; a bundled offline
+"what to do during X" checklist needing no data at all).
 
 ### 4. SOS / emergency assistance
 
@@ -107,9 +223,13 @@ network without data connectivity:
 - `url_launcher` with `sms:` and `tel:` URIs to reach emergency contacts
   (stored locally, never synced) with the user's GPS coordinates —
   SMS/calls don't need mobile data.
-- A fall or vitals-anomaly detection (from the CNNs above) triggers a
-  cancellable countdown before auto-sending the SOS, so a false positive
-  doesn't spam contacts.
+- **The cancellable countdown + escalation trigger is already implemented**
+  (`FallDetectorService`: 10s countdown, "I'm OK" to cancel, escalates
+  otherwise) — currently ends in a dummy logged action, not a real
+  call/SMS. Wiring `_triggerEmergencyCall()` to actually reach an
+  emergency contact via `url_launcher` (`sms:`/`tel:`) with GPS
+  coordinates is what's left; needs a place to store the contact (a
+  settings screen doesn't exist yet either).
 - An online webhook/push notification path can be added later as a
   supplementary channel, never a dependency.
 
@@ -119,12 +239,28 @@ network without data connectivity:
 sih26-health-companion/
 ├── firmware/health_companion/   # Arduino IDE sketch (ESP32-S3, Arduino Core 3.3.11)
 │   └── health_companion.ino
+├── ml/                           # fall-detector training pipeline (see ml/README.md)
+│   ├── download_dataset.py
+│   ├── prepare_windows_phone_only.py, train_fall_model_phone_only.py,
+│   │   convert_to_tflite_phone_only.py   # currently active
+│   ├── prepare_windows.py, train_fall_model.py, convert_to_tflite.py  # on hold
+│   └── data/                     # gitignored — regenerate by rerunning the pipeline
 └── app/health_companion/        # Flutter app
+    ├── assets/models/fall_detector_phone_only.tflite  # currently loaded
+    ├── assets/models/fall_detector.tflite              # on hold
     └── lib/
         ├── main.dart
         ├── ble/{protocol.dart, ble_service.dart}
+        ├── sensors/phone_motion_service.dart
+        ├── ml/fall_detector_service.dart
+        ├── disaster/{disaster_service.dart, india_hazard_data.dart}
         ├── models/sensor_reading.dart
         ├── storage/history_store.dart
-        ├── screens/{scan_connect_screen.dart, dashboard_screen.dart}
+        ├── screens/
+        │   ├── home_shell.dart          # bottom-nav shell, app's home route
+        │   ├── dashboard_screen.dart
+        │   ├── map_screen.dart
+        │   ├── health_log_screen.dart   # placeholder
+        │   └── scan_connect_screen.dart # pushed route, not the home route
         └── widgets/metric_card.dart
 ```

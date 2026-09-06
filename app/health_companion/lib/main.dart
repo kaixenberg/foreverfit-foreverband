@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'ble/ble_service.dart';
-import 'screens/scan_connect_screen.dart';
+import 'disaster/disaster_service.dart';
+import 'ml/fall_detector_service.dart';
+import 'screens/home_shell.dart';
+import 'sensors/phone_motion_service.dart';
 import 'storage/history_store.dart';
 
 Future<void> main() async {
@@ -24,6 +27,13 @@ class HealthCompanionApp extends StatelessWidget {
       providers: [
         Provider<HistoryStore>.value(value: historyStore),
         ChangeNotifierProvider(create: (_) => BleService(historyStore)),
+        ChangeNotifierProvider(create: (_) => PhoneMotionService()..start()),
+        ChangeNotifierProvider(
+          create: (context) => FallDetectorService(
+            phoneMotionService: context.read<PhoneMotionService>(),
+          )..start(),
+        ),
+        ChangeNotifierProvider(create: (_) => DisasterService()..init()),
       ],
       child: MaterialApp(
         title: 'Health Companion',
@@ -37,7 +47,7 @@ class HealthCompanionApp extends StatelessWidget {
           useMaterial3: true,
           brightness: Brightness.dark,
         ),
-        home: const ScanConnectScreen(),
+        home: const HomeShell(),
       ),
     );
   }

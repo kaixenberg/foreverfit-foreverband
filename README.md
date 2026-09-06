@@ -14,7 +14,9 @@ heuristics, offline maps, and SOS.
 - MAX30101 — heart rate & SpO2
 - MAX30205 — body temperature (not working on this build; firmware uses a
   stubbed value, see `readBodyTempC()` in `health_companion.ino`)
-- MPU6050 — accelerometer & gyroscope
+- MPU6050 — accelerometer & gyroscope (**dead on this breadboard build** —
+  confirmed via I2C scan; app's fall detector currently runs on phone-only
+  motion data instead, see `ARCHITECTURE.md`)
 - BME280 — ambient temperature, humidity, pressure
 - 0.96" SSD1306 OLED display
 - I²C bus shared by all four sensors: SDA → GPIO 8, SCL → GPIO 9
@@ -23,7 +25,8 @@ heuristics, offline maps, and SOS.
 
 ```
 firmware/health_companion/   Arduino IDE sketch — the wearable firmware
-app/health_companion/        Flutter app — BLE client, dashboard, storage
+app/health_companion/        Flutter app — BLE client, dashboard, map, storage
+ml/                          Fall-detection model training pipeline (see ml/README.md)
 ARCHITECTURE.md              Full system design + protocol spec + roadmap
 ```
 
@@ -89,17 +92,41 @@ Run on a **physical Android phone**, not an emulator — BLE central support
 on emulators is unreliable. Grant the Bluetooth and location permissions
 when prompted (Android requires location permission for BLE scanning).
 
-The app should discover the `HealthCompanion` wearable, connect, and show a
-live dashboard of heart rate, SpO2, body temperature, and environmental
-readings, with a recent heart-rate trend chart. Readings are stored locally
-via Hive and persist across app restarts.
+The app opens into a bottom-nav shell (Dashboard / Map / Health Log) that
+works with or without the wearable connected — see ARCHITECTURE.md's "App
+navigation" section. The Dashboard tab discovers/connects the
+`HealthCompanion` wearable via a "Connect" button and shows heart rate,
+SpO2, body temperature, and environmental readings with a recent
+heart-rate trend chart when connected (placeholders otherwise); readings
+persist locally via Hive. It also reads the phone's own
+accelerometer/gyroscope and runs an on-device fall-detection CNN — see
+[ARCHITECTURE.md](ARCHITECTURE.md) and [ml/README.md](ml/README.md) for
+how that model was trained. Currently phone-only (the wearable's MPU6050
+is dead on this build — see Hardware above); the original wrist+phone
+fusion design resumes once that's replaced. A detected fall latches an
+alert banner open until dismissed or a 10s dummy emergency-call
+escalation fires. The Map tab shows a GPS-centered, India-focused
+disaster-risk view (earthquake/cyclone/flood/rain) that works fully
+offline (cached tiles + a static state-level hazard baseline) and prefers
+live data (Open-Meteo, USGS) when online.
 
 ## Status
 
-- [x] Sensors wired and bench-tested; dummy OLED watchface working
-- [x] Firmware: BLE streaming of vitals/environment/motion
-- [x] App: BLE connect + live dashboard + local history
-- [ ] On-device CNNs (fall detection, vitals/heat-stress anomaly)
-- [ ] Disaster heuristics (heat-index, cyclone pressure-drop)
-- [ ] Offline maps with bundled hazard layer
-- [ ] SOS to emergency contacts
+- [x] Sensors wired and bench-tested (HR/SpO2, env, OLED watchface); MPU6050
+      confirmed dead via I2C scan — motion now comes from the phone only
+- [x] Firmware: BLE streaming of vitals/environment (motion channel idle
+      until the wearable's IMU is replaced)
+- [x] App: bottom-nav shell (Dashboard/Map/Health Log), all reachable
+      without a wearable; BLE connect + live dashboard + local history
+      confirmed working end-to-end on a physical Android phone
+- [x] On-device fall-detection CNN (currently phone-only, 94% recall on
+      held-out subjects; wrist+phone fusion on hold pending IMU repair —
+      see `ml/`), with a latched alert + 10s countdown to a dummy
+      emergency-call escalation — real SMS/call wiring not yet built
+- [x] Disaster-risk map: GPS + India state-level hazard baseline + live
+      Open-Meteo/USGS data with offline fallback — see ARCHITECTURE.md
+- [ ] On-device vitals/heat-stress anomaly CNN
+- [ ] Wearable-sensor disaster heuristics (BME280 heat-index, pressure
+      drop-rate) once the wearable's IMU is replaced
+- [ ] Health tracking (weight/height/meds/insulin) — placeholder tab only
+- [ ] Real SOS (SMS/call) — countdown/escalation UX built, dummy action only

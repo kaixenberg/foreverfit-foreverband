@@ -184,9 +184,29 @@ void setupBle() {
 }
 
 // ---------------------------------------------------------------------------
+// I2C bus scan — diagnostic only. Prints every address that ACKs, so we
+// can tell wiring/power/address problems apart from a genuinely dead
+// sensor without guessing.
+// ---------------------------------------------------------------------------
+void scanI2CBus() {
+  Serial.println("[I2C] Scanning bus...");
+  int found = 0;
+  for (uint8_t addr = 0x08; addr < 0x78; addr++) {
+    Wire.beginTransmission(addr);
+    if (Wire.endTransmission() == 0) {
+      Serial.printf("[I2C]   device found at 0x%02X\n", addr);
+      found++;
+    }
+  }
+  Serial.printf("[I2C] Scan complete, %d device(s) found\n", found);
+}
+
+// ---------------------------------------------------------------------------
 // Sensor setup
 // ---------------------------------------------------------------------------
 void setupSensors() {
+  scanI2CBus();
+
   bmeOk = bme.begin(BME280_I2C_ADDR, &Wire);
   Serial.printf("[BME280] init %s\n", bmeOk ? "OK" : "FAILED");
 
@@ -457,7 +477,11 @@ void setup() {
   Serial.println("\n[BOOT] Personal Health Companion");
 
   Wire.begin(I2C_SDA, I2C_SCL);
-  Wire.setClock(400000); // Fast Mode I2C — all sensors on this bus support it
+  // Standard Mode (100kHz, the Wire library default) — reverted from Fast
+  // Mode (400kHz) because it's suspected of causing MPU6050 init to fail
+  // on this breadboard build: 4 I2C devices sharing one bus over jumper
+  // wires has marginal signal integrity at 400kHz. Revisit if/when this
+  // moves to a proper PCB with short traces and correctly-sized pull-ups.
   randomSeed(analogRead(0));
 
   setupSensors();

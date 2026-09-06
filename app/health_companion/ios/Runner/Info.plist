@@ -26,6 +26,10 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSMotionUsageDescription</key>
+	<string>Used to read the phone's accelerometer and gyroscope for on-device fall detection.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Used to show your location on the map and check disaster risk (earthquake, flood, cyclone, rain) for your area.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

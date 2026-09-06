@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../ble/ble_service.dart';
+import '../ml/fall_detector_service.dart';
 import '../storage/history_store.dart';
 import '../widgets/metric_card.dart';
 import 'scan_connect_screen.dart';
@@ -13,16 +14,9 @@ class DashboardScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ble = context.watch<BleService>();
+    final fallDetector = context.watch<FallDetectorService>();
     final history = context.read<HistoryStore>();
-
-    if (ble.status != ConnectionStatus.connected) {
-      // Wearable dropped the connection — bounce back to the scan screen.
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => const ScanConnectScreen()),
-        );
-      });
-    }
+    final connected = ble.status == ConnectionStatus.connected;
 
     final vitals = ble.latestVitals;
     final env = ble.latestEnv;
@@ -36,15 +30,21 @@ class DashboardScreen extends StatelessWidget {
         title: const Text('Live Dashboard'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.bluetooth_disabled),
-            tooltip: 'Disconnect',
-            onPressed: () => ble.disconnect(),
+            icon: Icon(connected ? Icons.bluetooth_disabled : Icons.bluetooth_searching),
+            tooltip: connected ? 'Disconnect' : 'Connect wearable',
+            onPressed: connected
+                ? () => ble.disconnect()
+                : () => Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const ScanConnectScreen()),
+                    ),
           ),
         ],
       ),
       body: ListView(
         padding: const EdgeInsets.all(12),
         children: [
+          if (fallDetector.alertActive) _FallAlertBanner(fallDetector: fallDetector),
+          if (!connected) _ConnectWearableBanner(),
           GridView.count(
             crossAxisCount: 2,
             shrinkWrap: true,
@@ -103,6 +103,71 @@ class DashboardScreen extends StatelessWidget {
             child: _HeartRateSparkline(history: history),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Shown instead of bouncing the user to the scan screen when no wearable
+/// is connected — Dashboard, Map, and Health Log should all stay reachable
+/// without one (fall detection already works phone-only).
+class _ConnectWearableBanner extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: ListTile(
+        leading: const Icon(Icons.watch_outlined),
+        title: const Text('Wearable not connected'),
+        subtitle: const Text('Vitals and environment readings need the wearable.'),
+        trailing: FilledButton(
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const ScanConnectScreen()),
+          ),
+          child: const Text('Connect'),
+        ),
+      ),
+    );
+  }
+}
+
+/// Stays open once a fall is detected regardless of what the live model
+/// output does afterward — only "I'm OK" or the emergency-call timeout
+/// clears it. See FallDetectorService for the latching logic.
+class _FallAlertBanner extends StatelessWidget {
+  const _FallAlertBanner({required this.fallDetector});
+
+  final FallDetectorService fallDetector;
+
+  @override
+  Widget build(BuildContext context) {
+    final onError = Theme.of(context).colorScheme.onErrorContainer;
+    final message = fallDetector.isCalling
+        ? '🚨 Calling emergency contact...'
+        : 'Possible fall detected'
+            '${fallDetector.secondsUntilCall != null ? ' — calling emergency contact in ${fallDetector.secondsUntilCall}s' : ''}';
+
+    return Card(
+      color: Theme.of(context).colorScheme.errorContainer,
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          children: [
+            Icon(Icons.warning_amber, color: onError),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                message,
+                style: TextStyle(color: onError, fontWeight: FontWeight.bold),
+              ),
+            ),
+            ElevatedButton(
+              onPressed: () => fallDetector.dismissAlert(),
+              child: const Text("I'm OK"),
+            ),
+          ],
+        ),
       ),
     );
   }
