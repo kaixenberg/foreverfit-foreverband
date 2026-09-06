@@ -71,21 +71,13 @@ flutter create .
 flutter pub get
 ```
 
-**Before running**, `flutter create .` generates a default
-`android/app/src/main/AndroidManifest.xml` with no BLE permissions — add
-these inside the `<manifest>` tag (above `<application>`), or scanning will
-silently fail or the permission prompts in-app will do nothing:
-
-```xml
-<uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />
-<uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
-<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-<uses-feature android:name="android.hardware.bluetooth_le" android:required="true" />
-```
-
-Also bump `minSdkVersion` to at least `21` in `android/app/build.gradle`
-(`flutter_blue_plus` requires it; the default template may set a lower
-value).
+The generated `android/AndroidManifest.xml` is committed to this repo with
+the BLE permissions (`BLUETOOTH_SCAN`, `BLUETOOTH_CONNECT`,
+`ACCESS_FINE_LOCATION`) already added — `flutter create .` won't overwrite
+it since the file already exists. `minSdkVersion` uses the Flutter tool's
+own default (`flutter.minSdkVersion` in `build.gradle.kts`), which is well
+above the `21` `flutter_blue_plus` requires on any current Flutter SDK, so
+no manual bump is needed.
 
 Then:
 
