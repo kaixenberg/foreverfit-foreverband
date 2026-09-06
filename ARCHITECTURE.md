@@ -28,7 +28,7 @@ share it.
 Custom GATT service, three `notify`-only characteristics. All multi-byte
 fields are **little-endian**, matching the ESP32's native order — Dart parses
 with `ByteData.getX(offset, Endian.little)`. This spec is the single source
-of truth; the firmware (`firmware/health_companion/src/main.cpp`) and app
+of truth; the firmware (`firmware/health_companion/health_companion.ino`) and app
 (`app/health_companion/lib/ble/protocol.dart`) must be changed together.
 
 | UUID | Name | Rate | Layout |
@@ -46,8 +46,8 @@ free-fall-then-impact signature.
 - SpO2 is a rough, uncalibrated AC/DC ratio estimate (`110 - 25*R`), not a
   clinically valid reading — fine for a relative risk signal, not diagnosis.
 - Body temperature is a stubbed simulation (`readBodyTempC()` in
-  `main.cpp`) because the MAX30205 on hand doesn't work. Swap in a real
-  driver call there if it's replaced.
+  `health_companion.ino`) because the MAX30205 on hand doesn't work. Swap in
+  a real driver call there if it's replaced.
 
 ## Roadmap (not yet implemented)
 
@@ -117,9 +117,8 @@ network without data connectivity:
 
 ```
 sih26-health-companion/
-├── firmware/health_companion/   # PlatformIO project (ESP32-S3, Arduino framework)
-│   ├── platformio.ini
-│   └── src/main.cpp
+├── firmware/health_companion/   # Arduino IDE sketch (ESP32-S3, Arduino Core 3.3.11)
+│   └── health_companion.ino
 └── app/health_companion/        # Flutter app
     └── lib/
         ├── main.dart
