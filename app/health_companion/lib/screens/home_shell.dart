@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'dashboard_screen.dart';
 import 'health_log_screen.dart';
 import 'map_screen.dart';
+import 'settings_screen.dart';
 
 /// App-level bottom navigation shell. Dashboard/Map/Health Log are all
 /// reachable regardless of wearable connection status — only the
@@ -21,6 +22,7 @@ class _HomeShellState extends State<HomeShell> {
     DashboardScreen(),
     MapScreen(),
     HealthLogScreen(),
+    SettingsScreen(),
   ];
 
   @override
@@ -34,6 +36,7 @@ class _HomeShellState extends State<HomeShell> {
           NavigationDestination(icon: Icon(Icons.dashboard_outlined), label: 'Dashboard'),
           NavigationDestination(icon: Icon(Icons.map_outlined), label: 'Map'),
           NavigationDestination(icon: Icon(Icons.monitor_weight_outlined), label: 'Health Log'),
+          NavigationDestination(icon: Icon(Icons.settings_outlined), label: 'Settings'),
         ],
       ),
     );

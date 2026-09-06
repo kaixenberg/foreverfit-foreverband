@@ -116,17 +116,31 @@ live data (Open-Meteo, USGS) when online.
       confirmed dead via I2C scan — motion now comes from the phone only
 - [x] Firmware: BLE streaming of vitals/environment (motion channel idle
       until the wearable's IMU is replaced)
-- [x] App: bottom-nav shell (Dashboard/Map/Health Log), all reachable
-      without a wearable; BLE connect + live dashboard + local history
-      confirmed working end-to-end on a physical Android phone
+- [x] App: bottom-nav shell (Dashboard/Map/Health Log/Settings), all
+      reachable without a wearable; BLE connect + live dashboard + local
+      history confirmed working end-to-end on a physical Android phone
 - [x] On-device fall-detection CNN (currently phone-only, 94% recall on
       held-out subjects; wrist+phone fusion on hold pending IMU repair —
       see `ml/`), with a latched alert + 10s countdown to a dummy
       emergency-call escalation — real SMS/call wiring not yet built
 - [x] Disaster-risk map: GPS + India state-level hazard baseline + live
       Open-Meteo/USGS data with offline fallback — see ARCHITECTURE.md
+- [x] UI stubs for everything below (Dashboard's Wellness/Activity/
+      Baseline cards + manual SOS button, Map's Air Quality row, Health
+      Log's tracking tiles, Settings' emergency contact form) — visible,
+      not yet wired to real data/logic
+- [ ] Activity-conditioned vitals anomaly detection
+- [ ] Personalized (per-user) baseline learning
 - [ ] On-device vitals/heat-stress anomaly CNN
+- [ ] Composite wellness/risk score
+- [ ] Air quality integration
+- [ ] Sleep tracking
+- [ ] Full-screen imminent-disaster warning with per-hazard safety
+      guidance (e.g. "get under a table" for earthquakes) — the current
+      Map banner is a low-key, dismissible notice, not this
+- [ ] Trend/daily-summary views
 - [ ] Wearable-sensor disaster heuristics (BME280 heat-index, pressure
       drop-rate) once the wearable's IMU is replaced
-- [ ] Health tracking (weight/height/meds/insulin) — placeholder tab only
-- [ ] Real SOS (SMS/call) — countdown/escalation UX built, dummy action only
+- [ ] Health tracking (weight/height/meds/insulin/Medical ID) — UI stub only
+- [ ] Real SOS (SMS/call + emergency contact storage) — countdown/
+      escalation UX and manual trigger button both stubbed, dummy action only

@@ -206,8 +206,36 @@ class _RiskPanel extends StatelessWidget {
                 freshness: risk.weatherFreshness,
                 asOf: risk.weatherAsOf,
               ),
+            const Divider(),
+            const _StubRow(icon: Icons.masks_outlined, label: 'Air quality'),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// A roadmap item with no data behind it yet (see ARCHITECTURE.md) —
+/// visually distinct from _RiskRow so "not built" is never confused with
+/// "offline baseline" or "stale cache".
+class _StubRow extends StatelessWidget {
+  const _StubRow({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final muted = Theme.of(context).disabledColor;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: muted),
+          const SizedBox(width: 8),
+          Expanded(child: Text(label, style: TextStyle(color: muted))),
+          Text('Coming soon', style: TextStyle(color: muted, fontStyle: FontStyle.italic)),
+        ],
       ),
     );
   }
@@ -241,7 +269,11 @@ class _RiskRow extends StatelessWidget {
             : 'cached';
         break;
       case DataFreshness.staticOnly:
-        freshnessLabel = 'offline baseline';
+        // Distinct from "couldn't fetch live data" — these fields
+        // (seismic zone, cyclone/flood-prone) have no live source at all
+        // in this app; they're always from the static state-level table
+        // in india_hazard_data.dart, connectivity notwithstanding.
+        freshnessLabel = 'reference data';
         break;
     }
 

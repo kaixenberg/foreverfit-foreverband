@@ -30,6 +30,19 @@ class DashboardScreen extends StatelessWidget {
         title: const Text('Live Dashboard'),
         actions: [
           IconButton(
+            icon: const Icon(Icons.sos),
+            tooltip: 'Manual SOS',
+            color: Theme.of(context).colorScheme.error,
+            onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'Manual SOS is coming soon — will alert your emergency '
+                  'contact with your location.',
+                ),
+              ),
+            ),
+          ),
+          IconButton(
             icon: Icon(connected ? Icons.bluetooth_disabled : Icons.bluetooth_searching),
             tooltip: connected ? 'Disconnect' : 'Connect wearable',
             onPressed: connected
@@ -92,6 +105,38 @@ class DashboardScreen extends StatelessWidget {
                 value: env == null ? '--' : env.pressureHPa.toStringAsFixed(0),
                 unit: 'hPa',
                 icon: Icons.speed,
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Text('Wellness overview (coming soon)',
+              style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          GridView.count(
+            crossAxisCount: 3,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            childAspectRatio: 1.1,
+            mainAxisSpacing: 8,
+            crossAxisSpacing: 8,
+            children: const [
+              MetricCard(
+                label: 'Wellness',
+                value: '--',
+                unit: '',
+                icon: Icons.favorite_border,
+              ),
+              MetricCard(
+                label: 'Activity',
+                value: '--',
+                unit: '',
+                icon: Icons.directions_walk,
+              ),
+              MetricCard(
+                label: 'Baseline',
+                value: '--',
+                unit: '',
+                icon: Icons.show_chart,
               ),
             ],
           ),

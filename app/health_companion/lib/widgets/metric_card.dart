@@ -30,7 +30,14 @@ class MetricCard extends StatelessWidget {
               children: [
                 Icon(icon, size: 18, color: warn ? scheme.onErrorContainer : scheme.primary),
                 const SizedBox(width: 6),
-                Text(label, style: Theme.of(context).textTheme.labelLarge),
+                Expanded(
+                  child: Text(
+                    label,
+                    style: Theme.of(context).textTheme.labelLarge,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 8),
@@ -40,7 +47,14 @@ class MetricCard extends StatelessWidget {
               children: [
                 Text(value, style: Theme.of(context).textTheme.headlineMedium),
                 const SizedBox(width: 4),
-                Text(unit, style: Theme.of(context).textTheme.bodySmall),
+                Flexible(
+                  child: Text(
+                    unit,
+                    style: Theme.of(context).textTheme.bodySmall,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
               ],
             ),
           ],

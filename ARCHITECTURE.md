@@ -177,18 +177,79 @@ falling back to cached-then-static data when not — see
 
 ## Roadmap (not yet implemented)
 
-### 1. On-device vitals/heat-stress anomaly CNN
+UI stubs exist for everything below (Dashboard's Wellness/Activity/
+Baseline cards + SOS button, Map's Air Quality row, Health Log's
+tracking tiles, Settings' emergency contact form) so the shape of the
+full app is visible even where the logic isn't built yet.
 
-Multi-class classifier over a sliding window (e.g. last 2–5 minutes) of
-HR, SpO2, body temp, ambient temp, humidity. Training data: **WESAD**
-(wearable stress/affect, has physiological signals under thermal/physical
-stress) as a starting point, plus heat-index-labeled synthetic
-augmentation since WESAD alone won't cover heat-stress specifically.
-Output classes: normal / possible heat stress / possible dehydration /
-possible respiratory or cardiac concern. Same small-CNN-via-TFLite
-approach as the fall detector above.
+### 1. AI/ML opportunities, roughly in priority order
 
-### 2. Wearable-sensor disaster heuristics
+- **Activity-conditioned vitals anomaly detection** (highest value per
+  effort): a lightweight activity classifier (walking/running/sitting/
+  still) over the accel+gyro stream already flowing for fall detection —
+  same infrastructure, reused. Lets HR/SpO2 anomaly checks know "elevated
+  HR while running is normal, elevated HR while sitting still isn't,"
+  directly cutting false positives in whatever anomaly detection exists.
+- **Personalized baseline learning**: NOT necessarily a CNN — a rolling
+  per-user mean/std (z-score deviation from *this user's own* resting
+  HR/SpO2 over the past week) catches "unusual for you" in a way a fixed
+  global threshold can't, is simple statistics, and is more honest about
+  what it is than dressing it up as deep learning.
+- **On-device vitals/heat-stress anomaly CNN**: multi-class classifier
+  over a sliding window (e.g. last 2–5 minutes) of HR, SpO2, body temp,
+  ambient temp, humidity. Training data: **WESAD** (wearable
+  stress/affect, has physiological signals under thermal/physical
+  stress) as a starting point, plus heat-index-labeled synthetic
+  augmentation since WESAD alone won't cover heat-stress specifically.
+  Output classes: normal / possible heat stress / possible dehydration /
+  possible respiratory or cardiac concern. Same small-CNN-via-TFLite
+  approach as the fall detector — expect another dataset-reality-check
+  along the way, same as UMAFall and the flood data both needed.
+- **Composite wellness/risk score**: combining HR/SpO2/temp/environment
+  into one number for the dashboard. Start with a transparent calibrated
+  formula (no training data needed, explainable to judges) — only reach
+  for a learned model if the formula demonstrably underperforms.
+- Deliberately not pursuing: an on-device LLM/chatbot layer. Heavy for a
+  phone app on this timeline, and cuts against the offline-first,
+  privacy-preserving pitch if it ever needs cloud inference.
+
+### 2. Gaps against the original problem statement
+
+- **Air quality**: mentioned in the original brief (pollution events,
+  respiratory risk) but never integrated — WAQI or OpenWeatherMap's air
+  pollution API would slot into `DisasterService` the same way
+  Open-Meteo does.
+- **Sleep tracking**: named in the problem statement's "Continuous Health
+  Monitoring," not built.
+- **Trend/history views**: the dashboard's HR sparkline is the only trend
+  view — nothing like a daily summary or "today vs. your week," which
+  the problem statement's "Personal Wellness Dashboard" section calls
+  for.
+- **Manual SOS button**: currently the only emergency trigger is the
+  fall detector firing automatically. Someone conscious during a medical
+  episode has no way to proactively ask for help.
+
+### 3. Full-screen imminent-disaster warning with safety guidance
+
+The current warning (Map screen banner) is a dismissible, non-blocking
+notice for "elevated risk" — fine for area awareness, not urgent enough
+for a genuinely imminent event. Missing a harder-to-miss tier: a
+full-screen modal requiring explicit acknowledgment, with concrete
+per-hazard actionable guidance, not just a risk label:
+- Earthquake: "Drop, Cover, Hold On — get under a sturdy table"
+- Flood: "Move to higher ground immediately"
+- Cyclone/storm: "Stay indoors, away from windows"
+- Heat wave: "Stay hydrated, avoid outdoor activity"
+
+Needs its own, stricter trigger threshold distinct from `hasWarning`
+(e.g. a very high precip probability *and* flood-prone, or a close
+M5.5+ quake, not just "elevated risk") — reusing the existing banner's
+threshold as-is would cause alert fatigue by firing this at the same
+rate as the low-key banner. The per-hazard "what to do" text is static
+and bundled, needs no data source, similar in spirit to the offline
+safety-checklist idea in the health-tracking gap above.
+
+### 4. Wearable-sensor disaster heuristics
 
 The disaster map above uses live weather + static state data, not the
 wearable's own sensors yet. Two refinements once the wearable's IMU is
@@ -202,21 +263,23 @@ back (see fall-detection CNN's "on hold" state):
   pre-storm signal) as a supplementary signal alongside the map's
   wind-speed-based check.
 
-### 3. Health tracking (weight, height, meds, insulin, etc.)
+### 5. Health tracking (weight, height, meds, insulin, etc.)
 
-`HealthLogScreen` is currently a placeholder tab. Ideas gathered so far:
-core tracking (weight/height with auto-BMI, blood pressure, blood
-glucose, insulin dosing log, medication reminders, sleep, hydration,
-symptom journal); safety-oriented additions that double as real SOS
-infrastructure (a **Medical ID** card — blood type, allergies, conditions,
-current meds, visible to a responder in an emergency; proper **emergency
-contacts management**, which item 4 below needs anyway; caregiver/family
-sharing for remote monitoring); and disaster tie-ins (flag extra
-heat-stress risk for a diabetic during a heatwave, extra caution for a
-respiratory condition on a high-AQI day; a bundled offline
-"what to do during X" checklist needing no data at all).
+`HealthLogScreen` now shows stub tiles for each of these (tapping any
+shows "coming soon"). Ideas gathered so far: core tracking (weight/height
+with auto-BMI, blood pressure, blood glucose, insulin dosing log,
+medication reminders, sleep, hydration, symptom journal); safety-oriented
+additions that double as real SOS infrastructure (a **Medical ID** card —
+blood type, allergies, conditions, current meds, visible to a responder
+in an emergency; proper **emergency contacts management**, which item 6
+below needs anyway — a stub form exists on the new Settings tab;
+caregiver/family sharing for remote monitoring); and disaster tie-ins
+(flag extra heat-stress risk for a diabetic during a heatwave, extra
+caution for a respiratory condition on a high-AQI day; a bundled offline
+"what to do during X" checklist needing no data at all — the same
+checklist content item 3 above needs, so build it once and reuse it).
 
-### 4. SOS / emergency assistance
+### 6. SOS / emergency assistance
 
 Since "network is icing on the cake," SOS must work over the cellular
 network without data connectivity:
@@ -228,8 +291,12 @@ network without data connectivity:
   otherwise) — currently ends in a dummy logged action, not a real
   call/SMS. Wiring `_triggerEmergencyCall()` to actually reach an
   emergency contact via `url_launcher` (`sms:`/`tel:`) with GPS
-  coordinates is what's left; needs a place to store the contact (a
-  settings screen doesn't exist yet either).
+  coordinates is what's left.
+- **Settings tab + emergency contact form** now exist as a UI stub
+  (`SettingsScreen`) — not persisted yet, just the layout.
+- **Manual SOS button** is stubbed on the Dashboard (see gap #2 above) —
+  tapping it currently just shows what it'll do, doesn't trigger anything
+  real yet.
 - An online webhook/push notification path can be added later as a
   supplementary channel, never a dependency.
 
