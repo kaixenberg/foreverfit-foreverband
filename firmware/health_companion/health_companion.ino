@@ -17,7 +17,6 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 #include <MAX30105.h>
-#include <heartRate.h>
 
 // ---------------------------------------------------------------------------
 // Wiring config — adjust these to match your actual wiring.
@@ -28,6 +27,13 @@
 #define OLED_HEIGHT 64
 #define OLED_I2C_ADDR 0x3C
 #define BME280_I2C_ADDR 0x76
+
+// IR DC-baseline magnitude below which we treat the sensor as "no
+// finger/wrist contact". 50000 matches SparkFun/Maxim's own MAX3010x
+// reference examples; watch the "[HR] IRdc=..." serial debug line and
+// adjust this if your specific board's LED coupling runs noticeably higher
+// or lower at rest.
+#define FINGER_PRESENT_IR_THRESHOLD 50000
 
 // ---------------------------------------------------------------------------
 // BLE — custom "Health Companion" service, three notify characteristics.
@@ -85,21 +91,47 @@ bool mpuOk = false;
 bool oledOk = false;
 bool maxOk = false;
 
-// --- Heart-rate beat detection (SparkFun heartRate.h) ---
-const byte RATE_ARRAY_SIZE = 4;
-byte rateSpot = 0;
-long lastBeatMs = 0;
-float beatsPerMinuteArr[RATE_ARRAY_SIZE] = {0};
-float currentBpm = 0;
+// --- HR + SpO2 via DC removal, AC low-pass filtering, and per-beat peak
+// detection. Bench-tested against a standalone reference sketch before
+// being ported in here — see git history for the earlier, less reliable
+// zero-crossing + fixed-window approach this replaces. ---
+float irDC = 0, redDC = 0;
+bool dcInit = false;
+const float DC_ALPHA = 0.05;   // baseline (DC) tracking speed
+const float LP_ALPHA = 0.3;    // AC signal smoothing
 
-// --- Rough, UNCALIBRATED SpO2 estimate from IR/RED AC-DC ratio ---
-// This is the standard hobbyist ratio-of-ratios formula, not a clinically
-// calibrated measurement — good enough for a demo risk signal, not diagnosis.
-long irMin = 999999, irMax = 0, redMin = 999999, redMax = 0;
-long irSum = 0, redSum = 0;
-uint32_t spo2SampleCount = 0;
-uint32_t spo2WindowStartMs = 0;
-float currentSpo2 = 98.0;
+float irACFilt = 0, redACFilt = 0;
+float lastFilteredIr = 0;
+bool rising = false;
+uint32_t lastBeatTime = 0;
+const uint32_t MIN_BEAT_INTERVAL_MS = 300;  // caps at 200bpm, rejects double-triggers
+const uint32_t MAX_BEAT_INTERVAL_MS = 2000; // below 30bpm treat as no-beat
+
+const int IBI_HISTORY = 2;
+uint32_t ibiHistory[IBI_HISTORY] = {0};
+int ibiIndex = 0;
+int ibiCount = 0;
+
+// Peak/trough of the filtered signal within the CURRENT beat cycle — ties
+// the AC amplitude used for SpO2 to a real physiological cycle rather than
+// a fixed time window that motion artifact can dominate.
+float irPeakVal = -1e9, irTroughVal = 1e9;
+float redPeakVal = -1e9, redTroughVal = 1e9;
+
+// Rough, UNCALIBRATED SpO2 estimate (standard ratio-of-ratios formula) —
+// fine as a relative risk signal, not a clinically valid reading.
+const int AMP_HISTORY = 5;
+float irAmpHistory[AMP_HISTORY] = {0};
+float redAmpHistory[AMP_HISTORY] = {0};
+float irDCAtBeat[AMP_HISTORY] = {0};
+float redDCAtBeat[AMP_HISTORY] = {0};
+int ampIndex = 0;
+int ampCount = 0;
+
+float currentBpm = 0;
+float currentSpo2 = 0; // 0 = no reading yet / no contact, not a real SpO2 value
+bool fingerPresent = false;
+float lastBodyTempC = 36.8;
 
 uint32_t lastVitalsNotify = 0, lastEnvNotify = 0, lastMotionNotify = 0, lastOledUpdate = 0;
 
@@ -118,11 +150,11 @@ float readBodyTempC() {
 // BLE server callbacks
 // ---------------------------------------------------------------------------
 class ServerCallbacks : public NimBLEServerCallbacks {
-  void onConnect(NimBLEServer* server) override {
+  void onConnect(NimBLEServer* server, NimBLEConnInfo& connInfo) override {
     deviceConnected = true;
     Serial.println("[BLE] Central connected");
   }
-  void onDisconnect(NimBLEServer* server) override {
+  void onDisconnect(NimBLEServer* server, NimBLEConnInfo& connInfo, int reason) override {
     deviceConnected = false;
     Serial.println("[BLE] Central disconnected, restarting advertising");
     NimBLEDevice::startAdvertising();
@@ -147,7 +179,6 @@ void setupBle() {
 
   NimBLEAdvertising* advertising = NimBLEDevice::getAdvertising();
   advertising->addServiceUUID(SERVICE_UUID);
-  advertising->setScanResponse(true);
   NimBLEDevice::startAdvertising();
   Serial.println("[BLE] advertising started");
 }
@@ -169,9 +200,11 @@ void setupSensors() {
 
   maxOk = particleSensor.begin(Wire, I2C_SPEED_FAST);
   if (maxOk) {
-    particleSensor.setup(); // default: red+IR, 100Hz, 4 samples avg
-    particleSensor.setPulseAmplitudeRed(0x0A);
-    particleSensor.setPulseAmplitudeGreen(0);
+    // ledMode=2 (Red+IR only, no Green); sampleAverage=8 for hardware-level
+    // noise reduction; powerLevel=0x1F sets Red and IR to the SAME current
+    // so the redAc/redDc vs irAc/irDc ratio used for SpO2 is meaningful —
+    // bench-verified to sit in a good unclipped range on this hardware.
+    particleSensor.setup(0x1F, 8, 2, 100, 411, 4096);
   }
   Serial.printf("[MAX30101] init %s\n", maxOk ? "OK" : "FAILED");
 
@@ -189,55 +222,146 @@ void setupSensors() {
 }
 
 // ---------------------------------------------------------------------------
-// HR / SpO2 sampling — call every loop iteration to avoid dropping FIFO data.
+// Turn accumulated beat/amplitude history into currentBpm / currentSpo2.
+// Called after each newly-accepted beat.
+// ---------------------------------------------------------------------------
+void recomputeVitalsFromHistory() {
+  if (ibiCount > 0) {
+    uint32_t sum = 0;
+    for (int i = 0; i < ibiCount; i++) sum += ibiHistory[i];
+    float avgIbi = (float)sum / ibiCount;
+    currentBpm = 60000.0f / avgIbi;
+  }
+
+  if (ampCount >= 1) {
+    float irAmpSum = 0, redAmpSum = 0, irDcSum = 0, redDcSum = 0;
+    for (int i = 0; i < ampCount; i++) {
+      irAmpSum += irAmpHistory[i];
+      redAmpSum += redAmpHistory[i];
+      irDcSum += irDCAtBeat[i];
+      redDcSum += redDCAtBeat[i];
+    }
+    float irAcAvg = irAmpSum / ampCount;
+    float redAcAvg = redAmpSum / ampCount;
+    float irDcAvg = irDcSum / ampCount;
+    float redDcAvg = redDcSum / ampCount;
+
+    // Guard against divide-by-noise on a too-weak or too-faint signal.
+    if (irAcAvg >= 3 && redAcAvg >= 3 && irDcAvg >= 1000 && redDcAvg >= 1000) {
+      float r = (redAcAvg / redDcAvg) / (irAcAvg / irDcAvg);
+      float spo2 = 110.0f - 25.0f * r;
+      currentSpo2 = constrain(spo2, 0.0f, 100.0f);
+    }
+  }
+}
+
+void resetHrSpo2State() {
+  currentBpm = 0;
+  currentSpo2 = 0;
+  ibiCount = 0;
+  ibiIndex = 0;
+  ampCount = 0;
+  ampIndex = 0;
+  irACFilt = redACFilt = 0;
+  lastFilteredIr = 0;
+  rising = false;
+  lastBeatTime = 0;
+  irPeakVal = redPeakVal = -1e9;
+  irTroughVal = redTroughVal = 1e9;
+}
+
+// ---------------------------------------------------------------------------
+// HR / SpO2 sampling — drains the sensor's FIFO every loop iteration so no
+// samples are dropped. DC-removal + peak detection adapted from a
+// bench-tested reference sketch (06_hr_spo2_fast_readout.ino).
 // ---------------------------------------------------------------------------
 void pollHeartRateSensor() {
   if (!maxOk) return;
 
-  long irValue = particleSensor.getIR();
-  long redValue = particleSensor.getRed();
-  if (irValue < 5000) return; // no finger/wrist contact
+  particleSensor.check();
 
-  // Beat detection -> BPM
-  if (checkForBeat(irValue)) {
-    long now = millis();
-    long delta = now - lastBeatMs;
-    lastBeatMs = now;
-    float bpm = 60.0f / (delta / 1000.0f);
-    if (bpm > 20 && bpm < 255) {
-      beatsPerMinuteArr[rateSpot++] = bpm;
-      rateSpot %= RATE_ARRAY_SIZE;
-      float sum = 0;
-      for (byte i = 0; i < RATE_ARRAY_SIZE; i++) sum += beatsPerMinuteArr[i];
-      currentBpm = sum / RATE_ARRAY_SIZE;
+  while (particleSensor.available()) {
+    long irRaw = particleSensor.getFIFOIR();
+    long redRaw = particleSensor.getFIFORed();
+    particleSensor.nextSample();
+
+    // --- DC tracking (slow EMA = baseline) ---
+    if (!dcInit) {
+      irDC = irRaw;
+      redDC = redRaw;
+      dcInit = true;
     }
+    irDC += (irRaw - irDC) * DC_ALPHA;
+    redDC += (redRaw - redDC) * DC_ALPHA;
+
+    fingerPresent = irDC >= FINGER_PRESENT_IR_THRESHOLD;
+    if (!fingerPresent) {
+      resetHrSpo2State();
+      continue;
+    }
+
+    float irACraw = irRaw - irDC;
+    float redACraw = redRaw - redDC;
+
+    // --- Light smoothing on the AC component to reduce sample noise ---
+    irACFilt += (irACraw - irACFilt) * LP_ALPHA;
+    redACFilt += (redACraw - redACFilt) * LP_ALPHA;
+
+    // --- track peak/trough of THIS beat cycle for both channels (for SpO2) ---
+    if (irACFilt > irPeakVal) irPeakVal = irACFilt;
+    if (irACFilt < irTroughVal) irTroughVal = irACFilt;
+    if (redACFilt > redPeakVal) redPeakVal = redACFilt;
+    if (redACFilt < redTroughVal) redTroughVal = redACFilt;
+
+    // --- Peak detection on filtered IR AC signal ---
+    float delta = irACFilt - lastFilteredIr;
+    if (delta > 0 && !rising) {
+      rising = true;
+    } else if (delta < 0 && rising) {
+      // Local max just occurred -> potential beat.
+      rising = false;
+      uint32_t now = millis();
+      uint32_t interval = now - lastBeatTime;
+
+      if (lastFilteredIr > 5) { // reject near-flat/noise-only cycles
+        if (interval >= MIN_BEAT_INTERVAL_MS && interval <= MAX_BEAT_INTERVAL_MS &&
+            lastBeatTime != 0) {
+          ibiHistory[ibiIndex] = interval;
+          ibiIndex = (ibiIndex + 1) % IBI_HISTORY;
+          if (ibiCount < IBI_HISTORY) ibiCount++;
+
+          float irAmpThisBeat = irPeakVal - irTroughVal;
+          float redAmpThisBeat = redPeakVal - redTroughVal;
+          // A real single-beat AC swing on a DC baseline of this magnitude
+          // is typically tens to low-thousands, not tens of thousands.
+          if (irAmpThisBeat > 0 && irAmpThisBeat < 20000 && redAmpThisBeat > 0 &&
+              redAmpThisBeat < 20000) {
+            irAmpHistory[ampIndex] = irAmpThisBeat;
+            redAmpHistory[ampIndex] = redAmpThisBeat;
+            irDCAtBeat[ampIndex] = irDC;
+            redDCAtBeat[ampIndex] = redDC;
+            ampIndex = (ampIndex + 1) % AMP_HISTORY;
+            if (ampCount < AMP_HISTORY) ampCount++;
+          }
+
+          recomputeVitalsFromHistory();
+        }
+        lastBeatTime = now;
+      }
+      irPeakVal = -1e9;
+      irTroughVal = 1e9;
+      redPeakVal = -1e9;
+      redTroughVal = 1e9;
+    }
+    lastFilteredIr = irACFilt;
   }
 
-  // Rough SpO2 ratio-of-ratios accumulation
-  irMin = min(irMin, irValue);
-  irMax = max(irMax, irValue);
-  redMin = min(redMin, redValue);
-  redMax = max(redMax, redValue);
-  irSum += irValue;
-  redSum += redValue;
-  spo2SampleCount++;
-
-  uint32_t now = millis();
-  if (now - spo2WindowStartMs >= 1000 && spo2SampleCount > 10) {
-    float irDc = irSum / (float)spo2SampleCount;
-    float redDc = redSum / (float)spo2SampleCount;
-    float irAc = irMax - irMin;
-    float redAc = redMax - redMin;
-    if (irDc > 0 && redDc > 0 && irAc > 0) {
-      float r = (redAc / redDc) / (irAc / irDc);
-      float estimate = 110.0f - 25.0f * r;
-      currentSpo2 = constrain(estimate, 80.0f, 100.0f);
-    }
-    irMin = redMin = 999999;
-    irMax = redMax = 0;
-    irSum = redSum = 0;
-    spo2SampleCount = 0;
-    spo2WindowStartMs = now;
+  static uint32_t lastDebugMs = 0;
+  uint32_t nowDbg = millis();
+  if (nowDbg - lastDebugMs >= 500) {
+    lastDebugMs = nowDbg;
+    Serial.printf("[HR] IRdc=%.0f Reddc=%.0f finger=%s BPM=%.0f SpO2=%.0f\n", irDC,
+                  redDC, fingerPresent ? "yes" : "no", currentBpm, currentSpo2);
   }
 }
 
@@ -249,7 +373,8 @@ void notifyVitals() {
   pkt.tMs = millis();
   pkt.heartRate = currentBpm;
   pkt.spo2 = currentSpo2;
-  pkt.bodyTempC = readBodyTempC();
+  lastBodyTempC = readBodyTempC();
+  pkt.bodyTempC = lastBodyTempC;
   vitalsChar->setValue((uint8_t*)&pkt, sizeof(pkt));
   if (deviceConnected) vitalsChar->notify();
 }
@@ -300,8 +425,24 @@ void updateOled() {
   display.println();
 
   display.setTextSize(1);
-  display.printf("HR: %.0f bpm\n", currentBpm);
-  display.printf("SpO2: %.0f %%\n", currentSpo2);
+  if (!fingerPresent) {
+    display.println("HR: -- (no finger)");
+    display.println("SpO2: --");
+  } else {
+    // Rolling averages need a few beats before they're a stable reading —
+    // show a loading indicator until each has enough history.
+    if (ibiCount < IBI_HISTORY) {
+      display.println("HR: ... bpm");
+    } else {
+      display.printf("HR: %.0f bpm\n", currentBpm);
+    }
+    if (ampCount < AMP_HISTORY) {
+      display.println("SpO2: ... %");
+    } else {
+      display.printf("SpO2: %.0f %%\n", currentSpo2);
+    }
+  }
+  display.printf("Body: %.1f C\n", lastBodyTempC);
   if (bmeOk) {
     display.printf("Amb: %.1f C  %.0f%%\n", bme.readTemperature(), bme.readHumidity());
     display.printf("P: %.0f hPa\n", bme.readPressure() / 100.0f);
@@ -316,12 +457,11 @@ void setup() {
   Serial.println("\n[BOOT] Personal Health Companion");
 
   Wire.begin(I2C_SDA, I2C_SCL);
+  Wire.setClock(400000); // Fast Mode I2C — all sensors on this bus support it
   randomSeed(analogRead(0));
 
   setupSensors();
   setupBle();
-
-  spo2WindowStartMs = millis();
 }
 
 void loop() {

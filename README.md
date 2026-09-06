@@ -41,9 +41,8 @@ Built with **Arduino IDE** + **ESP32 Arduino Core 3.3.11**.
    - Upload Speed: `921600` (drop to `115200` if uploads fail)
 2. **Install libraries** via Library Manager (Sketch → Include Library →
    Manage Libraries), search and install:
-   - `NimBLE-Arduino` (h2zero) — **install version 1.4.x, not 2.x**; the
-     library's connection-callback API changed in 2.0 and the sketch uses
-     the pre-2.0 signatures. Use the version dropdown in the install dialog.
+   - `NimBLE-Arduino` (h2zero) — install the latest (2.x); the sketch targets
+     the current 2.x callback API.
    - `Adafruit BME280 Library`
    - `Adafruit Unified Sensor`
    - `Adafruit MPU6050`
