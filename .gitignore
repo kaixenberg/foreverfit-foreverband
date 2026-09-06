@@ -1,0 +1,25 @@
+# PlatformIO
+firmware/**/.pio/
+firmware/**/.vscode/.browse.c_cpp.db*
+firmware/**/.vscode/c_cpp_properties.json
+firmware/**/.vscode/launch.json
+firmware/**/.vscode/ipch
+
+# Flutter / Dart
+app/**/.dart_tool/
+app/**/.flutter-plugins
+app/**/.flutter-plugins-dependencies
+app/**/.packages
+app/**/build/
+app/**/android/.gradle/
+app/**/android/local.properties
+app/**/ios/Pods/
+app/**/ios/.symlinks/
+app/**/ios/Flutter/Flutter.framework
+app/**/ios/Flutter/Flutter.podspec
+app/**/*.iml
+app/**/.idea/
+
+# General
+.DS_Store
+*.log
