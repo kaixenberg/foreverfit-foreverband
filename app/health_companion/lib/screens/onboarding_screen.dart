@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:provider/provider.dart';
 
+import '../domain/units.dart';
+import '../storage/app_settings_store.dart';
 import 'profile_medical_screen.dart';
 
 const _corePermissions = [
@@ -44,11 +47,15 @@ final _permissionRationale = {
   ),
 };
 
+const _pageCount = 3;
+
 /// First-launch flow — gated by OnboardingGate on
-/// `!UserProfileStore.onboardingCompleted`. Two pages: permissions (with
-/// rationale, best-effort — denial never blocks continuing, matching
-/// how the rest of the app treats permission denial as graceful
-/// degradation, not a hard stop) and profile/medical info.
+/// `!UserProfileStore.onboardingCompleted`. Three pages: units (asked
+/// first so weight/height on the next-but-one page are already shown in
+/// the unit the user actually wants), permissions (with rationale,
+/// best-effort — denial never blocks continuing, matching how the rest
+/// of the app treats permission denial as graceful degradation, not a
+/// hard stop), and profile/medical info.
 class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({super.key});
 
@@ -85,8 +92,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     await _refreshStatuses();
   }
 
-  void _goToPage2() {
-    _pageController.animateToPage(1,
+  void _nextPage() {
+    _pageController.nextPage(
         duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
   }
 
@@ -104,10 +111,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   physics: const NeverScrollableScrollPhysics(),
                   onPageChanged: (i) => setState(() => _page = i),
                   children: [
+                    _UnitsPage(onContinue: _nextPage),
                     _PermissionsPage(
                       statuses: _statuses,
                       onRequestAll: _requestAll,
-                      onContinue: _goToPage2,
+                      onContinue: _nextPage,
                     ),
                     const ProfileMedicalScreen(isOnboarding: true),
                   ],
@@ -118,7 +126,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    for (var i = 0; i < 2; i++)
+                    for (var i = 0; i < _pageCount; i++)
                       Container(
                         margin: const EdgeInsets.symmetric(horizontal: 3),
                         width: 8,
@@ -137,6 +145,62 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _UnitsPage extends StatelessWidget {
+  const _UnitsPage({required this.onContinue});
+
+  final VoidCallback onContinue;
+
+  String _label(UnitSystem system) {
+    switch (system) {
+      case UnitSystem.metric:
+        return 'Metric (kg, cm, °C)';
+      case UnitSystem.imperial:
+        return 'Imperial (lb, in, °F)';
+      case UnitSystem.system:
+        return 'Use device locale';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final settings = context.watch<AppSettingsStore>();
+    return ListView(
+      padding: const EdgeInsets.all(20),
+      children: [
+        Text('Which units do you use?',
+            style: Theme.of(context).textTheme.headlineSmall),
+        const SizedBox(height: 8),
+        Text(
+          "So weight and height come up already in the unit you're "
+          'comfortable with — you can change this anytime in Settings.',
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+        const SizedBox(height: 16),
+        RadioGroup<UnitSystem>(
+          groupValue: settings.unitSystem,
+          onChanged: (value) {
+            if (value != null) settings.setUnitSystem(value);
+          },
+          child: Column(
+            children: [
+              for (final system in UnitSystem.values)
+                RadioListTile<UnitSystem>(
+                  title: Text(_label(system)),
+                  value: system,
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        FilledButton(
+          onPressed: onContinue,
+          child: const Text('Continue'),
+        ),
+      ],
     );
   }
 }

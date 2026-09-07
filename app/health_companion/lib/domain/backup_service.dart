@@ -25,6 +25,15 @@ const exportableBoxNames = [
 
 const _appVersion = '0.1.0';
 
+/// Hive's `box<E>()` throws unless `E` exactly matches the type the box
+/// was originally opened with (`Hive.box(name)` alone resolves `E` to
+/// `dynamic`, which does NOT match a box opened as `Box<Map>` — this bit
+/// the first version of this file: every one of these boxes is really
+/// `Box<Map>` except `step_daily_history`, which StepCounterService
+/// opens as `Box<int>`).
+Box _openedBox(String name) =>
+    name == 'step_daily_history' ? Hive.box<int>(name) : Hive.box<Map>(name);
+
 /// Local-only, unencrypted JSON export/import via Android's Storage
 /// Access Framework (SAF) — the user picks the real destination/source
 /// file each time, so nothing is written to or read from app-internal
@@ -38,7 +47,7 @@ class BackupService {
     final boxes = <String, Map<String, dynamic>>{};
     for (final name in exportableBoxNames) {
       if (!Hive.isBoxOpen(name)) continue;
-      final box = Hive.box(name);
+      final box = _openedBox(name);
       final entries = <String, dynamic>{};
       for (final key in box.keys) {
         entries[key.toString()] = box.get(key);
@@ -85,7 +94,7 @@ class BackupService {
 
     for (final name in exportableBoxNames) {
       if (!Hive.isBoxOpen(name)) continue;
-      final box = Hive.box(name);
+      final box = _openedBox(name);
       await box.clear();
       final entries = boxes[name] as Map<String, dynamic>?;
       if (entries == null) continue;

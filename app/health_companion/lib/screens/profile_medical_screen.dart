@@ -8,6 +8,17 @@ import '../storage/metrics_store.dart';
 import '../storage/user_profile_store.dart';
 
 const _sexOptions = ['Male', 'Female', 'Other', 'Prefer not to say'];
+const _bloodTypeOptions = [
+  'A+',
+  'A-',
+  'B+',
+  'B-',
+  'AB+',
+  'AB-',
+  'O+',
+  'O-',
+  'Unknown'
+];
 
 /// One combined form — name/DOB/sex, weight/height, and the Medical ID
 /// fields (blood type/allergies/conditions/notes) — used in two places:
@@ -30,11 +41,11 @@ class _ProfileMedicalScreenState extends State<ProfileMedicalScreen> {
   final _nameController = TextEditingController();
   final _weightController = TextEditingController();
   final _heightController = TextEditingController();
-  final _bloodTypeController = TextEditingController();
   final _allergiesController = TextEditingController();
   final _conditionsController = TextEditingController();
   final _notesController = TextEditingController();
   String _sex = '';
+  String _bloodType = '';
   DateTime? _dateOfBirth;
   bool _prefilled = false;
 
@@ -43,7 +54,6 @@ class _ProfileMedicalScreenState extends State<ProfileMedicalScreen> {
     _nameController.dispose();
     _weightController.dispose();
     _heightController.dispose();
-    _bloodTypeController.dispose();
     _allergiesController.dispose();
     _conditionsController.dispose();
     _notesController.dispose();
@@ -74,7 +84,7 @@ class _ProfileMedicalScreenState extends State<ProfileMedicalScreen> {
               .toStringAsFixed(1);
     }
     final medical = healthLog.medicalId;
-    _bloodTypeController.text = medical?.bloodType ?? '';
+    _bloodType = medical?.bloodType ?? '';
     _allergiesController.text = medical?.allergies ?? '';
     _conditionsController.text = medical?.conditions ?? '';
     _notesController.text = medical?.notes ?? '';
@@ -111,7 +121,7 @@ class _ProfileMedicalScreenState extends State<ProfileMedicalScreen> {
       await metrics.addHeightCm(parseHeightToCm(heightInput, unitSystem));
     }
     await healthLog.saveMedicalId(MedicalIdProfile(
-      bloodType: _bloodTypeController.text.trim(),
+      bloodType: _bloodType,
       allergies: _allergiesController.text.trim(),
       conditions: _conditionsController.text.trim(),
       notes: _notesController.text.trim(),
@@ -173,7 +183,7 @@ class _ProfileMedicalScreenState extends State<ProfileMedicalScreen> {
         ),
         const SizedBox(height: 12),
         DropdownButtonFormField<String>(
-          initialValue: _sex.isEmpty ? null : _sex,
+          initialValue: _sexOptions.contains(_sex) ? _sex : null,
           decoration: const InputDecoration(
               labelText: 'Sex', border: OutlineInputBorder()),
           items: [
@@ -212,13 +222,18 @@ class _ProfileMedicalScreenState extends State<ProfileMedicalScreen> {
           style: Theme.of(context).textTheme.bodySmall,
         ),
         const SizedBox(height: 12),
-        TextField(
-          controller: _bloodTypeController,
+        DropdownButtonFormField<String>(
+          initialValue:
+              _bloodTypeOptions.contains(_bloodType) ? _bloodType : null,
           decoration: const InputDecoration(
             labelText: 'Blood type',
-            hintText: 'e.g. O+',
             border: OutlineInputBorder(),
           ),
+          items: [
+            for (final option in _bloodTypeOptions)
+              DropdownMenuItem(value: option, child: Text(option)),
+          ],
+          onChanged: (value) => setState(() => _bloodType = value ?? ''),
         ),
         const SizedBox(height: 12),
         TextField(
