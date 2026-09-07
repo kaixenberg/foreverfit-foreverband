@@ -55,7 +55,8 @@ class _ImminentWarningScreenState extends State<ImminentWarningScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Icon(Icons.warning_amber_rounded, color: scheme.onError, size: 56),
+                Icon(Icons.warning_amber_rounded,
+                    color: scheme.onError, size: 56),
                 const SizedBox(height: 12),
                 Text(
                   hazards.length == 1
@@ -131,10 +132,8 @@ class _HazardCard extends StatelessWidget {
                 const SizedBox(width: 8),
                 Text(
                   guidance.title,
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleMedium
-                      ?.copyWith(fontWeight: FontWeight.bold, color: scheme.error),
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold, color: scheme.error),
                 ),
               ],
             ),

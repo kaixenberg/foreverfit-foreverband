@@ -6,7 +6,8 @@ import 'package:flutter/services.dart';
 /// so imminent-hazard warnings are audible even when the phone is on
 /// silent or in Do Not Disturb — the same mechanism alarm-clock apps use.
 class AlarmSoundService {
-  static const _channel = MethodChannel('com.example.health_companion/alarm_volume');
+  static const _channel =
+      MethodChannel('com.example.health_companion/alarm_volume');
 
   final AudioPlayer _player = AudioPlayer();
   int? _previousAlarmVolume;
@@ -17,7 +18,8 @@ class AlarmSoundService {
     _playing = true;
 
     try {
-      _previousAlarmVolume = await _channel.invokeMethod<int>('boostAlarmVolume');
+      _previousAlarmVolume =
+          await _channel.invokeMethod<int>('boostAlarmVolume');
     } catch (_) {
       // Non-Android platform or channel unavailable — playback still
       // proceeds at whatever volume the platform allows.

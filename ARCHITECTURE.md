@@ -276,6 +276,37 @@ the full training-pipeline writeups.
   phone app on this timeline, and cuts against the offline-first,
   privacy-preserving pitch if it ever needs cloud inference.
 
+## Visual design + Wellness detail screen (implemented)
+
+A cloned reference app (`app/mobile-app/` — OpenVitals, a native
+Kotlin/Health-Connect app, AGPL-3.0, gitignored here and never committed —
+see the repo's own README for what it is) was reviewed for possible reuse.
+Verdict: not reusable as a codebase (100% Kotlin vs. this app's 100%
+Dart/Flutter — "wiring in" our BLE/ML/disaster code would mean a full
+rewrite, not a port) and its AGPL license would obligate relicensing any
+derivative. Two things *were* worth pulling in, both reimplemented from
+scratch in Dart — no OpenVitals code was copied:
+
+- **Visual language** (`lib/theme/app_theme.dart`): a warm cream/peach
+  palette, large-radius cards, circular icon badges, a colored accent
+  strip per stat card, and pill-shaped buttons — replacing the previous
+  default Material 3 teal seed theme. Applied app-wide via `ThemeData`
+  (card/button/nav-bar/input themes), so individual screens needed no
+  per-widget changes beyond `MetricCard` itself (icon badge + accent
+  strip + optional `onTap`) and swapping two hardcoded `Colors.red`
+  error texts for `colorScheme.error`.
+- **Wellness detail screen** (`lib/screens/wellness_detail_screen.dart`):
+  tapping the Dashboard's Wellness card now opens a screen explaining the
+  score — a headline, a plain-English reasoning paragraph, and a
+  per-signal breakdown (heart rate, SpO2, body temp, ambient heat index,
+  heat-stress combination), each with its own detail text. Backed by
+  `lib/models/wellness_snapshot.dart`, built once in `DashboardScreen`
+  from the same warning flags that already feed the wellness-score
+  formula, so the card and the detail screen can never disagree. The
+  score-plus-reasoning *shape* of this screen is the one idea taken from
+  OpenVitals' Daily Readiness screen; the content, data, and code are
+  this app's own.
+
 ## Roadmap (not yet implemented)
 
 UI stubs exist for everything below (Map's Air Quality row, Health Log's
@@ -382,13 +413,15 @@ sih26-health-companion/
         ├── ml/{fall_detector_service.dart, activity_classifier_service.dart}
         ├── services/{alarm_sound_service.dart, baseline_service.dart}
         ├── utils/heat_index.dart
+        ├── theme/app_theme.dart
+        ├── models/{sensor_reading.dart, wellness_snapshot.dart}
         ├── disaster/{disaster_service.dart, india_hazard_data.dart,
         │   hazard_type.dart, imminent_warning_gate.dart}
-        ├── models/sensor_reading.dart
         ├── storage/history_store.dart
         ├── screens/
         │   ├── home_shell.dart              # bottom-nav shell, app's home route
         │   ├── dashboard_screen.dart
+        │   ├── wellness_detail_screen.dart
         │   ├── map_screen.dart
         │   ├── health_log_screen.dart       # stub tiles
         │   ├── settings_screen.dart         # wearable mgmt + emergency contact stub

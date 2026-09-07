@@ -18,6 +18,10 @@ app/**/ios/Flutter/Flutter.podspec
 app/**/*.iml
 app/**/.idea/
 
+# Third-party reference clone (OpenVitals) — not part of this project,
+# kept locally for design/feature reference only. See ARCHITECTURE.md.
+app/mobile-app/
+
 # General
 .DS_Store
 *.log

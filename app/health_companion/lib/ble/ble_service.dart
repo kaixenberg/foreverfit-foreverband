@@ -86,7 +86,8 @@ class BleService extends ChangeNotifier {
 
       final services = await device.discoverServices();
       final service = services.firstWhere(
-        (s) => s.uuid.toString().toLowerCase() ==
+        (s) =>
+            s.uuid.toString().toLowerCase() ==
             HealthCompanionProtocol.serviceUuid,
         orElse: () => throw Exception('Health Companion service not found'),
       );

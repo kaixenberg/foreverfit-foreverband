@@ -70,7 +70,8 @@ class DisasterRisk {
     if ((nearbyMaxQuakeMagnitude ?? 0) >= 5.5) {
       hazards.add(HazardType.earthquake);
     }
-    if (hazardProfile.floodProne && (precipitationProbabilityPercent ?? 0) > 85) {
+    if (hazardProfile.floodProne &&
+        (precipitationProbabilityPercent ?? 0) > 85) {
       hazards.add(HazardType.flood);
     }
     if (hazardProfile.cycloneProne && (windSpeedKmh ?? 0) > 60) {
@@ -270,8 +271,7 @@ class DisasterService extends ChangeNotifier {
           .toIso8601String()
           .split('.')
           .first;
-      final uri =
-          Uri.https('earthquake.usgs.gov', '/fdsnws/event/1/query', {
+      final uri = Uri.https('earthquake.usgs.gov', '/fdsnws/event/1/query', {
         'format': 'geojson',
         'latitude': position.latitude.toString(),
         'longitude': position.longitude.toString(),

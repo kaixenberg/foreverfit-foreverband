@@ -10,6 +10,7 @@ import 'screens/home_shell.dart';
 import 'sensors/phone_motion_service.dart';
 import 'services/baseline_service.dart';
 import 'storage/history_store.dart';
+import 'theme/app_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -48,16 +49,8 @@ class HealthCompanionApp extends StatelessWidget {
       ],
       child: MaterialApp(
         title: 'Health Companion',
-        theme: ThemeData(
-          colorSchemeSeed: Colors.teal,
-          useMaterial3: true,
-          brightness: Brightness.light,
-        ),
-        darkTheme: ThemeData(
-          colorSchemeSeed: Colors.teal,
-          useMaterial3: true,
-          brightness: Brightness.dark,
-        ),
+        theme: AppTheme.light,
+        darkTheme: AppTheme.dark,
         home: const ImminentWarningGate(child: HomeShell()),
       ),
     );

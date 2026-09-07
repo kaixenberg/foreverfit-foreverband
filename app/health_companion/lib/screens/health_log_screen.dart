@@ -7,15 +7,39 @@ class HealthLogScreen extends StatelessWidget {
   const HealthLogScreen({super.key});
 
   static const _stubs = [
-    (Icons.monitor_weight_outlined, 'Weight', 'Track weight over time with BMI'),
+    (
+      Icons.monitor_weight_outlined,
+      'Weight',
+      'Track weight over time with BMI'
+    ),
     (Icons.height, 'Height', 'One-time or periodic height entry'),
-    (Icons.favorite_border, 'Blood pressure', 'Log systolic/diastolic readings'),
-    (Icons.water_drop_outlined, 'Blood glucose', 'Track glucose readings over time'),
-    (Icons.vaccines_outlined, 'Insulin log', 'Dose, type, and time of insulin doses'),
-    (Icons.medication_outlined, 'Medications', 'Schedule, dosage, and refill reminders'),
+    (
+      Icons.favorite_border,
+      'Blood pressure',
+      'Log systolic/diastolic readings'
+    ),
+    (
+      Icons.water_drop_outlined,
+      'Blood glucose',
+      'Track glucose readings over time'
+    ),
+    (
+      Icons.vaccines_outlined,
+      'Insulin log',
+      'Dose, type, and time of insulin doses'
+    ),
+    (
+      Icons.medication_outlined,
+      'Medications',
+      'Schedule, dosage, and refill reminders'
+    ),
     (Icons.bedtime_outlined, 'Sleep', 'Duration and quality tracking'),
     (Icons.local_drink_outlined, 'Hydration', 'Daily water intake'),
-    (Icons.badge_outlined, 'Medical ID', 'Blood type, allergies, conditions — for responders'),
+    (
+      Icons.badge_outlined,
+      'Medical ID',
+      'Blood type, allergies, conditions — for responders'
+    ),
   ];
 
   @override

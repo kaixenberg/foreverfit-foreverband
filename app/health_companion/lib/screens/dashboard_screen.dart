@@ -5,11 +5,14 @@ import 'package:provider/provider.dart';
 import '../ble/ble_service.dart';
 import '../ml/activity_classifier_service.dart';
 import '../ml/fall_detector_service.dart';
+import '../models/wellness_snapshot.dart';
 import '../services/baseline_service.dart';
 import '../storage/history_store.dart';
+import '../theme/app_theme.dart';
 import '../utils/heat_index.dart';
 import '../widgets/metric_card.dart';
 import 'scan_connect_screen.dart';
+import 'wellness_detail_screen.dart';
 
 /// Heart-rate ceiling above which a reading is flagged, conditioned on
 /// what the user is currently doing — a fixed threshold can't tell
@@ -62,6 +65,58 @@ int? _wellnessScore({
   return score.clamp(0, 100);
 }
 
+WellnessSnapshot _buildWellnessSnapshot({
+  required int? score,
+  required bool hasFingerReading,
+  required double heartRate,
+  required int heartRateCeiling,
+  required bool heartRateWarn,
+  required double spo2,
+  required bool spo2Warn,
+  required double bodyTemp,
+  required bool bodyTempWarn,
+  required bool ambientWarn,
+  required bool heatStressWarn,
+}) {
+  final factors = <WellnessFactor>[
+    WellnessFactor(
+      label: 'Heart rate',
+      warn: heartRateWarn,
+      detail: !hasFingerReading
+          ? 'No finger detected — not scored right now.'
+          : '${heartRate.toStringAsFixed(0)} bpm (normal range up to '
+              '$heartRateCeiling for your current activity).',
+    ),
+    WellnessFactor(
+      label: 'SpO2',
+      warn: spo2Warn,
+      detail: !hasFingerReading
+          ? 'No finger detected — not scored right now.'
+          : '${spo2.toStringAsFixed(0)}% (below 92% is flagged).',
+    ),
+    WellnessFactor(
+      label: 'Body temperature',
+      warn: bodyTempWarn,
+      detail: '${bodyTemp.toStringAsFixed(1)}°C (normal range 35.5–37.8°C).',
+    ),
+    WellnessFactor(
+      label: 'Ambient heat index',
+      warn: ambientWarn,
+      detail: ambientWarn
+          ? 'Feels-like temperature has reached NOAA "danger" level.'
+          : 'Within a safe range.',
+    ),
+    WellnessFactor(
+      label: 'Heat-stress combination',
+      warn: heatStressWarn,
+      detail: heatStressWarn
+          ? 'High heat index together with an elevated body temperature.'
+          : 'No combined heat-stress signal right now.',
+    ),
+  ];
+  return WellnessSnapshot(score: score, factors: factors);
+}
+
 class DashboardScreen extends StatelessWidget {
   const DashboardScreen({super.key});
 
@@ -92,7 +147,8 @@ class DashboardScreen extends StatelessWidget {
     final spo2Warn = hasFingerReading && spo2 < 92 && spo2 > 0;
     final bodyTempWarn = vitals != null && (bodyTemp > 37.8 || bodyTemp < 35.5);
     final ambientWarn = env != null &&
-        heatRiskLevel(heatIndexCelsius(env.ambientTempC, env.humidity)) == HeatRisk.danger;
+        heatRiskLevel(heatIndexCelsius(env.ambientTempC, env.humidity)) ==
+            HeatRisk.danger;
     final heatStressWarn = env != null &&
         vitals != null &&
         isHeatStressRisk(
@@ -104,6 +160,19 @@ class DashboardScreen extends StatelessWidget {
       hasVitals: vitals != null,
       heartRateWarn: heartRateWarn,
       spo2Warn: spo2Warn,
+      bodyTempWarn: bodyTempWarn,
+      ambientWarn: ambientWarn,
+      heatStressWarn: heatStressWarn,
+    );
+    final wellnessSnapshot = _buildWellnessSnapshot(
+      score: wellnessScore,
+      hasFingerReading: hasFingerReading,
+      heartRate: heartRate,
+      heartRateCeiling: heartRateCeiling,
+      heartRateWarn: heartRateWarn,
+      spo2: spo2,
+      spo2Warn: spo2Warn,
+      bodyTemp: bodyTemp,
       bodyTempWarn: bodyTempWarn,
       ambientWarn: ambientWarn,
       heatStressWarn: heatStressWarn,
@@ -122,12 +191,15 @@ class DashboardScreen extends StatelessWidget {
                 : () => fallDetector.triggerManualSOS(),
           ),
           IconButton(
-            icon: Icon(connected ? Icons.bluetooth_disabled : Icons.bluetooth_searching),
+            icon: Icon(connected
+                ? Icons.bluetooth_disabled
+                : Icons.bluetooth_searching),
             tooltip: connected ? 'Disconnect' : 'Connect wearable',
             onPressed: connected
                 ? () => ble.disconnect()
                 : () => Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const ScanConnectScreen()),
+                      MaterialPageRoute(
+                          builder: (_) => const ScanConnectScreen()),
                     ),
           ),
         ],
@@ -135,7 +207,8 @@ class DashboardScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(12),
         children: [
-          if (fallDetector.alertActive) _FallAlertBanner(fallDetector: fallDetector),
+          if (fallDetector.alertActive)
+            _FallAlertBanner(fallDetector: fallDetector),
           if (!connected) _ConnectWearableBanner(),
           GridView.count(
             crossAxisCount: 2,
@@ -151,6 +224,7 @@ class DashboardScreen extends StatelessWidget {
                 unit: vitals != null && !hasFingerReading ? 'no finger' : 'bpm',
                 icon: Icons.favorite,
                 warn: heartRateWarn,
+                accentColor: AppTheme.accentPink,
               ),
               MetricCard(
                 label: 'SpO2',
@@ -158,6 +232,7 @@ class DashboardScreen extends StatelessWidget {
                 unit: vitals != null && !hasFingerReading ? 'no finger' : '%',
                 icon: Icons.bloodtype,
                 warn: spo2Warn,
+                accentColor: AppTheme.accentBlue,
               ),
               MetricCard(
                 label: 'Body temp',
@@ -165,6 +240,7 @@ class DashboardScreen extends StatelessWidget {
                 unit: '°C',
                 icon: Icons.thermostat,
                 warn: bodyTempWarn,
+                accentColor: AppTheme.accentCoral,
               ),
               MetricCard(
                 label: 'Ambient temp',
@@ -172,23 +248,27 @@ class DashboardScreen extends StatelessWidget {
                 unit: '°C',
                 icon: Icons.wb_sunny_outlined,
                 warn: ambientWarn,
+                accentColor: AppTheme.accentCoral,
               ),
               MetricCard(
                 label: 'Humidity',
                 value: env == null ? '--' : env.humidity.toStringAsFixed(0),
                 unit: '%',
                 icon: Icons.water_drop_outlined,
+                accentColor: AppTheme.accentTeal,
               ),
               MetricCard(
                 label: 'Pressure',
                 value: env == null ? '--' : env.pressureHPa.toStringAsFixed(0),
                 unit: 'hPa',
                 icon: Icons.speed,
+                accentColor: AppTheme.accentPurple,
               ),
             ],
           ),
           const SizedBox(height: 16),
-          Text('Wellness overview', style: Theme.of(context).textTheme.titleMedium),
+          Text('Wellness overview',
+              style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
           GridView.count(
             crossAxisCount: 3,
@@ -204,6 +284,13 @@ class DashboardScreen extends StatelessWidget {
                 unit: wellnessScore == null ? '' : '/100',
                 icon: Icons.favorite_border,
                 warn: wellnessScore != null && wellnessScore < 70,
+                accentColor: AppTheme.accentPink,
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        WellnessDetailScreen(snapshot: wellnessSnapshot),
+                  ),
+                ),
               ),
               MetricCard(
                 label: 'Activity',
@@ -212,6 +299,7 @@ class DashboardScreen extends StatelessWidget {
                     : _activityLabel(activityClassifier.current!),
                 unit: '',
                 icon: Icons.directions_walk,
+                accentColor: AppTheme.accentGreen,
               ),
               MetricCard(
                 label: 'Baseline',
@@ -220,11 +308,13 @@ class DashboardScreen extends StatelessWidget {
                     : baseline.heartRateMean!.toStringAsFixed(0),
                 unit: baseline.heartRateMean == null ? '' : 'bpm',
                 icon: Icons.show_chart,
+                accentColor: AppTheme.accentBlue,
               ),
             ],
           ),
           const SizedBox(height: 16),
-          Text('Heart rate — recent', style: Theme.of(context).textTheme.titleMedium),
+          Text('Heart rate — recent',
+              style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
           SizedBox(
             height: 140,
@@ -247,7 +337,8 @@ class _ConnectWearableBanner extends StatelessWidget {
       child: ListTile(
         leading: const Icon(Icons.watch_outlined),
         title: const Text('Wearable not connected'),
-        subtitle: const Text('Vitals and environment readings need the wearable.'),
+        subtitle:
+            const Text('Vitals and environment readings need the wearable.'),
         trailing: FilledButton(
           onPressed: () => Navigator.of(context).push(
             MaterialPageRoute(builder: (_) => const ScanConnectScreen()),

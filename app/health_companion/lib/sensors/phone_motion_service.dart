@@ -41,7 +41,8 @@ class PhoneMotionService extends ChangeNotifier {
   String? lastError;
 
   void start() {
-    _accelSub = accelerometerEventStream(samplingPeriod: _samplingPeriod).listen(
+    _accelSub =
+        accelerometerEventStream(samplingPeriod: _samplingPeriod).listen(
       (event) {
         _ax = event.x;
         _ay = event.y;

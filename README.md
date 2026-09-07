@@ -143,7 +143,13 @@ live data (Open-Meteo, USGS) when online.
       *this user's own* baseline, fills the "Baseline" card
 - [x] Composite wellness score: transparent formula (not a trained
       model) combining HR/SpO2/body-temp/heat-index into the "Wellness"
-      card
+      card; tap it for a detail screen explaining why, signal by signal
+      (`WellnessDetailScreen`)
+- [x] Warm visual theme (`lib/theme/app_theme.dart`) — rounded cards,
+      circular icon badges, colored accent strips, pill buttons —
+      applied app-wide; one idea (score + reasoning screen shape) drawn
+      from a reviewed reference app, reimplemented from scratch in Dart,
+      no code copied (see ARCHITECTURE.md)
 - [x] Heat-index formula (`lib/utils/heat_index.dart`) — the on-device
       heat-stress CNN originally planned was dropped after its dataset
       (WESAD) turned out to be a dead end on direct verification (dead

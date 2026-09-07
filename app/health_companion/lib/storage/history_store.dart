@@ -17,7 +17,8 @@ class HistoryStore {
     _envBox = await Hive.openBox<Map>(envBoxName);
   }
 
-  Future<void> addVitals(VitalsReading reading) => _vitalsBox.add(reading.toMap());
+  Future<void> addVitals(VitalsReading reading) =>
+      _vitalsBox.add(reading.toMap());
 
   Future<void> addEnv(EnvReading reading) => _envBox.add(reading.toMap());
 

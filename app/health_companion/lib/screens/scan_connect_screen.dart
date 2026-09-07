@@ -69,7 +69,7 @@ class _ScanConnectScreenState extends State<ScanConnectScreen> {
           padding: const EdgeInsets.all(24),
           child: Text(
             ble.lastError!,
-            style: const TextStyle(color: Colors.red),
+            style: TextStyle(color: Theme.of(context).colorScheme.error),
             textAlign: TextAlign.center,
           ),
         ),
@@ -140,7 +140,8 @@ class _PermissionRequest extends StatelessWidget {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 16),
-            ElevatedButton(onPressed: onRetry, child: const Text('Grant permissions')),
+            ElevatedButton(
+                onPressed: onRetry, child: const Text('Grant permissions')),
           ],
         ),
       ),

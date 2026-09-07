@@ -36,7 +36,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: ListTile(
               leading: const Icon(Icons.watch_outlined),
               title: const Text('Wearable'),
-              subtitle: const Text('Connect or manage your Health Companion device'),
+              subtitle:
+                  const Text('Connect or manage your Health Companion device'),
               trailing: const Icon(Icons.chevron_right),
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const ScanConnectScreen()),
@@ -44,7 +45,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
           const SizedBox(height: 16),
-          Text('Emergency contact', style: Theme.of(context).textTheme.titleMedium),
+          Text('Emergency contact',
+              style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 4),
           Text(
             'Not saved yet — this is a preview of what SOS escalation will '
@@ -71,12 +73,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 12),
           FilledButton(
             onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Emergency contacts are coming soon')),
+              const SnackBar(
+                  content: Text('Emergency contacts are coming soon')),
             ),
             child: const Text('Save'),
           ),
           const SizedBox(height: 24),
-          Text('Preview disaster warnings', style: Theme.of(context).textTheme.titleMedium),
+          Text('Preview disaster warnings',
+              style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 4),
           Text(
             'Shows the full-screen warning that normally appears only when '

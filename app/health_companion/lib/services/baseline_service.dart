@@ -57,8 +57,9 @@ class BaselineService extends ChangeNotifier {
     }
 
     final mean = samples.reduce((a, b) => a + b) / samples.length;
-    final variance = samples.map((v) => (v - mean) * (v - mean)).reduce((a, b) => a + b) /
-        samples.length;
+    final variance =
+        samples.map((v) => (v - mean) * (v - mean)).reduce((a, b) => a + b) /
+            samples.length;
     heartRateMean = mean;
     heartRateStd = math.max(math.sqrt(variance), _minStdBpm);
     notifyListeners();

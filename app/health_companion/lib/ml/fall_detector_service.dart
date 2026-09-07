@@ -30,7 +30,8 @@ class FallDetectorService extends ChangeNotifier {
   final PhoneMotionService phoneMotionService;
 
   static const int _windowLen = 60; // 3s @ 20Hz
-  static const String _modelAsset = 'assets/models/fall_detector_phone_only.tflite';
+  static const String _modelAsset =
+      'assets/models/fall_detector_phone_only.tflite';
 
   // Tunable — matches the 0.5 threshold used when evaluating the trained
   // model (ml/train_fall_model_phone_only.py: 99% accuracy, 94% fall
@@ -72,7 +73,8 @@ class FallDetectorService extends ChangeNotifier {
     }
 
     phoneMotionService.addListener(_onPhoneUpdate);
-    _timer = Timer.periodic(const Duration(milliseconds: 500), (_) => _runInference());
+    _timer = Timer.periodic(
+        const Duration(milliseconds: 500), (_) => _runInference());
   }
 
   void _onPhoneUpdate() {

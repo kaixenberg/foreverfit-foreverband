@@ -46,8 +46,9 @@ class _MapScreenState extends State<MapScreen> {
     final disaster = context.watch<DisasterService>();
     final risk = disaster.risk;
     final position = disaster.lastPosition;
-    final center =
-        position != null ? LatLng(position.latitude, position.longitude) : _indiaCenter;
+    final center = position != null
+        ? LatLng(position.latitude, position.longitude)
+        : _indiaCenter;
 
     return Scaffold(
       appBar: AppBar(
@@ -79,7 +80,8 @@ class _MapScreenState extends State<MapScreen> {
                     ),
                     children: [
                       TileLayer(
-                        urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                        urlTemplate:
+                            'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                         userAgentPackageName: 'com.example.health_companion',
                         tileProvider: CachedTileProvider(
                           maxStale: const Duration(days: 30),
@@ -89,7 +91,8 @@ class _MapScreenState extends State<MapScreen> {
                       if (position != null)
                         MarkerLayer(markers: [
                           Marker(
-                            point: LatLng(position.latitude, position.longitude),
+                            point:
+                                LatLng(position.latitude, position.longitude),
                             width: 36,
                             height: 36,
                             child: const Icon(Icons.my_location,
@@ -104,7 +107,8 @@ class _MapScreenState extends State<MapScreen> {
                     padding: const EdgeInsets.all(12),
                     child: Text(
                       disaster.lastError!,
-                      style: const TextStyle(color: Colors.red),
+                      style:
+                          TextStyle(color: Theme.of(context).colorScheme.error),
                       textAlign: TextAlign.center,
                     ),
                   )
@@ -234,7 +238,8 @@ class _StubRow extends StatelessWidget {
           Icon(icon, size: 18, color: muted),
           const SizedBox(width: 8),
           Expanded(child: Text(label, style: TextStyle(color: muted))),
-          Text('Coming soon', style: TextStyle(color: muted, fontStyle: FontStyle.italic)),
+          Text('Coming soon',
+              style: TextStyle(color: muted, fontStyle: FontStyle.italic)),
         ],
       ),
     );
@@ -264,9 +269,8 @@ class _RiskRow extends StatelessWidget {
         freshnessLabel = 'live';
         break;
       case DataFreshness.cachedStale:
-        freshnessLabel = asOf != null
-            ? 'cached from ${_timeAgo(asOf!)}'
-            : 'cached';
+        freshnessLabel =
+            asOf != null ? 'cached from ${_timeAgo(asOf!)}' : 'cached';
         break;
       case DataFreshness.staticOnly:
         // Distinct from "couldn't fetch live data" — these fields
@@ -288,7 +292,8 @@ class _RiskRow extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
-              Text(freshnessLabel, style: Theme.of(context).textTheme.bodySmall),
+              Text(freshnessLabel,
+                  style: Theme.of(context).textTheme.bodySmall),
             ],
           ),
         ],

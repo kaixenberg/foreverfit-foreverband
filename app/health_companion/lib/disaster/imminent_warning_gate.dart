@@ -27,7 +27,8 @@ class _ImminentWarningGateState extends State<ImminentWarningGate> {
     final disaster = context.watch<DisasterService>();
     final hazards = disaster.risk?.imminentHazards ?? const <HazardType>[];
 
-    WidgetsBinding.instance.addPostFrameCallback((_) => _maybeShow(hazards, disaster));
+    WidgetsBinding.instance
+        .addPostFrameCallback((_) => _maybeShow(hazards, disaster));
 
     return widget.child;
   }
