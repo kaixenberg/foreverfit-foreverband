@@ -378,15 +378,31 @@ Health Connect:
   box when the next day starts, so a trend builds going forward (no
   retroactive backfill — the sensor only ever reports "since boot").
 - **`lib/screens/metric_history_screen.dart`**: one generic chart + stats
-  + period-selector (7 days/30 days/all time) screen, reused for weight,
-  height, body fat, hydration, and steps rather than five bespoke
-  screens. `lib/screens/metric_detail_screens.dart` has the five thin
-  per-metric wrappers that each just supply data + an optional "log a new
-  value" action (a shared dialog for weight/height/body-fat via
+  + period-selector screen, reused for every metric (weight, height,
+  body fat, hydration, steps, heart rate) rather than a bespoke screen
+  per metric:
+  - **Time Period card**: preset chips (Last 7 Days/Last Month/Last 3
+    Months/All Time) plus a **Custom Range** button
+    (`showDateRangePicker`) for an arbitrary start/end.
+  - **Summary row**: Avg / Range (min–max combined into one value, not
+    two separate tiles) / Change (colored + trending-up/down icon based
+    on sign).
+  - **Chart**: `fl_chart` with real axis titles (Y-axis values, X-axis
+    dates sampled at ~4 points across the range), a light horizontal
+    grid, a shaded area under the curve, a dashed least-squares linear
+    trend line behind the real data line, and `LineTouchData` tooltips
+    (tap a point for its exact value + date). Each metric gets its own
+    line color (`accentColor` param) matching its Dashboard card's accent
+    for visual continuity between the card and its chart.
+  - **Statistics card**: Average / Total Entries / Minimum / Maximum as a
+    2x2 icon+label+value grid.
+  `lib/screens/metric_detail_screens.dart` has the six thin per-metric
+  wrappers that each just supply data + accent color + an optional "log a
+  new value" action (a shared dialog for weight/height/body-fat via
   `lib/widgets/log_value_dialog.dart`, quick-add chips for hydration,
-  nothing for steps since it's automatic). Tapping a Dashboard card now
-  opens its history screen rather than a log dialog directly, so logging
-  and trend-viewing share one entry point.
+  nothing for steps/heart rate since neither is manually logged). Tapping
+  a Dashboard card now opens its history screen rather than a log dialog
+  directly, so logging and trend-viewing share one entry point.
 - **Dashboard card layout**: Wellness overview (3 cards) is a
   horizontally scrollable row of fixed-width rectangular cards (`_CardRow`
   in `dashboard_screen.dart`) — 3-per-row `GridView`s were truncating

@@ -5,6 +5,7 @@ import '../ble/ble_service.dart';
 import '../services/step_counter_service.dart';
 import '../storage/history_store.dart';
 import '../storage/metrics_store.dart';
+import '../theme/app_theme.dart';
 import '../widgets/log_value_dialog.dart';
 import 'metric_history_screen.dart';
 
@@ -22,6 +23,7 @@ class WeightHistoryScreen extends StatelessWidget {
       title: 'Weight',
       unit: 'kg',
       points: metrics.historyOfType('weight'),
+      accentColor: AppTheme.accentCoral,
       logAction: FilledButton.icon(
         icon: const Icon(Icons.add),
         label: const Text('Log weight'),
@@ -45,6 +47,7 @@ class HeightHistoryScreen extends StatelessWidget {
       title: 'Height',
       unit: 'cm',
       points: metrics.historyOfType('height'),
+      accentColor: AppTheme.accentPurple,
       logAction: FilledButton.icon(
         icon: const Icon(Icons.add),
         label: const Text('Log height'),
@@ -68,6 +71,7 @@ class BodyFatHistoryScreen extends StatelessWidget {
       title: 'Body fat',
       unit: '%',
       points: metrics.historyOfType('bodyFat'),
+      accentColor: AppTheme.accentTeal,
       logAction: FilledButton.icon(
         icon: const Icon(Icons.add),
         label: const Text('Log body fat'),
@@ -93,6 +97,7 @@ class HydrationHistoryScreen extends StatelessWidget {
       title: 'Hydration',
       unit: 'L',
       points: metrics.hydrationDailyTotals(),
+      accentColor: AppTheme.accentBlue,
       logAction: Wrap(
         spacing: 8,
         children: [
@@ -117,6 +122,7 @@ class StepsHistoryScreen extends StatelessWidget {
       title: 'Steps',
       unit: 'steps',
       points: steps.dailyHistory(),
+      accentColor: AppTheme.accentGreen,
     );
   }
 }
@@ -135,6 +141,7 @@ class HeartRateHistoryScreen extends StatelessWidget {
       title: 'Heart rate',
       unit: 'bpm',
       points: history.heartRateHistory(),
+      accentColor: AppTheme.accentPink,
     );
   }
 }

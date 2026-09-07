@@ -4,14 +4,16 @@ import 'package:intl/intl.dart';
 
 import '../models/metric_point.dart';
 
-enum _Period { week, month, all }
+enum _Period { week, month, threeMonths, all, custom }
 
 /// Generic timestamped-metric chart + stats screen — one shared
-/// implementation reused for weight, height, body fat, hydration, and
-/// steps, rather than a bespoke screen per metric. The period selector +
-/// stats-grid layout is the one idea taken from OpenVitals' per-metric
-/// chart screens, reimplemented from scratch here (AGPL, see
-/// ARCHITECTURE.md — no code copied).
+/// implementation reused for every metric (weight, height, body fat,
+/// hydration, steps, heart rate) rather than a bespoke screen per
+/// metric. Period selector (with a custom date-range picker), an
+/// avg/range/change summary, an interactive chart with a linear trend
+/// line, and a statistics grid — the layout is the one idea taken from
+/// OpenVitals' per-metric chart screens, reimplemented from scratch here
+/// (AGPL, see ARCHITECTURE.md — no code copied).
 class MetricHistoryScreen extends StatefulWidget {
   const MetricHistoryScreen({
     super.key,
@@ -19,32 +21,81 @@ class MetricHistoryScreen extends StatefulWidget {
     required this.unit,
     required this.points,
     this.logAction,
+    this.accentColor,
   });
 
   final String title;
   final String unit;
   final List<MetricPoint> points;
 
-  /// Shown above the chart when the metric supports adding a new entry
-  /// (weight/height/body-fat's "Log" button, hydration's quick-add
-  /// chips) — null for read-only metrics like steps.
+  /// Shown above the period selector when the metric supports adding a
+  /// new entry (weight/height/body-fat's "Log" button, hydration's
+  /// quick-add chips) — null for read-only metrics like steps or heart
+  /// rate.
   final Widget? logAction;
+
+  /// Line/dot color — defaults to the theme's primary color if omitted.
+  final Color? accentColor;
 
   @override
   State<MetricHistoryScreen> createState() => _MetricHistoryScreenState();
 }
 
 class _MetricHistoryScreenState extends State<MetricHistoryScreen> {
-  _Period _period = _Period.month;
+  _Period _period = _Period.all;
+  DateTimeRange? _customRange;
+
+  DateTime get _rangeStart {
+    final now = DateTime.now();
+    switch (_period) {
+      case _Period.week:
+        return now.subtract(const Duration(days: 7));
+      case _Period.month:
+        return now.subtract(const Duration(days: 30));
+      case _Period.threeMonths:
+        return now.subtract(const Duration(days: 90));
+      case _Period.all:
+        return DateTime.fromMillisecondsSinceEpoch(0);
+      case _Period.custom:
+        return _customRange?.start ?? DateTime.fromMillisecondsSinceEpoch(0);
+    }
+  }
+
+  DateTime get _rangeEnd {
+    if (_period == _Period.custom && _customRange != null) {
+      // Include the whole end day.
+      return _customRange!.end.add(const Duration(days: 1));
+    }
+    return DateTime.now().add(const Duration(minutes: 1));
+  }
+
+  Future<void> _pickCustomRange() async {
+    final now = DateTime.now();
+    final earliest = widget.points.isEmpty
+        ? now.subtract(const Duration(days: 365))
+        : widget.points.first.at;
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: earliest.isBefore(now)
+          ? earliest
+          : now.subtract(const Duration(days: 365)),
+      lastDate: now,
+      initialDateRange: _customRange,
+    );
+    if (picked != null) {
+      setState(() {
+        _customRange = picked;
+        _period = _Period.custom;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final cutoff = switch (_period) {
-      _Period.week => DateTime.now().subtract(const Duration(days: 7)),
-      _Period.month => DateTime.now().subtract(const Duration(days: 30)),
-      _Period.all => DateTime.fromMillisecondsSinceEpoch(0),
-    };
-    final filtered = widget.points.where((p) => p.at.isAfter(cutoff)).toList();
+    final filtered = widget.points
+        .where((p) => !p.at.isBefore(_rangeStart) && p.at.isBefore(_rangeEnd))
+        .toList();
+    final accent = widget.accentColor ?? Theme.of(context).colorScheme.primary;
 
     return Scaffold(
       appBar: AppBar(title: Text('${widget.title} history')),
@@ -55,38 +106,33 @@ class _MetricHistoryScreenState extends State<MetricHistoryScreen> {
             widget.logAction!,
             const SizedBox(height: 16),
           ],
-          Wrap(
-            spacing: 8,
-            children: [
-              for (final period in _Period.values)
-                ChoiceChip(
-                  label: Text(switch (period) {
-                    _Period.week => 'Last 7 days',
-                    _Period.month => 'Last 30 days',
-                    _Period.all => 'All time',
-                  }),
-                  selected: _period == period,
-                  onSelected: (_) => setState(() => _period = period),
-                ),
-            ],
+          _TimePeriodCard(
+            period: _period,
+            customRange: _customRange,
+            onSelect: (p) => setState(() => _period = p),
+            onCustomRange: _pickCustomRange,
           ),
           const SizedBox(height: 16),
           if (filtered.isEmpty)
             const Padding(
-              padding: EdgeInsets.symmetric(vertical: 32),
+              padding: EdgeInsets.symmetric(vertical: 48),
               child: Center(child: Text('No entries in this range yet.')),
             )
           else ...[
-            _StatsRow(points: filtered, unit: widget.unit),
+            _SummaryRow(points: filtered, unit: widget.unit),
             const SizedBox(height: 16),
-            SizedBox(height: 200, child: _Chart(points: filtered)),
-            const SizedBox(height: 8),
-            Text(
-              '${DateFormat.yMMMd().format(filtered.first.at)} — '
-              '${DateFormat.yMMMd().format(filtered.last.at)}',
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodySmall,
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(8, 16, 16, 8),
+                child: SizedBox(
+                  height: 220,
+                  child: _Chart(
+                      points: filtered, unit: widget.unit, color: accent),
+                ),
+              ),
             ),
+            const SizedBox(height: 16),
+            _StatisticsCard(points: filtered, unit: widget.unit),
           ],
         ],
       ),
@@ -94,8 +140,79 @@ class _MetricHistoryScreenState extends State<MetricHistoryScreen> {
   }
 }
 
-class _StatsRow extends StatelessWidget {
-  const _StatsRow({required this.points, required this.unit});
+class _TimePeriodCard extends StatelessWidget {
+  const _TimePeriodCard({
+    required this.period,
+    required this.customRange,
+    required this.onSelect,
+    required this.onCustomRange,
+  });
+
+  final _Period period;
+  final DateTimeRange? customRange;
+  final ValueChanged<_Period> onSelect;
+  final VoidCallback onCustomRange;
+
+  static const _presets = {
+    _Period.week: 'Last 7 Days',
+    _Period.month: 'Last Month',
+    _Period.threeMonths: 'Last 3 Months',
+    _Period.all: 'All Time',
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.calendar_today_outlined,
+                    size: 18, color: Theme.of(context).colorScheme.primary),
+                const SizedBox(width: 8),
+                Text('Time Period',
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleMedium
+                        ?.copyWith(fontWeight: FontWeight.w800)),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final entry in _presets.entries)
+                  ChoiceChip(
+                    label: Text(entry.value),
+                    selected: period == entry.key,
+                    onSelected: (_) => onSelect(entry.key),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              icon: const Icon(Icons.date_range_outlined),
+              label: Text(
+                period == _Period.custom && customRange != null
+                    ? '${DateFormat.MMMd().format(customRange!.start)} – '
+                        '${DateFormat.MMMd().format(customRange!.end)}'
+                    : 'Custom Range',
+              ),
+              onPressed: onCustomRange,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SummaryRow extends StatelessWidget {
+  const _SummaryRow({required this.points, required this.unit});
 
   final List<MetricPoint> points;
   final String unit;
@@ -107,56 +224,232 @@ class _StatsRow extends StatelessWidget {
     final min = values.reduce((a, b) => a < b ? a : b);
     final max = values.reduce((a, b) => a > b ? a : b);
     final change = points.last.value - points.first.value;
+    final changeColor = change == 0
+        ? null
+        : (change > 0 ? Colors.green.shade600 : Colors.red.shade600);
 
-    return Row(
-      children: [
-        Expanded(
-            child: _StatTile(
-                label: 'Average', value: '${avg.toStringAsFixed(1)} $unit')),
-        Expanded(
-            child: _StatTile(
-                label: 'Min', value: '${min.toStringAsFixed(1)} $unit')),
-        Expanded(
-            child: _StatTile(
-                label: 'Max', value: '${max.toStringAsFixed(1)} $unit')),
-        Expanded(
-          child: _StatTile(
-            label: 'Change',
-            value:
-                '${change >= 0 ? '+' : ''}${change.toStringAsFixed(1)} $unit',
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        child: IntrinsicHeight(
+          child: Row(
+            children: [
+              Expanded(
+                child: _SummaryTile(
+                  icon: Icons.arrow_forward,
+                  label: 'Avg',
+                  value: '${avg.toStringAsFixed(1)} $unit',
+                ),
+              ),
+              const VerticalDivider(width: 1),
+              Expanded(
+                child: _SummaryTile(
+                  icon: Icons.straighten,
+                  label: 'Range',
+                  value:
+                      '${min.toStringAsFixed(1)} – ${max.toStringAsFixed(1)}',
+                ),
+              ),
+              const VerticalDivider(width: 1),
+              Expanded(
+                child: _SummaryTile(
+                  icon: change >= 0 ? Icons.trending_up : Icons.trending_down,
+                  label: 'Change',
+                  value:
+                      '${change >= 0 ? '+' : ''}${change.toStringAsFixed(1)} $unit',
+                  color: changeColor,
+                ),
+              ),
+            ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SummaryTile extends StatelessWidget {
+  const _SummaryTile({
+    required this.icon,
+    required this.label,
+    required this.value,
+    this.color,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(icon,
+            size: 16, color: color ?? Theme.of(context).colorScheme.primary),
+        const SizedBox(height: 4),
+        Text(label, style: Theme.of(context).textTheme.bodySmall),
+        const SizedBox(height: 2),
+        Text(
+          value,
+          textAlign: TextAlign.center,
+          style: Theme.of(context)
+              .textTheme
+              .titleSmall
+              ?.copyWith(fontWeight: FontWeight.w800, color: color),
         ),
       ],
     );
   }
 }
 
-class _StatTile extends StatelessWidget {
-  const _StatTile({required this.label, required this.value});
+class _StatisticsCard extends StatelessWidget {
+  const _StatisticsCard({required this.points, required this.unit});
 
-  final String label;
-  final String value;
+  final List<MetricPoint> points;
+  final String unit;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Text(label, style: Theme.of(context).textTheme.bodySmall),
-        const SizedBox(height: 2),
-        Text(value,
-            style: Theme.of(context)
-                .textTheme
-                .titleSmall
-                ?.copyWith(fontWeight: FontWeight.w800)),
-      ],
+    final values = points.map((p) => p.value);
+    final avg = values.reduce((a, b) => a + b) / values.length;
+    final min = values.reduce((a, b) => a < b ? a : b);
+    final max = values.reduce((a, b) => a > b ? a : b);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.bar_chart,
+                    size: 18, color: Theme.of(context).colorScheme.primary),
+                const SizedBox(width: 8),
+                Text('Statistics',
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleMedium
+                        ?.copyWith(fontWeight: FontWeight.w800)),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: _StatBox(
+                    icon: Icons.arrow_forward,
+                    label: 'Average',
+                    value: '${avg.toStringAsFixed(1)} $unit',
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _StatBox(
+                    icon: Icons.donut_large_outlined,
+                    label: 'Total Entries',
+                    value: '${points.length}',
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: _StatBox(
+                    icon: Icons.arrow_downward,
+                    iconColor: Colors.blue.shade400,
+                    label: 'Minimum',
+                    value: '${min.toStringAsFixed(1)} $unit',
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _StatBox(
+                    icon: Icons.arrow_upward,
+                    iconColor: Colors.orange.shade400,
+                    label: 'Maximum',
+                    value: '${max.toStringAsFixed(1)} $unit',
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _StatBox extends StatelessWidget {
+  const _StatBox({
+    required this.icon,
+    required this.label,
+    required this.value,
+    this.iconColor,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color? iconColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon,
+              size: 16,
+              color: iconColor ?? Theme.of(context).colorScheme.primary),
+          const SizedBox(height: 6),
+          Text(label, style: Theme.of(context).textTheme.bodySmall),
+          const SizedBox(height: 2),
+          Text(value,
+              style: Theme.of(context)
+                  .textTheme
+                  .titleSmall
+                  ?.copyWith(fontWeight: FontWeight.w800)),
+        ],
+      ),
     );
   }
 }
 
 class _Chart extends StatelessWidget {
-  const _Chart({required this.points});
+  const _Chart({required this.points, required this.unit, required this.color});
 
   final List<MetricPoint> points;
+  final String unit;
+  final Color color;
+
+  /// Simple least-squares linear regression, endpoints only — the
+  /// dashed "overall direction" line behind the real data line.
+  List<FlSpot> _trendSpots(List<FlSpot> spots) {
+    if (spots.length < 2) return const [];
+    final n = spots.length;
+    final sumX = spots.fold(0.0, (s, p) => s + p.x);
+    final sumY = spots.fold(0.0, (s, p) => s + p.y);
+    final sumXY = spots.fold(0.0, (s, p) => s + p.x * p.y);
+    final sumXX = spots.fold(0.0, (s, p) => s + p.x * p.x);
+    final denom = n * sumXX - sumX * sumX;
+    if (denom == 0) return const [];
+    final slope = (n * sumXY - sumX * sumY) / denom;
+    final intercept = (sumY - slope * sumX) / n;
+    return [
+      FlSpot(spots.first.x, slope * spots.first.x + intercept),
+      FlSpot(spots.last.x, slope * spots.last.x + intercept),
+    ];
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -164,20 +457,92 @@ class _Chart extends StatelessWidget {
       for (var i = 0; i < points.length; i++)
         FlSpot(i.toDouble(), points[i].value),
     ];
+    final trend = _trendSpots(spots);
+    final scheme = Theme.of(context).colorScheme;
+    final maxIndex = (points.length - 1).clamp(1, 1 << 30);
 
     return LineChart(
       LineChartData(
-        titlesData: const FlTitlesData(show: false),
-        gridData: const FlGridData(show: false),
+        gridData: FlGridData(
+          horizontalInterval: null,
+          getDrawingHorizontalLine: (_) =>
+              FlLine(color: scheme.outline.withValues(alpha: 0.15)),
+          drawVerticalLine: false,
+        ),
         borderData: FlBorderData(show: false),
+        titlesData: FlTitlesData(
+          topTitles:
+              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          rightTitles:
+              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          leftTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 42,
+              getTitlesWidget: (value, meta) => Text(
+                value.toStringAsFixed(0),
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+          ),
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 26,
+              interval: (maxIndex / 3).clamp(1, double.infinity),
+              getTitlesWidget: (value, meta) {
+                final i = value.round();
+                if (i < 0 || i >= points.length) return const SizedBox();
+                return Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(
+                    DateFormat.Md().format(points[i].at),
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+        lineTouchData: LineTouchData(
+          touchTooltipData: LineTouchTooltipData(
+            getTooltipItems: (touchedSpots) => touchedSpots.map((spot) {
+              if (spot.barIndex != 0) return null; // skip the dashed trend line
+              final point = points[spot.spotIndex];
+              return LineTooltipItem(
+                '${point.value.toStringAsFixed(1)} $unit\n'
+                '${DateFormat.yMMMd().format(point.at)}',
+                TextStyle(
+                    color: scheme.onInverseSurface,
+                    fontWeight: FontWeight.bold),
+              );
+            }).toList(),
+          ),
+        ),
         lineBarsData: [
           LineChartBarData(
             spots: spots,
             isCurved: true,
-            dotData: FlDotData(show: points.length <= 20),
-            color: Theme.of(context).colorScheme.primary,
+            curveSmoothness: 0.25,
+            color: color,
             barWidth: 3,
+            dotData: FlDotData(
+              show: true,
+              getDotPainter: (spot, percent, bar, index) =>
+                  FlDotCirclePainter(radius: 3, color: color, strokeWidth: 0),
+            ),
+            belowBarData:
+                BarAreaData(show: true, color: color.withValues(alpha: 0.12)),
           ),
+          if (trend.isNotEmpty)
+            LineChartBarData(
+              spots: trend,
+              isCurved: false,
+              color: scheme.outline,
+              barWidth: 1.5,
+              dashArray: const [6, 4],
+              dotData: const FlDotData(show: false),
+            ),
         ],
       ),
     );

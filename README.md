@@ -175,12 +175,15 @@ tiles + a static state-level hazard baseline) and prefers live data
       ARCHITECTURE.md
 - [x] Per-metric history: tapping any Body & activity card (heart rate
       included, from either the vitals grid or this section) opens a
-      shared chart+stats+period-selector screen (7 days/30 days/all
-      time) with average/min/max/change — one generic screen reused for
-      all six metrics, not six bespoke ones. Replaces the old
-      always-on-screen "Heart rate — recent" sparkline, which was the
-      one metric getting special-cased dashboard space — see
-      ARCHITECTURE.md
+      shared chart+stats+period-selector screen — preset chips (7/30/90
+      days/all time) plus a custom date-range picker, an avg/range/change
+      summary, an interactive `fl_chart` graph (grid, axis labels, shaded
+      area, dashed linear trend line, tap-for-value tooltips) colored to
+      match the card's own accent, and an average/total-entries/min/max
+      statistics grid — one generic screen reused for all six metrics.
+      Replaces the old always-on-screen "Heart rate — recent" sparkline,
+      which was the one metric getting special-cased dashboard space —
+      see ARCHITECTURE.md
 - [x] Dashboard performance pass: `context.select` scoped rebuilds
       instead of one `context.watch` per provider, plus isolating the
       Steps card into its own widget — fixes visible lag found in live
