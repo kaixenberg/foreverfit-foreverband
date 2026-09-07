@@ -170,7 +170,17 @@ tiles + a static state-level hazard baseline) and prefers live data
       height, BMI (computed), body fat %, and hydration (with one-tap
       quick-add) log to Hive via `MetricsStore`; phone step count via the
       hardware step counter (`pedometer`), daily-reset logic handled
-      locally — see ARCHITECTURE.md
+      locally, with a growing daily-history archive — see ARCHITECTURE.md
+- [x] Per-metric history: tapping a Body & activity card opens a shared
+      chart+stats+period-selector screen (7 days/30 days/all time) with
+      average/min/max/change — one generic screen reused for all five
+      metrics, not five bespoke ones — see ARCHITECTURE.md
+- [x] Dashboard performance pass: `context.select` scoped rebuilds
+      instead of one `context.watch` per provider, plus isolating the
+      Steps card into its own widget — fixes visible lag found in live
+      device testing, caused by the whole dashboard rebuilding on every
+      fall-probability tick, activity-confidence tick, and (worst) every
+      single step — see ARCHITECTURE.md
 - [x] Heat-index formula (`lib/utils/heat_index.dart`) — the on-device
       heat-stress CNN originally planned was dropped after its dataset
       (WESAD) turned out to be a dead end on direct verification (dead

@@ -362,12 +362,11 @@ Health Connect:
 
 - **`lib/storage/metrics_store.dart`**: a `ChangeNotifier` Hive store
   (same offline-first pattern as `HistoryStore`) for weight, height, and
-  body fat % log entries, plus hydration entries. `bmi` is computed from
-  the latest logged weight + height (no separate stored field). Dashboard
-  taps open `lib/widgets/log_value_dialog.dart` (one shared numeric-entry
-  dialog reused for all three) to log a new value.
-- **`lib/widgets/hydration_card.dart`**: today's total plus one-tap
-  quick-add chips (+100/250/500ml) — logging water shouldn't need a form.
+  body fat % log entries, plus hydration entries — every entry is
+  timestamped (`at`), not just a "latest value" cache. `bmi` is computed
+  from the latest logged weight + height (no separate stored field).
+  `historyOfType()` and `hydrationDailyTotals()` expose the full
+  timestamped history as `MetricPoint`s for charting.
 - **`lib/services/step_counter_service.dart`**: the phone's own hardware
   step counter (`pedometer` package, Android `TYPE_STEP_COUNTER`), not
   Health Connect and not the wearable (no step sensor on it). That sensor
@@ -375,13 +374,62 @@ Health Connect:
   stores a "steps at start of today" baseline in Hive and reports the
   difference — persisted so a restart mid-day doesn't reset it. Needs the
   `ACTIVITY_RECOGNITION` runtime permission (Android 10+), requested in
-  `start()`.
+  `start()`. Each day's final total is archived into a `step_daily_history`
+  box when the next day starts, so a trend builds going forward (no
+  retroactive backfill — the sensor only ever reports "since boot").
+- **`lib/screens/metric_history_screen.dart`**: one generic chart + stats
+  + period-selector (7 days/30 days/all time) screen, reused for weight,
+  height, body fat, hydration, and steps rather than five bespoke
+  screens. `lib/screens/metric_detail_screens.dart` has the five thin
+  per-metric wrappers that each just supply data + an optional "log a new
+  value" action (a shared dialog for weight/height/body-fat via
+  `lib/widgets/log_value_dialog.dart`, quick-add chips for hydration,
+  nothing for steps since it's automatic). Tapping a Dashboard card now
+  opens its history screen rather than a log dialog directly, so logging
+  and trend-viewing share one entry point.
+- **Dashboard card layout**: the Wellness overview and Body & activity
+  sections are a horizontally scrollable row of fixed-width rectangular
+  cards (`_CardRow` in `dashboard_screen.dart`), not a wrapping
+  `GridView` — 3-per-row grids were truncating labels ("Well…", "Basel…")
+  and don't scale as cards get added. Hydration and a "Health log" nav
+  card (→ `HealthLogScreen`) are cards in this same row rather than
+  separately-styled widgets below it, for one consistent card language
+  across the whole section.
 - **`HealthLogScreen`** trimmed to only what's *not* yet real (blood
   pressure, glucose, insulin, meds, sleep, Medical ID) — weight, height,
-  body fat, hydration, and steps moved to the Dashboard's "Body &
-  activity" section as real widgets, reachable via a "More health
-  tracking" card rather than being a nav destination of its own now that
-  there's no tab bar.
+  body fat, hydration, and steps are real Dashboard cards now, reachable
+  from there via the "Health log" card rather than being a nav
+  destination of its own now that there's no tab bar.
+
+### Performance: scoped rebuilds instead of one `context.watch` per service
+
+Live testing on a physical device (POCO F7) found the dashboard visibly
+laggy once this section landed. Root cause: `DashboardScreen` used
+`context.watch<T>()` on every provider wholesale, so *any* field changing
+on *any* of them rebuilt the entire screen — every `MetricCard`, every
+`GridView`, the chart — regardless of whether that field was even shown.
+Three services tick fast enough for this to matter: `FallDetectorService`
+(every 500ms), `ActivityClassifierService` (every 1s), and, newly,
+`StepCounterService` (on every single step while walking — the most
+likely actual culprit, since it's the one that changed between "fine"
+and "laggy"). Fixed by watching only what the screen's own layout
+depends on:
+- `context.select<FallDetectorService, bool>((s) => s.alertActive)` for
+  the banner-or-not decision; `_FallAlertBanner` itself now watches the
+  service internally (only mounted while an alert is active, so its own
+  per-second rebuild is cheap and scoped).
+- `context.select<ActivityClassifierService, Activity?>((s) => s.current)`
+  — the screen needs the classified activity (it drives the HR
+  ceiling), not the raw per-tick confidence score.
+- `context.select<BaselineService, double?>((s) => s.heartRateMean)` for
+  display; `context.read` for the `isAnomalous()` method call, which
+  doesn't need to trigger a rebuild on its own.
+- `_StepsCard` is its own small widget that watches `StepCounterService`
+  directly, so a step only rebuilds that one card, not the dashboard.
+
+`BleService` and `MetricsStore` are still watched wholesale — vitals/env
+genuinely need to be live, and metrics only change on an explicit user
+log action, both legitimately infrequent-or-necessary.
 
 ## Roadmap (not yet implemented)
 
@@ -492,18 +540,20 @@ sih26-health-companion/
         │   step_counter_service.dart}
         ├── utils/heat_index.dart
         ├── theme/app_theme.dart
-        ├── models/{sensor_reading.dart, wellness_snapshot.dart}
+        ├── models/{sensor_reading.dart, wellness_snapshot.dart, metric_point.dart}
         ├── disaster/{disaster_service.dart, india_hazard_data.dart,
         │   hazard_type.dart, imminent_warning_gate.dart}
         ├── storage/{history_store.dart, metrics_store.dart}
         ├── screens/
         │   ├── dashboard_screen.dart         # app's home route, no bottom nav
         │   ├── wellness_detail_screen.dart
+        │   ├── metric_history_screen.dart    # generic chart+stats+period screen
+        │   ├── metric_detail_screens.dart    # 5 thin per-metric wrappers around it
         │   ├── map_screen.dart               # pushed from a Dashboard nav card
         │   ├── health_log_screen.dart        # remaining stub tiles only
         │   ├── settings_screen.dart          # wearable mgmt + emergency contact stub
         │   │                                  # + disaster-warning preview
         │   ├── imminent_warning_screen.dart
         │   └── scan_connect_screen.dart      # pushed route, not the home route
-        └── widgets/{metric_card.dart, hydration_card.dart, log_value_dialog.dart}
+        └── widgets/{metric_card.dart, log_value_dialog.dart}
 ```

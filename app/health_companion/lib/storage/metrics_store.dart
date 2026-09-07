@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
+import '../models/metric_point.dart';
+
 /// Local, manually-logged body/hydration metrics — same offline-first,
 /// on-device-only storage pattern as HistoryStore, just for user-entered
 /// data instead of wearable readings. No Health Connect dependency (this
@@ -76,14 +78,20 @@ class MetricsStore extends ChangeNotifier {
     return w / (heightM * heightM);
   }
 
-  List<Map> recentWeights({int limit = 30}) => _bodyBox.values
-      .where((e) => e['type'] == 'weight')
-      .toList()
-      .reversed
-      .take(limit)
-      .toList()
-      .reversed
-      .toList();
+  /// Full timestamped history for weight/height/bodyFat, oldest first —
+  /// backs MetricHistoryScreen's chart for each.
+  List<MetricPoint> historyOfType(String type) {
+    final points = <MetricPoint>[];
+    for (final entry in _bodyBox.values) {
+      if (entry['type'] != type) continue;
+      final at = DateTime.tryParse(entry['at'] as String? ?? '');
+      final value = (entry['value'] as num?)?.toDouble();
+      if (at == null || value == null) continue;
+      points.add(MetricPoint(at: at, value: value));
+    }
+    points.sort((a, b) => a.at.compareTo(b.at));
+    return points;
+  }
 
   Future<void> addHydrationMl(int ml) async {
     await _hydrationBox.add({
@@ -104,5 +112,23 @@ class MetricsStore extends ChangeNotifier {
       total += (entry['ml'] as num?)?.toInt() ?? 0;
     }
     return total;
+  }
+
+  /// Daily totals (in liters) across every day something was logged,
+  /// oldest first — backs the Hydration history chart.
+  List<MetricPoint> hydrationDailyTotals() {
+    final totalsByDay = <DateTime, int>{};
+    for (final entry in _hydrationBox.values) {
+      final at = DateTime.tryParse(entry['at'] as String? ?? '');
+      final ml = (entry['ml'] as num?)?.toInt();
+      if (at == null || ml == null) continue;
+      final day = DateTime(at.year, at.month, at.day);
+      totalsByDay[day] = (totalsByDay[day] ?? 0) + ml;
+    }
+    final days = totalsByDay.keys.toList()..sort();
+    return [
+      for (final day in days)
+        MetricPoint(at: day, value: totalsByDay[day]! / 1000),
+    ];
   }
 }

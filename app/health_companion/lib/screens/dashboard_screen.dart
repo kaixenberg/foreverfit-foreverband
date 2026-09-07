@@ -13,11 +13,10 @@ import '../storage/history_store.dart';
 import '../storage/metrics_store.dart';
 import '../theme/app_theme.dart';
 import '../utils/heat_index.dart';
-import '../widgets/hydration_card.dart';
-import '../widgets/log_value_dialog.dart';
 import '../widgets/metric_card.dart';
 import 'health_log_screen.dart';
 import 'map_screen.dart';
+import 'metric_detail_screens.dart';
 import 'scan_connect_screen.dart';
 import 'settings_screen.dart';
 import 'wellness_detail_screen.dart';
@@ -131,12 +130,21 @@ class DashboardScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ble = context.watch<BleService>();
-    final fallDetector = context.watch<FallDetectorService>();
-    final activityClassifier = context.watch<ActivityClassifierService>();
-    final baseline = context.watch<BaselineService>();
+    // Instances for method calls / passing down — `select` below covers
+    // the fields this screen's own layout actually depends on, so we
+    // don't rebuild the whole dashboard on every fall-probability tick or
+    // activity-confidence tick from services with their own fast internal
+    // timers (500ms / 1s) that mostly don't change what's on screen.
+    final fallDetector = context.read<FallDetectorService>();
+    final alertActive =
+        context.select<FallDetectorService, bool>((s) => s.alertActive);
+    final currentActivity =
+        context.select<ActivityClassifierService, Activity?>((s) => s.current);
+    final baseline = context.read<BaselineService>();
+    final baselineHeartRateMean =
+        context.select<BaselineService, double?>((s) => s.heartRateMean);
     final disaster = context.watch<DisasterService>();
     final metrics = context.watch<MetricsStore>();
-    final steps = context.watch<StepCounterService>();
     final history = context.read<HistoryStore>();
     final connected = ble.status == ConnectionStatus.connected;
 
@@ -150,7 +158,7 @@ class DashboardScreen extends StatelessWidget {
     // OLED already shows "no finger", so the app needs to too, rather
     // than reading a 0 as a genuine (and alarming) vital sign.
     final hasFingerReading = vitals != null && vitals.fingerPresent;
-    final heartRateCeiling = _heartRateCeiling(activityClassifier.current);
+    final heartRateCeiling = _heartRateCeiling(currentActivity);
     final heartRateWarn = hasFingerReading &&
         (heartRate < 50 ||
             heartRate > heartRateCeiling ||
@@ -209,9 +217,8 @@ class DashboardScreen extends StatelessWidget {
             icon: const Icon(Icons.sos),
             tooltip: 'Manual SOS',
             color: Theme.of(context).colorScheme.error,
-            onPressed: fallDetector.alertActive
-                ? null
-                : () => fallDetector.triggerManualSOS(),
+            onPressed:
+                alertActive ? null : () => fallDetector.triggerManualSOS(),
           ),
           IconButton(
             icon: Icon(connected
@@ -237,8 +244,7 @@ class DashboardScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(12),
         children: [
-          if (fallDetector.alertActive)
-            _FallAlertBanner(fallDetector: fallDetector),
+          if (alertActive) const _FallAlertBanner(),
           if (!connected) _ConnectWearableBanner(),
           _DisasterMapNavCard(risk: disaster.risk),
           const SizedBox(height: 12),
@@ -314,14 +320,8 @@ class DashboardScreen extends StatelessWidget {
           Text('Wellness overview',
               style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
-          GridView.count(
-            crossAxisCount: 3,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            childAspectRatio: 1.1,
-            mainAxisSpacing: 8,
-            crossAxisSpacing: 8,
-            children: [
+          _CardRow(
+            cards: [
               MetricCard(
                 label: 'Wellness',
                 value: wellnessScore == null ? '--' : wellnessScore.toString(),
@@ -338,19 +338,19 @@ class DashboardScreen extends StatelessWidget {
               ),
               MetricCard(
                 label: 'Activity',
-                value: activityClassifier.current == null
+                value: currentActivity == null
                     ? '--'
-                    : _activityLabel(activityClassifier.current!),
+                    : _activityLabel(currentActivity),
                 unit: '',
                 icon: Icons.directions_walk,
                 accentColor: AppTheme.accentGreen,
               ),
               MetricCard(
                 label: 'Baseline',
-                value: baseline.heartRateMean == null
+                value: baselineHeartRateMean == null
                     ? '--'
-                    : baseline.heartRateMean!.toStringAsFixed(0),
-                unit: baseline.heartRateMean == null ? '' : 'bpm',
+                    : baselineHeartRateMean.toStringAsFixed(0),
+                unit: baselineHeartRateMean == null ? '' : 'bpm',
                 icon: Icons.show_chart,
                 accentColor: AppTheme.accentBlue,
               ),
@@ -368,35 +368,19 @@ class DashboardScreen extends StatelessWidget {
           Text('Body & activity',
               style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
-          GridView.count(
-            crossAxisCount: 3,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            childAspectRatio: 1.1,
-            mainAxisSpacing: 8,
-            crossAxisSpacing: 8,
-            children: [
-              MetricCard(
-                label: 'Steps today',
-                value: steps.todaySteps.toString(),
-                unit: '',
-                icon: Icons.directions_walk,
-                accentColor: AppTheme.accentGreen,
-              ),
+          _CardRow(
+            cards: [
+              const _StepsCard(),
               MetricCard(
                 label: 'Weight',
                 value: metrics.latestWeightKg?.toStringAsFixed(1) ?? '--',
                 unit: metrics.latestWeightKg == null ? '' : 'kg',
                 icon: Icons.monitor_weight_outlined,
                 accentColor: AppTheme.accentCoral,
-                onTap: () async {
-                  final value = await showLogValueDialog(
-                    context: context,
-                    title: 'Log weight',
-                    unit: 'kg',
-                  );
-                  if (value != null) metrics.addWeightKg(value);
-                },
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                      builder: (_) => const WeightHistoryScreen()),
+                ),
               ),
               MetricCard(
                 label: 'Height',
@@ -404,14 +388,10 @@ class DashboardScreen extends StatelessWidget {
                 unit: metrics.latestHeightCm == null ? '' : 'cm',
                 icon: Icons.height,
                 accentColor: AppTheme.accentPurple,
-                onTap: () async {
-                  final value = await showLogValueDialog(
-                    context: context,
-                    title: 'Log height',
-                    unit: 'cm',
-                  );
-                  if (value != null) metrics.addHeightCm(value);
-                },
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                      builder: (_) => const HeightHistoryScreen()),
+                ),
               ),
               MetricCard(
                 label: 'BMI',
@@ -426,33 +406,83 @@ class DashboardScreen extends StatelessWidget {
                 unit: metrics.latestBodyFatPercent == null ? '' : '%',
                 icon: Icons.percent,
                 accentColor: AppTheme.accentTeal,
-                onTap: () async {
-                  final value = await showLogValueDialog(
-                    context: context,
-                    title: 'Log body fat',
-                    unit: '%',
-                  );
-                  if (value != null) metrics.addBodyFatPercent(value);
-                },
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                      builder: (_) => const BodyFatHistoryScreen()),
+                ),
+              ),
+              MetricCard(
+                label: 'Hydration',
+                value: (metrics.todayHydrationMl / 1000).toStringAsFixed(2),
+                unit: 'L',
+                icon: Icons.local_drink_outlined,
+                accentColor: AppTheme.accentBlue,
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                      builder: (_) => const HydrationHistoryScreen()),
+                ),
+              ),
+              MetricCard(
+                label: 'Health log',
+                value: 'More',
+                unit: '',
+                icon: Icons.list_alt_outlined,
+                accentColor: AppTheme.accentPurple,
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const HealthLogScreen()),
+                ),
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          HydrationCard(metrics: metrics),
-          const SizedBox(height: 12),
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.list_alt_outlined),
-              title: const Text('More health tracking'),
-              subtitle: const Text(
-                  'Blood pressure, glucose, insulin, meds, sleep, Medical ID'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const HealthLogScreen()),
-              ),
-            ),
-          ),
         ],
+      ),
+    );
+  }
+}
+
+/// A horizontally scrollable row of fixed-size, rectangular cards — used
+/// for both the Wellness overview and Body & activity sections instead of
+/// a wrapping GridView, which squeezed labels into "Well…"/"Basel…"
+/// ellipsis at 3-per-row and doesn't scale as more cards get added (e.g.
+/// merging Hydration and Health log in as cards here too).
+class _CardRow extends StatelessWidget {
+  const _CardRow({required this.cards});
+
+  final List<Widget> cards;
+
+  static const _cardWidth = 168.0;
+  static const _cardHeight = 136.0;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: _cardHeight,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: cards.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (_, i) => SizedBox(width: _cardWidth, child: cards[i]),
+      ),
+    );
+  }
+}
+
+/// Isolated so a step-count update (every stride while walking) only
+/// rebuilds this one card, not the whole dashboard.
+class _StepsCard extends StatelessWidget {
+  const _StepsCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final steps = context.watch<StepCounterService>();
+    return MetricCard(
+      label: 'Steps today',
+      value: steps.todaySteps.toString(),
+      unit: '',
+      icon: Icons.directions_walk,
+      accentColor: AppTheme.accentGreen,
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const StepsHistoryScreen()),
       ),
     );
   }
@@ -536,14 +566,16 @@ class _ConnectWearableBanner extends StatelessWidget {
 
 /// Stays open once a fall is detected regardless of what the live model
 /// output does afterward — only "I'm OK" or the emergency-call timeout
-/// clears it. See FallDetectorService for the latching logic.
+/// clears it. Watches FallDetectorService itself (rather than taking it
+/// as a constructor param from a parent that no longer rebuilds on every
+/// tick) so the countdown text still updates every second while it's
+/// showing, without forcing the whole dashboard to rebuild that often.
 class _FallAlertBanner extends StatelessWidget {
-  const _FallAlertBanner({required this.fallDetector});
-
-  final FallDetectorService fallDetector;
+  const _FallAlertBanner();
 
   @override
   Widget build(BuildContext context) {
+    final fallDetector = context.watch<FallDetectorService>();
     final onError = Theme.of(context).colorScheme.onErrorContainer;
     final situation = fallDetector.alertSource == AlertSource.manual
         ? 'Manual SOS activated'
