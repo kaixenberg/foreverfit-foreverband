@@ -287,9 +287,9 @@ the full training-pipeline writeups.
 - **Personalized baseline learning** (`lib/services/baseline_service.dart`):
   deliberately *not* a CNN — a rolling mean/std of this user's own resting
   heart rate over the past 7 days (min 20 samples before it activates),
-  from the same Hive-backed history the dashboard's HR sparkline already
-  reads. Flags a live reading more than 2 personal standard deviations
-  from *this user's* baseline, catching "unusual for you" in a way no
+  from the same `HistoryStore` Hive box the Heart rate card's history
+  screen also reads. Flags a live reading more than 2 personal standard
+  deviations from *this user's* baseline, catching "unusual for you" in a way no
   fixed global threshold can — plain statistics, and more honest about
   what it is than dressing it up as deep learning.
 - **On-device heat-stress detection** — investigated as a WESAD-trained
@@ -395,13 +395,18 @@ Health Connect:
   so it's a swipeable, paged 2-column x 3-row grid with a dot-page
   indicator instead (`_PagedCardGrid`) — the OpenVitals
   dashboard-carousel pattern, reimplemented from scratch (AGPL, no code
-  copied). Heart rate appears both here (alongside the other logged/
-  tracked body stats, no separate history screen — the "Heart rate —
-  recent" sparkline above already covers its trend) and in the top
-  vitals grid (the always-visible, no-swipe-needed live-wearable-reading
-  group) — deliberate duplication, not an oversight: the vitals grid is
-  the safety-critical always-visible one, this one is the "all your
-  stats in one browsable place" one.
+  copied). Heart rate appears both here and in the top vitals grid
+  (deliberate duplication, not an oversight: the vitals grid is the
+  always-visible, no-swipe-needed safety-critical one; this one is the
+  "all your stats, one consistent tap-through interaction" one) — every
+  card in both places, heart rate included, opens the same generic
+  `MetricHistoryScreen` (`HeartRateHistoryScreen` in
+  `metric_detail_screens.dart`, reading `HistoryStore.heartRateHistory()`)
+  rather than a bespoke inline chart. There used to be a standalone
+  "Heart rate — recent" sparkline permanently on the dashboard; it's
+  gone now that every metric, heart rate included, follows the same
+  tap-a-card-to-see-its-trend pattern instead of one metric getting
+  special-cased screen space.
 - **`HealthLogScreen`** trimmed to only what's *not* yet real (blood
   pressure, glucose, insulin, meds, sleep, Medical ID) — weight, height,
   body fat, hydration, and steps are real Dashboard cards now. No longer
@@ -453,10 +458,6 @@ full app is visible even where the logic isn't built yet.
   Open-Meteo does.
 - **Sleep tracking**: named in the problem statement's "Continuous Health
   Monitoring," not built.
-- **Trend/history views**: the dashboard's HR sparkline is the only trend
-  view — nothing like a daily summary or "today vs. your week," which
-  the problem statement's "Personal Wellness Dashboard" section calls
-  for.
 
 ### 2. Wearable-sensor disaster heuristics
 

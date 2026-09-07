@@ -173,10 +173,14 @@ tiles + a static state-level hazard baseline) and prefers live data
       log to Hive via `MetricsStore`, steps via the hardware step counter
       (`pedometer`) with a growing daily-history archive — see
       ARCHITECTURE.md
-- [x] Per-metric history: tapping a Body & activity card opens a shared
-      chart+stats+period-selector screen (7 days/30 days/all time) with
-      average/min/max/change — one generic screen reused for all five
-      metrics, not five bespoke ones — see ARCHITECTURE.md
+- [x] Per-metric history: tapping any Body & activity card (heart rate
+      included, from either the vitals grid or this section) opens a
+      shared chart+stats+period-selector screen (7 days/30 days/all
+      time) with average/min/max/change — one generic screen reused for
+      all six metrics, not six bespoke ones. Replaces the old
+      always-on-screen "Heart rate — recent" sparkline, which was the
+      one metric getting special-cased dashboard space — see
+      ARCHITECTURE.md
 - [x] Dashboard performance pass: `context.select` scoped rebuilds
       instead of one `context.watch` per provider, plus isolating the
       Steps card into its own widget — fixes visible lag found in live

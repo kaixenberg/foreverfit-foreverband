@@ -1,4 +1,3 @@
-import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -9,7 +8,6 @@ import '../ml/fall_detector_service.dart';
 import '../models/wellness_snapshot.dart';
 import '../services/baseline_service.dart';
 import '../services/step_counter_service.dart';
-import '../storage/history_store.dart';
 import '../storage/metrics_store.dart';
 import '../theme/app_theme.dart';
 import '../utils/heat_index.dart';
@@ -144,7 +142,6 @@ class DashboardScreen extends StatelessWidget {
         context.select<BaselineService, double?>((s) => s.heartRateMean);
     final disaster = context.watch<DisasterService>();
     final metrics = context.watch<MetricsStore>();
-    final history = context.read<HistoryStore>();
     final connected = ble.status == ConnectionStatus.connected;
 
     final vitals = ble.latestVitals;
@@ -262,6 +259,10 @@ class DashboardScreen extends StatelessWidget {
                 icon: Icons.favorite,
                 warn: heartRateWarn,
                 accentColor: AppTheme.accentPink,
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                      builder: (_) => const HeartRateHistoryScreen()),
+                ),
               ),
               MetricCard(
                 label: 'SpO2',
@@ -356,14 +357,6 @@ class DashboardScreen extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 16),
-          Text('Heart rate — recent',
-              style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          SizedBox(
-            height: 140,
-            child: _HeartRateSparkline(history: history),
-          ),
-          const SizedBox(height: 16),
           Text('Body & activity',
               style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
@@ -377,6 +370,10 @@ class DashboardScreen extends StatelessWidget {
                 icon: Icons.favorite,
                 warn: heartRateWarn,
                 accentColor: AppTheme.accentPink,
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                      builder: (_) => const HeartRateHistoryScreen()),
+                ),
               ),
               MetricCard(
                 label: 'Weight',
@@ -707,42 +704,6 @@ class _FallAlertBanner extends StatelessWidget {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _HeartRateSparkline extends StatelessWidget {
-  const _HeartRateSparkline({required this.history});
-
-  final HistoryStore history;
-
-  @override
-  Widget build(BuildContext context) {
-    final recent = history.recentVitals(limit: 60);
-    if (recent.isEmpty) {
-      return const Center(child: Text('Waiting for data...'));
-    }
-
-    final spots = <FlSpot>[
-      for (var i = 0; i < recent.length; i++)
-        FlSpot(i.toDouble(), (recent[i]['heartRate'] as num).toDouble()),
-    ];
-
-    return LineChart(
-      LineChartData(
-        titlesData: const FlTitlesData(show: false),
-        gridData: const FlGridData(show: false),
-        borderData: FlBorderData(show: false),
-        lineBarsData: [
-          LineChartBarData(
-            spots: spots,
-            isCurved: true,
-            dotData: const FlDotData(show: false),
-            color: Theme.of(context).colorScheme.primary,
-            barWidth: 3,
-          ),
-        ],
       ),
     );
   }

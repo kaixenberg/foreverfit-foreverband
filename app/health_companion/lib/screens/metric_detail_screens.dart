@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../ble/ble_service.dart';
 import '../services/step_counter_service.dart';
+import '../storage/history_store.dart';
 import '../storage/metrics_store.dart';
 import '../widgets/log_value_dialog.dart';
 import 'metric_history_screen.dart';
@@ -115,6 +117,24 @@ class StepsHistoryScreen extends StatelessWidget {
       title: 'Steps',
       unit: 'steps',
       points: steps.dailyHistory(),
+    );
+  }
+}
+
+class HeartRateHistoryScreen extends StatelessWidget {
+  const HeartRateHistoryScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    // Watching BleService (not HistoryStore, which isn't itself
+    // observable) so this screen keeps updating live while a new vitals
+    // reading comes in every ~1s, same as the sparkline it replaced.
+    context.watch<BleService>();
+    final history = context.read<HistoryStore>();
+    return MetricHistoryScreen(
+      title: 'Heart rate',
+      unit: 'bpm',
+      points: history.heartRateHistory(),
     );
   }
 }

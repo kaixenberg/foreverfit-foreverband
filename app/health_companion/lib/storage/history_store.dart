@@ -1,5 +1,6 @@
 import 'package:hive_flutter/hive_flutter.dart';
 
+import '../models/metric_point.dart';
 import '../models/sensor_reading.dart';
 
 /// Local, offline history of vitals/environment readings. Uses Hive so
@@ -25,6 +26,18 @@ class HistoryStore {
   List<Map> recentVitals({int limit = 50}) => _recent(_vitalsBox, limit);
 
   List<Map> recentEnv({int limit = 50}) => _recent(_envBox, limit);
+
+  /// Timestamped heart-rate history — backs HeartRateHistoryScreen's chart,
+  /// same shape as every other metric's history rather than a bespoke
+  /// sparkline just for this one.
+  List<MetricPoint> heartRateHistory({int limit = 200}) => [
+        for (final entry in recentVitals(limit: limit))
+          if (DateTime.tryParse(entry['receivedAt'] as String? ?? '') != null)
+            MetricPoint(
+              at: DateTime.parse(entry['receivedAt'] as String),
+              value: (entry['heartRate'] as num).toDouble(),
+            ),
+      ];
 
   List<Map> _recent(Box<Map> box, int limit) {
     final values = box.values.toList();
