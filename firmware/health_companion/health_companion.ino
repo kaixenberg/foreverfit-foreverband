@@ -57,6 +57,11 @@ struct __attribute__((packed)) VitalsPacket {
   float heartRate;
   float spo2;
   float bodyTempC;
+  uint8_t fingerPresent; // 0/1 — see FINGER_PRESENT_IR_THRESHOLD above.
+                          // Without this the app can't tell "0 bpm because
+                          // no finger" from an actual reading of 0, which
+                          // both looks like a false medical warning and
+                          // would bias any stats computed from history.
 };
 
 struct __attribute__((packed)) EnvPacket {
@@ -395,6 +400,7 @@ void notifyVitals() {
   pkt.spo2 = currentSpo2;
   lastBodyTempC = readBodyTempC();
   pkt.bodyTempC = lastBodyTempC;
+  pkt.fingerPresent = fingerPresent ? 1 : 0;
   vitalsChar->setValue((uint8_t*)&pkt, sizeof(pkt));
   if (deviceConnected) vitalsChar->notify();
 }

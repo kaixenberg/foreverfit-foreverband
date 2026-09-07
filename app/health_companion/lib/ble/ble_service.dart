@@ -123,7 +123,11 @@ class BleService extends ChangeNotifier {
     final reading = HealthCompanionProtocol.parseVitals(bytes);
     if (reading == null) return;
     latestVitals = reading;
-    _historyStore.addVitals(reading);
+    // Don't persist a no-finger reading — it's not a real HR/SpO2 sample,
+    // and would otherwise sit in history as a 0 that later consumers
+    // (the sparkline, BaselineService's rolling stats) would need to know
+    // to filter back out.
+    if (reading.fingerPresent) _historyStore.addVitals(reading);
     notifyListeners();
   }
 

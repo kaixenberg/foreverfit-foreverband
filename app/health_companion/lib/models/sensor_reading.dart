@@ -9,12 +9,19 @@ class VitalsReading {
   final double spo2;
   final double bodyTempC;
 
+  /// False when the MAX30101 doesn't detect finger/wrist contact — the
+  /// firmware zeroes heartRate/spo2 in that state, so this flag is what
+  /// tells "no reading" apart from "a reading of 0" (which would
+  /// otherwise look like a false medical warning in the app).
+  final bool fingerPresent;
+
   VitalsReading({
     required this.deviceTimeMs,
     required this.receivedAt,
     required this.heartRate,
     required this.spo2,
     required this.bodyTempC,
+    required this.fingerPresent,
   });
 
   Map<String, dynamic> toMap() => {
@@ -23,6 +30,7 @@ class VitalsReading {
         'heartRate': heartRate,
         'spo2': spo2,
         'bodyTempC': bodyTempC,
+        'fingerPresent': fingerPresent,
       };
 }
 

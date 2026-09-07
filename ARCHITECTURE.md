@@ -34,7 +34,7 @@ of truth; the firmware (`firmware/health_companion/health_companion.ino`) and ap
 | UUID | Name | Rate | Layout |
 |---|---|---|---|
 | `6e400001-...` | Service | — | — |
-| `6e400002-...` | Vitals | ~1 Hz | `uint32 tMs; float heartRate; float spo2; float bodyTempC;` (16 bytes) |
+| `6e400002-...` | Vitals | ~1 Hz | `uint32 tMs; float heartRate; float spo2; float bodyTempC; uint8 fingerPresent;` (17 bytes) |
 | `6e400003-...` | Environment | ~1 Hz | `uint32 tMs; float ambientTempC; float humidity; float pressureHPa;` (16 bytes) |
 | `6e400004-...` | Motion | ~20 Hz | `uint32 tMs; float ax,ay,az; float gx,gy,gz;` (28 bytes) |
 
@@ -48,6 +48,20 @@ free-fall-then-impact signature.
 - Body temperature is a stubbed simulation (`readBodyTempC()` in
   `health_companion.ino`) because the MAX30205 on hand doesn't work. Swap in
   a real driver call there if it's replaced.
+
+**`fingerPresent` flag (fixed a real bias bug)**: the firmware zeroes
+`heartRate`/`spo2` when the MAX30101 doesn't detect finger/wrist contact
+(`FINGER_PRESENT_IR_THRESHOLD`) — the OLED already showed "no finger" in
+that state, but the app had no way to tell "0 because no finger" from "an
+actual reading of 0" until this flag was added. Without it: the Dashboard
+showed a false "Heart rate" warning (0 < the 50bpm floor) whenever the
+sensor briefly lost contact, and every no-finger sample would have been
+persisted to history as a real 0 reading, which is exactly the kind of
+thing that quietly biases `BaselineService`'s rolling mean/std and the
+composite wellness score. Fix: `BleService._onVitals()` now only calls
+`historyStore.addVitals()` when `fingerPresent` is true, and
+`DashboardScreen` shows "no finger" instead of a bpm/percent value and
+skips the HR/SpO2 warning checks entirely in that state.
 
 ## On-device fall-detection CNN (implemented, currently phone-only)
 

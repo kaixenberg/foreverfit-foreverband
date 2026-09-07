@@ -17,7 +17,8 @@ class HealthCompanionProtocol {
   static const String deviceName = 'HealthCompanion';
 
   /// VitalsPacket: uint32 tMs; float heartRate; float spo2; float bodyTempC;
-  static const int vitalsPacketLength = 16;
+  /// uint8 fingerPresent;
+  static const int vitalsPacketLength = 17;
 
   /// EnvPacket: uint32 tMs; float ambientTempC; float humidity; float pressureHPa;
   static const int envPacketLength = 16;
@@ -34,6 +35,7 @@ class HealthCompanionProtocol {
       heartRate: data.getFloat32(4, Endian.little),
       spo2: data.getFloat32(8, Endian.little),
       bodyTempC: data.getFloat32(12, Endian.little),
+      fingerPresent: data.getUint8(16) != 0,
     );
   }
 

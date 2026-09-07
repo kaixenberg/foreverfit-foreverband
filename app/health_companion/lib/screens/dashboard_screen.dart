@@ -80,12 +80,16 @@ class DashboardScreen extends StatelessWidget {
     final heartRate = vitals?.heartRate ?? 0;
     final spo2 = vitals?.spo2 ?? 0;
     final bodyTemp = vitals?.bodyTempC ?? 0;
+    // The MAX30101 zeroes heartRate/spo2 when it can't see a finger — the
+    // OLED already shows "no finger", so the app needs to too, rather
+    // than reading a 0 as a genuine (and alarming) vital sign.
+    final hasFingerReading = vitals != null && vitals.fingerPresent;
     final heartRateCeiling = _heartRateCeiling(activityClassifier.current);
-    final heartRateWarn = vitals != null &&
+    final heartRateWarn = hasFingerReading &&
         (heartRate < 50 ||
             heartRate > heartRateCeiling ||
             baseline.isAnomalous(heartRate));
-    final spo2Warn = vitals != null && spo2 < 92 && spo2 > 0;
+    final spo2Warn = hasFingerReading && spo2 < 92 && spo2 > 0;
     final bodyTempWarn = vitals != null && (bodyTemp > 37.8 || bodyTemp < 35.5);
     final ambientWarn = env != null &&
         heatRiskLevel(heatIndexCelsius(env.ambientTempC, env.humidity)) == HeatRisk.danger;
@@ -143,15 +147,15 @@ class DashboardScreen extends StatelessWidget {
             children: [
               MetricCard(
                 label: 'Heart rate',
-                value: vitals == null ? '--' : heartRate.toStringAsFixed(0),
-                unit: 'bpm',
+                value: hasFingerReading ? heartRate.toStringAsFixed(0) : '--',
+                unit: vitals != null && !hasFingerReading ? 'no finger' : 'bpm',
                 icon: Icons.favorite,
                 warn: heartRateWarn,
               ),
               MetricCard(
                 label: 'SpO2',
-                value: vitals == null ? '--' : spo2.toStringAsFixed(0),
-                unit: '%',
+                value: hasFingerReading ? spo2.toStringAsFixed(0) : '--',
+                unit: vitals != null && !hasFingerReading ? 'no finger' : '%',
                 icon: Icons.bloodtype,
                 warn: spo2Warn,
               ),

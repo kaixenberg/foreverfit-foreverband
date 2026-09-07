@@ -41,21 +41,21 @@ class MetricCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 8),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.baseline,
-              textBaseline: TextBaseline.alphabetic,
-              children: [
-                Text(value, style: Theme.of(context).textTheme.headlineMedium),
-                const SizedBox(width: 4),
-                Flexible(
-                  child: Text(
-                    unit,
-                    style: Theme.of(context).textTheme.bodySmall,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
+            // FittedBox rather than ellipsis: word-shaped values (e.g. the
+            // Activity card's "Running") should shrink to fit, not get
+            // truncated into something unreadable like "Runni…".
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.baseline,
+                textBaseline: TextBaseline.alphabetic,
+                children: [
+                  Text(value, style: Theme.of(context).textTheme.headlineMedium),
+                  const SizedBox(width: 4),
+                  Text(unit, style: Theme.of(context).textTheme.bodySmall),
+                ],
+              ),
             ),
           ],
         ),
