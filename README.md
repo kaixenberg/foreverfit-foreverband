@@ -123,6 +123,9 @@ live data (Open-Meteo, USGS) when online.
       held-out subjects; wrist+phone fusion on hold pending IMU repair —
       see `ml/`), with a latched alert + 10s countdown to a dummy
       emergency-call escalation — real SMS/call wiring not yet built
+- [x] Manual SOS button (Dashboard) — raises the same alert/countdown/
+      dummy-call flow as an auto-detected fall, distinguished in the
+      banner text; real SMS/call wiring is the same open item as above
 - [x] Disaster-risk map: GPS + India state-level hazard baseline + live
       Open-Meteo/USGS data with offline fallback — see ARCHITECTURE.md
 - [x] Full-screen imminent-disaster warning with per-hazard safety
@@ -132,9 +135,9 @@ live data (Open-Meteo, USGS) when online.
       a manual preview in Settings since real conditions rarely cross it
       live — see ARCHITECTURE.md
 - [x] UI stubs for everything below (Dashboard's Wellness/Activity/
-      Baseline cards + manual SOS button, Map's Air Quality row, Health
-      Log's tracking tiles, Settings' emergency contact form) — visible,
-      not yet wired to real data/logic
+      Baseline cards, Map's Air Quality row, Health Log's tracking tiles,
+      Settings' emergency contact form) — visible, not yet wired to real
+      data/logic
 - [ ] Activity-conditioned vitals anomaly detection
 - [ ] Personalized (per-user) baseline learning
 - [ ] On-device vitals/heat-stress anomaly CNN
@@ -146,4 +149,5 @@ live data (Open-Meteo, USGS) when online.
       drop-rate) once the wearable's IMU is replaced
 - [ ] Health tracking (weight/height/meds/insulin/Medical ID) — UI stub only
 - [ ] Real SOS (SMS/call + emergency contact storage) — countdown/
-      escalation UX and manual trigger button both stubbed, dummy action only
+      escalation UX and manual trigger are wired end-to-end, but still
+      end in a dummy logged action, not a real call/SMS

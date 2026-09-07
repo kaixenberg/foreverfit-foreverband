@@ -263,9 +263,6 @@ full app is visible even where the logic isn't built yet.
   view — nothing like a daily summary or "today vs. your week," which
   the problem statement's "Personal Wellness Dashboard" section calls
   for.
-- **Manual SOS button**: currently the only emergency trigger is the
-  fall detector firing automatically. Someone conscious during a medical
-  episode has no way to proactively ask for help.
 
 ### 3. Wearable-sensor disaster heuristics
 
@@ -305,17 +302,22 @@ network without data connectivity:
 - `url_launcher` with `sms:` and `tel:` URIs to reach emergency contacts
   (stored locally, never synced) with the user's GPS coordinates —
   SMS/calls don't need mobile data.
-- **The cancellable countdown + escalation trigger is already implemented**
-  (`FallDetectorService`: 10s countdown, "I'm OK" to cancel, escalates
-  otherwise) — currently ends in a dummy logged action, not a real
-  call/SMS. Wiring `_triggerEmergencyCall()` to actually reach an
-  emergency contact via `url_launcher` (`sms:`/`tel:`) with GPS
-  coordinates is what's left.
+- **The cancellable countdown + escalation trigger is implemented and now
+  shared between both triggers** (`FallDetectorService`: 10s countdown,
+  "I'm OK" to cancel, escalates otherwise) — currently ends in a dummy
+  logged action, not a real call/SMS. Wiring `_triggerEmergencyCall()` to
+  actually reach an emergency contact via `url_launcher` (`sms:`/`tel:`)
+  with GPS coordinates is what's left.
+- **Manual SOS button is wired** (`DashboardScreen`'s SOS icon calls
+  `FallDetectorService.triggerManualSOS()`) — raises the same alert/
+  countdown/dummy-call flow as an auto-detected fall, distinguished in the
+  banner via `AlertSource` (`manual` vs `fall`) so the message reads
+  "Manual SOS activated" instead of "Possible fall detected." Ignored
+  while another alert is already active, so it can't stomp on one in
+  progress. Still ends in the same dummy call as fall detection — real
+  SMS/call wiring is the one piece above still open.
 - **Settings tab + emergency contact form** now exist as a UI stub
   (`SettingsScreen`) — not persisted yet, just the layout.
-- **Manual SOS button** is stubbed on the Dashboard (see gap #2 above) —
-  tapping it currently just shows what it'll do, doesn't trigger anything
-  real yet.
 - An online webhook/push notification path can be added later as a
   supplementary channel, never a dependency.
 

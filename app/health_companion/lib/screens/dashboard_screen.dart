@@ -33,14 +33,9 @@ class DashboardScreen extends StatelessWidget {
             icon: const Icon(Icons.sos),
             tooltip: 'Manual SOS',
             color: Theme.of(context).colorScheme.error,
-            onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text(
-                  'Manual SOS is coming soon — will alert your emergency '
-                  'contact with your location.',
-                ),
-              ),
-            ),
+            onPressed: fallDetector.alertActive
+                ? null
+                : () => fallDetector.triggerManualSOS(),
           ),
           IconButton(
             icon: Icon(connected ? Icons.bluetooth_disabled : Icons.bluetooth_searching),
@@ -187,9 +182,12 @@ class _FallAlertBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final onError = Theme.of(context).colorScheme.onErrorContainer;
+    final situation = fallDetector.alertSource == AlertSource.manual
+        ? 'Manual SOS activated'
+        : 'Possible fall detected';
     final message = fallDetector.isCalling
         ? '🚨 Calling emergency contact...'
-        : 'Possible fall detected'
+        : '$situation'
             '${fallDetector.secondsUntilCall != null ? ' — calling emergency contact in ${fallDetector.secondsUntilCall}s' : ''}';
 
     return Card(

@@ -5,6 +5,8 @@ import 'package:flutter_litert/flutter_litert.dart';
 
 import '../sensors/phone_motion_service.dart';
 
+enum AlertSource { fall, manual }
+
 /// Runs the on-device fall-detection CNN on the phone's own motion alone.
 ///
 /// Originally designed to fuse the wearable's wrist motion with the
@@ -56,6 +58,10 @@ class FallDetectorService extends ChangeNotifier {
   bool isCalling = false;
   int? secondsUntilCall;
 
+  /// Which flow raised the current alert — lets the banner distinguish
+  /// "you fell" from "you asked for help" without a second state machine.
+  AlertSource? alertSource;
+
   Future<void> start() async {
     try {
       _interpreter = await Interpreter.fromAsset(_modelAsset);
@@ -100,7 +106,7 @@ class FallDetectorService extends ChangeNotifier {
     // down (which happens within ~1s of a real fall settling) can't
     // interfere with the latched alert/countdown already in progress.
     if (!alertActive && _consecutiveTriggers >= _consecutiveTriggersToAlert) {
-      _startAlert();
+      _startAlert(AlertSource.fall);
     }
 
     debugPrint('[FallDetector] cnnProb=${fallProbability.toStringAsFixed(3)} '
@@ -110,8 +116,17 @@ class FallDetectorService extends ChangeNotifier {
     notifyListeners();
   }
 
-  void _startAlert() {
+  /// Manually raised SOS — same countdown/escalation flow as an
+  /// auto-detected fall, minus the CNN. Ignored while an alert (of either
+  /// kind) is already active, so it can't stomp on an in-progress one.
+  void triggerManualSOS() {
+    if (alertActive) return;
+    _startAlert(AlertSource.manual);
+  }
+
+  void _startAlert(AlertSource source) {
     alertActive = true;
+    alertSource = source;
     isCalling = false;
     secondsUntilCall = _emergencyCountdownSeconds;
 
@@ -145,6 +160,7 @@ class FallDetectorService extends ChangeNotifier {
     alertActive = false;
     isCalling = false;
     secondsUntilCall = null;
+    alertSource = null;
     _consecutiveTriggers = 0;
     notifyListeners();
   }
