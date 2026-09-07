@@ -208,10 +208,13 @@ tiles + a static state-level hazard baseline) and prefers live data
       links, and signals that don't match this app's sensors); a
       transparent NOAA/Rothfusz formula was built instead — see
       `ml/README.md`
-- [x] UI stubs for everything below (Map's Air Quality row, Settings'
-      emergency contact form) — visible, not yet wired to real data/logic
-- [ ] Air quality integration
-- [ ] Trend/daily-summary views
+- [x] UI stubs for everything below (Settings' emergency contact form) —
+      visible, not yet wired to real data/logic
+- [x] Air quality: US AQI + PM2.5/PM10 from Open-Meteo's air-quality API
+      (free, no key, verified live) on the Map screen, live-or-cached
+      only (no static baseline — AQI swings too fast hour to hour for a
+      hardcoded per-state table to be honest); AQI >150 now also
+      triggers the Map's warning banner — see ARCHITECTURE.md
 - [ ] Wearable-sensor disaster heuristics (heat-index formula now exists
       — this item is wiring it to the wearable's own BME280 instead of
       phone GPS, plus BME280 pressure drop-rate) once the wearable's IMU

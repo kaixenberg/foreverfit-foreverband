@@ -32,6 +32,18 @@ class DisasterRisk {
   final DataFreshness quakeFreshness;
   final DateTime? quakeAsOf;
 
+  // US AQI (0-500 scale) + the two pollutants judges/users actually
+  // recognize, from Open-Meteo's separate air-quality endpoint. No
+  // static offline baseline (unlike seismic zone/cyclone/flood-prone) —
+  // AQI swings hour to hour with traffic/weather/season, so a hardcoded
+  // "this state is usually X" table would be misleading rather than
+  // merely approximate. Live-or-cached only, same as precipitation/wind.
+  final double? usAqi;
+  final double? pm25;
+  final double? pm10;
+  final DataFreshness airQualityFreshness;
+  final DateTime? airQualityAsOf;
+
   DisasterRisk({
     required this.stateName,
     required this.hazardProfile,
@@ -46,12 +58,30 @@ class DisasterRisk {
     required this.nearbyMaxQuakeMagnitude,
     required this.quakeFreshness,
     required this.quakeAsOf,
+    required this.usAqi,
+    required this.pm25,
+    required this.pm10,
+    required this.airQualityFreshness,
+    required this.airQualityAsOf,
   });
+
+  /// NOAA/AirNow-standard US AQI category labels.
+  String? get aqiCategory {
+    final aqi = usAqi;
+    if (aqi == null) return null;
+    if (aqi <= 50) return 'Good';
+    if (aqi <= 100) return 'Moderate';
+    if (aqi <= 150) return 'Unhealthy for Sensitive Groups';
+    if (aqi <= 200) return 'Unhealthy';
+    if (aqi <= 300) return 'Very Unhealthy';
+    return 'Hazardous';
+  }
 
   bool get hasWarning =>
       (precipitationProbabilityPercent ?? 0) > 70 ||
       (nearbyMaxQuakeMagnitude ?? 0) >= 4.5 ||
-      (hazardProfile.cycloneProne && (windSpeedKmh ?? 0) > 40);
+      (hazardProfile.cycloneProne && (windSpeedKmh ?? 0) > 40) ||
+      (usAqi ?? 0) > 150;
 
   String? get warningMessage {
     final reasons = <String>[];
@@ -66,6 +96,9 @@ class DisasterRisk {
     if (hazardProfile.cycloneProne && (windSpeedKmh ?? 0) > 40) {
       reasons.add('strong winds (${windSpeedKmh!.round()} km/h) in a '
           'cyclone-prone area');
+    }
+    if ((usAqi ?? 0) > 150) {
+      reasons.add('$aqiCategory air quality (AQI ${usAqi!.round()})');
     }
     if (reasons.isEmpty) return null;
     return 'Elevated risk: ${reasons.join(', ')}.';
@@ -157,6 +190,7 @@ class DisasterService extends ChangeNotifier {
 
       final weather = await _fetchWeather(position);
       final quakes = await _fetchQuakes(position);
+      final airQuality = await _fetchAirQuality(position);
 
       risk = DisasterRisk(
         stateName: stateName,
@@ -176,6 +210,15 @@ class DisasterService extends ChangeNotifier {
             ? (quakes.isLive ? DataFreshness.live : DataFreshness.cachedStale)
             : DataFreshness.staticOnly,
         quakeAsOf: quakes?.asOf,
+        usAqi: airQuality?.usAqi,
+        pm25: airQuality?.pm25,
+        pm10: airQuality?.pm10,
+        airQualityFreshness: airQuality != null
+            ? (airQuality.isLive
+                ? DataFreshness.live
+                : DataFreshness.cachedStale)
+            : DataFreshness.staticOnly,
+        airQualityAsOf: airQuality?.asOf,
       );
       lastError = null;
     } catch (e) {
@@ -347,6 +390,52 @@ class DisasterService extends ChangeNotifier {
     }
   }
 
+  Future<_AirQualityResult?> _fetchAirQuality(Position position) async {
+    try {
+      // Open-Meteo's dedicated air-quality endpoint (separate host from
+      // the weather forecast one), same no-key/no-signup deal, verified
+      // with a live test call before use — see ARCHITECTURE.md.
+      final uri =
+          Uri.https('air-quality-api.open-meteo.com', '/v1/air-quality', {
+        'latitude': position.latitude.toString(),
+        'longitude': position.longitude.toString(),
+        'current': 'pm2_5,pm10,us_aqi',
+        'timezone': 'auto',
+      });
+      final resp = await http.get(uri).timeout(_fetchTimeout);
+      if (resp.statusCode != 200) throw Exception('HTTP ${resp.statusCode}');
+
+      final body = jsonDecode(resp.body) as Map<String, dynamic>;
+      final current = body['current'] as Map<String, dynamic>;
+      final usAqi = (current['us_aqi'] as num?)?.toDouble();
+      final pm25 = (current['pm2_5'] as num?)?.toDouble();
+      final pm10 = (current['pm10'] as num?)?.toDouble();
+      if (usAqi == null) throw Exception('No AQI in response');
+
+      final now = DateTime.now();
+      await _cache?.put('lastUsAqi', usAqi);
+      if (pm25 != null) await _cache?.put('lastPm25', pm25);
+      if (pm10 != null) await _cache?.put('lastPm10', pm10);
+      await _cache?.put('lastAirQualityAt', now.toIso8601String());
+
+      return _AirQualityResult(
+          usAqi: usAqi, pm25: pm25, pm10: pm10, asOf: now, isLive: true);
+    } catch (_) {
+      final usAqi = _cache?.get('lastUsAqi') as double?;
+      final pm25 = _cache?.get('lastPm25') as double?;
+      final pm10 = _cache?.get('lastPm10') as double?;
+      final asOfStr = _cache?.get('lastAirQualityAt') as String?;
+      if (usAqi == null || asOfStr == null) return null;
+      return _AirQualityResult(
+        usAqi: usAqi,
+        pm25: pm25,
+        pm10: pm10,
+        asOf: DateTime.tryParse(asOfStr),
+        isLive: false,
+      );
+    }
+  }
+
   Future<_QuakeResult?> _fetchQuakes(Position position) async {
     try {
       final startTime = DateTime.now()
@@ -410,6 +499,22 @@ class _WeatherResult {
     required this.ambientTempC,
     required this.humidityPercent,
     required this.pressureHPa,
+    required this.asOf,
+    required this.isLive,
+  });
+}
+
+class _AirQualityResult {
+  final double usAqi;
+  final double? pm25;
+  final double? pm10;
+  final DateTime? asOf;
+  final bool isLive;
+
+  _AirQualityResult({
+    required this.usAqi,
+    required this.pm25,
+    required this.pm10,
     required this.asOf,
     required this.isLive,
   });

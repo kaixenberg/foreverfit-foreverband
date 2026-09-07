@@ -253,37 +253,17 @@ class _RiskPanel extends StatelessWidget {
                 freshness: risk.weatherFreshness,
                 asOf: risk.weatherAsOf,
               ),
-            const Divider(),
-            const _StubRow(icon: Icons.masks_outlined, label: 'Air quality'),
+            if (risk.usAqi != null)
+              _RiskRow(
+                icon: Icons.masks_outlined,
+                label: 'Air quality',
+                value: '${risk.usAqi!.round()} — ${risk.aqiCategory}'
+                    '${risk.pm25 != null ? ' (PM2.5 ${risk.pm25!.toStringAsFixed(0)} µg/m³)' : ''}',
+                freshness: risk.airQualityFreshness,
+                asOf: risk.airQualityAsOf,
+              ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-/// A roadmap item with no data behind it yet (see ARCHITECTURE.md) —
-/// visually distinct from _RiskRow so "not built" is never confused with
-/// "offline baseline" or "stale cache".
-class _StubRow extends StatelessWidget {
-  const _StubRow({required this.icon, required this.label});
-
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    final muted = Theme.of(context).disabledColor;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
-          Icon(icon, size: 18, color: muted),
-          const SizedBox(width: 8),
-          Expanded(child: Text(label, style: TextStyle(color: muted))),
-          Text('Coming soon',
-              style: TextStyle(color: muted, fontStyle: FontStyle.italic)),
-        ],
       ),
     );
   }

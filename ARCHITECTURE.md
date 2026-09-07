@@ -171,6 +171,18 @@ falling back to cached-then-static data when not — see
   - USGS Earthquake API for M4.0+ events within 200km in the last 30
     days — free, global, no key, verified with a live test call (returned
     a real M4.3 event near Barkot, India).
+  - Open-Meteo's separate [Air Quality API](https://open-meteo.com/en/docs/air-quality-api)
+    (`air-quality-api.open-meteo.com`, a different host from the weather
+    forecast one, same no-key/no-signup terms) for US AQI + PM2.5/PM10 —
+    verified live (returned a real AQI 203 "Very Unhealthy" reading for
+    Delhi). Closes the "air quality" gap from the original problem
+    statement, which was open until now. No static offline baseline for
+    this one, unlike seismic zone/cyclone/flood-prone below — AQI swings
+    hour to hour with traffic/weather/season, so a hardcoded "this state
+    is usually X" table would be actively misleading rather than merely
+    approximate; it's live-or-cached only, same as precipitation/wind.
+    AQI > 150 ("Unhealthy") now also feeds the Map's existing warning
+    banner, alongside heavy rain/nearby quakes/high wind.
   - [Nominatim](https://nominatim.org/) (OpenStreetMap) reverse geocoding
     to resolve GPS → state name, respecting its usage policy (only
     re-queried after >2km of movement or a 10-minute cooldown, with a
@@ -202,9 +214,13 @@ falling back to cached-then-static data when not — see
   pre-downloads) backed by `http_cache_file_store` in the app's
   persistent support directory (not a temp dir, which the OS can clear).
 - **Warning banner**: shown when precipitation probability >70%, a
-  nearby M4.5+ quake in the last 30 days, or high wind in a cyclone-prone
-  state — dismissible, no countdown/escalation (an area-awareness
-  warning, not the fall detector's emergency-response flow).
+  nearby M4.5+ quake in the last 30 days, high wind in a cyclone-prone
+  state, or AQI >150 ("Unhealthy") — dismissible, no countdown/escalation
+  (an area-awareness warning, not the fall detector's emergency-response
+  flow, and not wired into the full-screen imminent-warning/siren system
+  either — air quality is a real health risk but not the same acute,
+  drop-everything category as an earthquake or flood, so it stays at
+  this lower-key tier for now).
 - **Position fallback chain** (`DisasterService._getPosition()`): live GPS
   first; if location services are off or a fix fails, `Geolocator.
   getLastKnownPosition()` (the OS's cached fix, available even with
@@ -506,18 +522,11 @@ pattern at all:
 
 ## Roadmap (not yet implemented)
 
-UI stubs exist for everything below (Map's Air Quality row, Health Log's
-tracking tiles, Settings' emergency contact form) so the shape of the
-full app is visible even where the logic isn't built yet.
+UI stubs exist for everything below (Settings' emergency contact form)
+so the shape of the full app is visible even where the logic isn't
+built yet.
 
-### 1. Gaps against the original problem statement
-
-- **Air quality**: mentioned in the original brief (pollution events,
-  respiratory risk) but never integrated — WAQI or OpenWeatherMap's air
-  pollution API would slot into `DisasterService` the same way
-  Open-Meteo does.
-
-### 2. Wearable-sensor disaster heuristics
+### 1. Wearable-sensor disaster heuristics
 
 The disaster map above uses live weather + static state data, not the
 wearable's own sensors yet. Two refinements once the wearable's IMU is
@@ -534,7 +543,7 @@ back (see fall-detection CNN's "on hold" state):
   pre-storm signal) as a supplementary signal alongside the map's
   wind-speed-based check.
 
-### 3. SOS / emergency assistance
+### 2. SOS / emergency assistance
 
 Since "network is icing on the cake," SOS must work over the cellular
 network without data connectivity:
