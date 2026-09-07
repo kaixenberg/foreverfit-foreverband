@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_litert/flutter_litert.dart';
 
+import '../domain/emergency_workflow_service.dart';
 import '../sensors/phone_motion_service.dart';
 
 enum AlertSource { fall, manual }
@@ -25,9 +26,13 @@ enum AlertSource { fall, manual }
 /// Revert to the wrist+phone model + BleService motion fusion once the
 /// wearable's IMU is replaced — see git history for that version.
 class FallDetectorService extends ChangeNotifier {
-  FallDetectorService({required this.phoneMotionService});
+  FallDetectorService({
+    required this.phoneMotionService,
+    required this.emergencyWorkflow,
+  });
 
   final PhoneMotionService phoneMotionService;
+  final EmergencyWorkflowService emergencyWorkflow;
 
   static const int _windowLen = 60; // 3s @ 20Hz
   static const String _modelAsset =
@@ -143,19 +148,22 @@ class FallDetectorService extends ChangeNotifier {
     });
   }
 
-  /// Placeholder for the real SOS flow (see ARCHITECTURE.md roadmap) — a
-  /// dummy action only, no real call is placed.
+  /// No response within the countdown — hands off to the real
+  /// AI-assisted emergency-call workflow (see ARCHITECTURE.md).
   void _triggerEmergencyCall() {
     isCalling = true;
     secondsUntilCall = null;
-    debugPrint('[FallDetector] EMERGENCY: no response within '
-        '${_emergencyCountdownSeconds}s — dummy call to emergency contact '
-        'would fire here.');
     notifyListeners();
+    final reason = alertSource == AlertSource.manual
+        ? 'the user manually requested emergency assistance'
+        : 'a possible fall was detected';
+    emergencyWorkflow.start(triggerReason: reason);
   }
 
   /// Call when the user acknowledges the alert (e.g. taps "I'm OK") —
-  /// cancels any pending countdown/call and fully re-arms detection.
+  /// cancels any pending countdown/call and fully re-arms detection. Also
+  /// requests cancellation of the emergency workflow if it already
+  /// started (best-effort — see EmergencyWorkflowService.cancel()).
   void dismissAlert() {
     _countdownTimer?.cancel();
     _countdownTimer = null;
@@ -164,6 +172,7 @@ class FallDetectorService extends ChangeNotifier {
     secondsUntilCall = null;
     alertSource = null;
     _consecutiveTriggers = 0;
+    emergencyWorkflow.cancel();
     notifyListeners();
   }
 

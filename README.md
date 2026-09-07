@@ -104,8 +104,9 @@ accelerometer/gyroscope and runs an on-device fall-detection CNN — see
 how that model was trained. Currently phone-only (the wearable's MPU6050
 is dead on this build — see Hardware above); the original wrist+phone
 fusion design resumes once that's replaced. A detected fall latches an
-alert banner open until dismissed or a 10s dummy emergency-call
-escalation fires. A "Body & activity" section tracks weight, height, BMI,
+alert banner open until dismissed or a 10s countdown escalates into the
+AI-assisted emergency-call workflow (emergency-services call → emergency
+contact, with retries → SMS fallback). A "Body & activity" section tracks weight, height, BMI,
 body fat, hydration, and phone step count locally (no Health Connect). A
 dashboard nav card leads to the GPS-centered, India-focused disaster-risk
 map (earthquake/cyclone/flood/rain) that works fully offline (cached
@@ -125,11 +126,11 @@ tiles + a static state-level hazard baseline) and prefers live data
       end-to-end on a physical Android phone
 - [x] On-device fall-detection CNN (currently phone-only, 94% recall on
       held-out subjects; wrist+phone fusion on hold pending IMU repair —
-      see `ml/`), with a latched alert + 10s countdown to a dummy
-      emergency-call escalation — real SMS/call wiring not yet built
+      see `ml/`), with a latched alert + 10s countdown that escalates
+      into the real AI-assisted emergency-call workflow (see below)
 - [x] Manual SOS button (Dashboard) — raises the same alert/countdown/
-      dummy-call flow as an auto-detected fall, distinguished in the
-      banner text; real SMS/call wiring is the same open item as above
+      emergency-call flow as an auto-detected fall, distinguished in the
+      banner text
 - [x] Disaster-risk map: GPS + India state-level hazard baseline + live
       Open-Meteo/USGS data with offline fallback — see ARCHITECTURE.md
 - [x] Full-screen imminent-disaster warning with per-hazard safety
@@ -222,10 +223,23 @@ tiles + a static state-level hazard baseline) and prefers live data
       and pushed as local notifications (`flutter_local_notifications`,
       cooldown per condition so a persisting warning doesn't spam) — see
       ARCHITECTURE.md
+- [x] AI-assisted medical emergency call: on fall/manual-SOS, builds a
+      local non-diagnostic summary from recorded vitals/history, opens
+      the device's emergency number (`ACTION_DIAL` — Android reserves
+      silent auto-dial of emergency numbers even from the default
+      dialer), speaks the summary via on-device TTS once the call is
+      live, then calls the saved emergency contact directly (up to 5
+      attempts, "answered" inferred from off-hook persisting past a
+      6s grace period — the platform gives no precise signal), falling
+      back to SMS if never answered. Hand-rolled native Kotlin telephony
+      channel (no third-party call/SMS plugin), explicit state machine
+      (`EmergencyWorkflowService`), mock mode on by default (real
+      calls/SMS need an explicit confirmed opt-out in Settings), 17
+      passing unit tests against a fake telephony backend — see
+      ARCHITECTURE.md for the three Android platform ceilings this
+      works around and what's still deferred (auto-resume after a
+      process kill; full 12-scenario instrumentation test)
 - [ ] Wearable-sensor disaster heuristics (heat-index formula now exists
       — this item is wiring it to the wearable's own BME280 instead of
       phone GPS, plus BME280 pressure drop-rate) once the wearable's IMU
       is replaced
-- [ ] Real SOS (SMS/call + emergency contact storage) — countdown/
-      escalation UX and manual trigger are wired end-to-end, but still
-      end in a dummy logged action, not a real call/SMS

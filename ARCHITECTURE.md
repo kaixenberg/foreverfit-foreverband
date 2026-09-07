@@ -576,11 +576,132 @@ labeled "should I warn this user" training data to learn from anyway.
   dashboard. Hidden entirely when there's nothing to show, rather than an
   empty-state card.
 
-## Roadmap (not yet implemented)
+## AI-assisted medical emergency call (implemented)
 
-UI stubs exist for everything below (Settings' emergency contact form)
-so the shape of the full app is visible even where the logic isn't
-built yet.
+Replaces `FallDetectorService`'s old dummy debugPrint stub with a real
+emergency-response workflow: build a local, non-diagnostic summary from
+data the app already has, call the device's emergency number, speak the
+summary once the call is live, then call the saved emergency contact
+(retrying up to 5 times), falling back to SMS if the contact never
+answers. Triggered by both the auto-detected-fall and manual-SOS
+countdowns (`FallDetectorService`), which already existed.
+
+**Three Android platform ceilings shape the design — confirmed by
+research, not implementation gaps to work around:**
+1. No app — even the default dialer — can silently auto-dial the
+   *emergency-services* number. Android always redirects an `ACTION_CALL`
+   attempt on an emergency number to `ACTION_DIAL` (dialer pre-filled,
+   user taps Call themselves), regardless of permissions held. The
+   workflow's `callingEmergencyServices` state opens the dialer this way
+   and proceeds once it detects the call went live — the closest
+   compliant behavior, not a bug.
+2. No normal app gets a precise "call answered" signal —
+   `READ_PRECISE_PHONE_STATE` is system-signature-only, so only coarse
+   `IDLE`/`OFFHOOK` call state is observable. "Contact answered" is
+   therefore an honestly-documented heuristic
+   (`EmergencyWorkflowService.answerGrace`, 6s default): off-hook
+   persisting past that grace period is treated as answered; returning to
+   idle first is treated as not-answered (covers rejected/failed/
+   unreachable/no-answer alike). This is stated as a heuristic everywhere
+   it's used — never presented as a certain "answered" fact.
+3. TTS cannot be injected into a call's voice-audio path for a normal
+   app — it plays acoustically over the device speaker. The workflow
+   requests speakerphone (`AudioManager.isSpeakerphoneOn`, a normal audio
+   API) once it believes the call is live, so the other party has the
+   best chance of hearing the spoken announcement.
+
+**Architecture** — all telephony primitives live in one hand-rolled
+Kotlin channel (`MainActivity.kt`) rather than third-party call/SMS
+plugins, which research found to be thin, often-unmaintained wrappers
+around this exact API surface:
+- `MethodChannel("com.example.health_companion/telephony")`:
+  `getEmergencyNumbers()` (`TelephonyManager.getEmergencyNumberList()`,
+  API 29+, falls back to `"112"`), `dialEmergencyNumber()`
+  (`ACTION_DIAL`), `callContact()` (`ACTION_CALL`, a legitimate direct
+  dial for a *non-emergency* number, needs `CALL_PHONE`),
+  `setSpeakerphoneOn()`, `sendSms()` (`SmsManager`, needs `SEND_SMS`).
+- `EventChannel("com.example.health_companion/telephony_events")`:
+  `idle`/`offhook` call-state stream, version-gated
+  (`TelephonyCallback`+`CallStateListener` for API 31+, `PhoneStateListener`
+  below — this app's minSdk is 24) — needs `READ_PHONE_STATE`.
+- `lib/services/telephony_service.dart` / `tts_service.dart`: Dart
+  wrappers over the channel above and over `flutter_tts` (on-device,
+  no network — the only new pub dependency this feature added).
+- `lib/domain/emergency_location.dart`: a fresh, unthrottled GPS fix +
+  full-address reverse-geocode (same Nominatim host/User-Agent
+  convention as `DisasterService`, but its own call — that service's
+  version is private, state-only, and cooldown-gated, wrong shape to
+  reuse for a one-shot emergency request). Falls back to raw `"lat, lon"`
+  text, then to "Location unavailable" — location never leaves the
+  device except through the emergency call/contact call/SMS this feature
+  itself drives.
+- `lib/domain/emergency_summary_builder.dart`: builds one
+  `EmergencySummary` (abnormal readings + how long each has stayed
+  abnormal, computed by walking `HistoryStore.recentVitals()` backward
+  against `health_thresholds.dart`'s existing shared constants +
+  location + trigger reason) and three formatter functions (services
+  script, contact-follow-up script, SMS text) from that single shared
+  summary, so the three announcements can't drift out of wording sync.
+  Falls back to a generic, explicitly non-diagnostic message when there
+  isn't enough data — this app never invents a condition, only states
+  measured values.
+- `lib/domain/emergency_workflow_service.dart`: the `ChangeNotifier`
+  state machine (`EmergencyWorkflowState`: idle → emergencyDetected →
+  collectingData → gettingLocation → generatingMessage →
+  callingEmergencyServices → announcingToEmergencyServices →
+  waitingForEmergencyCallEnd → callingEmergencyContact/retryingContact →
+  announcingToContact → smsFallback → completed, plus `failed` and
+  `cancelled` as practical additions beyond the brief's suggested list).
+  `start()` is a synchronous no-op while a run is already active — two
+  near-simultaneous triggers collapse into one. Persists only
+  `{state, attempt, triggeredAt}` to Hive after each transition, **never
+  the generated scripts** (which contain the actual health values) — see
+  Privacy below. On cold start, a non-terminal persisted record is
+  surfaced to the UI as "a previous run didn't finish" but **not
+  auto-resumed** — silently re-placing real calls after a relaunch would
+  be more dangerous than helpful (see Deferred below).
+- **Mock mode** (`EmergencyContactStore.mockMode`, defaults to `true`,
+  requires an explicit confirmed opt-out in Settings): swaps in
+  `MockTelephonyService`, which simulates the whole call/SMS flow
+  (scriptable "answers on attempt N" / "never answers" via Settings) so
+  the entire workflow is safely demoable without ever dialing or texting
+  anything real — location and TTS still run for real in mock mode
+  (both harmless) for a realistic demo. `EmergencyWorkflowService.start
+  (forceMock: true)` powers Settings' "Preview emergency workflow"
+  button, which always previews in mock mode regardless of the real
+  setting.
+- **UI**: `EmergencyCallScreen` + `EmergencyCallGate` mirror the existing
+  `ImminentWarningScreen`/`ImminentWarningGate` pattern — full-screen,
+  plain-language state label, the generated scripts shown for
+  transparency, a Cancel action (best-effort — there's no platform API
+  for a normal app to end a call it didn't place through its own in-call
+  UI). `SettingsScreen`'s emergency-contact form is now really persisted
+  (`EmergencyContactStore`, same Hive pattern as `HealthLogStore`).
+
+**Privacy**: health data leaves the device only through the three
+channels the workflow itself drives (the emergency call, the contact
+call, the SMS) — nothing is uploaded, no cloud speech/LLM is used to
+generate the announcement (all three scripts are built from local
+string templates), and the operational log shown in `EmergencyCallScreen`
+never contains raw vitals or the generated text, only step names.
+
+**Deferred (MVP scope, given the demo deadline)** — noted here rather
+than silently dropped:
+- Auto-resume after an app process kill: the workflow surfaces an
+  interrupted run instead of silently continuing it (see above) — this
+  is a deliberate safety choice, not just an unfinished corner, but a
+  true "pick back up exactly where it left off" resume was out of scope.
+- The full formal 12-scenario test matrix from the feature's own spec:
+  `test/domain/emergency_workflow_service_test.dart` covers 12 of them
+  with hand-rolled fakes (`test/support/fakes.dart` — no new mocking
+  dependency) exercising the real state machine — happy path, emergency
+  call never connecting, no-answer/retry/answer-on-attempt-3, all 5
+  attempts exhausted → SMS, location unavailable, missing CALL_PHONE/
+  SEND_SMS permission, TTS failure, and duplicate simultaneous triggers.
+  Not automated: on-device instrumentation of an actual process kill
+  mid-run (covered only at the design level, per the point above).
+
+## Roadmap (not yet implemented)
 
 ### 1. Wearable-sensor disaster heuristics
 
@@ -599,35 +720,19 @@ back (see fall-detection CNN's "on hold" state):
   pre-storm signal) as a supplementary signal alongside the map's
   wind-speed-based check.
 
-### 2. SOS / emergency assistance
+### 2. Emergency-call hardening (see "AI-assisted medical emergency call"
+above for what's already implemented)
 
-Since "network is icing on the cake," SOS must work over the cellular
-network without data connectivity:
-- `url_launcher` with `sms:` and `tel:` URIs to reach emergency contacts
-  (stored locally, never synced) with the user's GPS coordinates —
-  SMS/calls don't need mobile data.
-- **The cancellable countdown + escalation trigger is implemented and now
-  shared between both triggers** (`FallDetectorService`: 10s countdown,
-  "I'm OK" to cancel, escalates otherwise) — currently ends in a dummy
-  logged action, not a real call/SMS. Wiring `_triggerEmergencyCall()` to
-  actually reach an emergency contact via `url_launcher` (`sms:`/`tel:`)
-  with GPS coordinates is what's left.
-- **Manual SOS button is wired** (`DashboardScreen`'s SOS icon calls
-  `FallDetectorService.triggerManualSOS()`) — raises the same alert/
-  countdown/dummy-call flow as an auto-detected fall, distinguished in the
-  banner via `AlertSource` (`manual` vs `fall`) so the message reads
-  "Manual SOS activated" instead of "Possible fall detected." Ignored
-  while another alert is already active, so it can't stomp on one in
-  progress. Still ends in the same dummy call as fall detection — real
-  SMS/call wiring is the one piece above still open.
-- **Settings screen + emergency contact form** now exist as a UI stub
-  (`SettingsScreen`, reached via the Dashboard's app-bar gear icon) — not
-  persisted yet, just the layout.
-- An online webhook/push notification path can be added later as a
-  supplementary channel, never a dependency.
+- Real, automated process-death resume — today an interrupted run is
+  surfaced to the user, not silently continued (a deliberate safety
+  choice, see above), but a "pick back up with confirmation" flow would
+  be more helpful than requiring a fresh manual trigger.
+- The remaining scenario from the feature's own 12-scenario test spec
+  (an actual on-device process kill mid-run) as an automated
+  instrumentation test rather than a design-level argument only.
 - Now that Medical ID is a real saved profile (see "Health log" above),
-  a real emergency SMS could include blood type/allergies/conditions
-  alongside GPS coordinates — not built yet, just newly possible.
+  the emergency summary could include blood type/allergies/conditions
+  alongside vitals — not built yet, just newly possible.
 
 ## Repo layout
 

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../ble/ble_service.dart';
 import '../disaster/disaster_service.dart';
+import '../domain/emergency_workflow_service.dart';
 import '../domain/health_thresholds.dart';
 import '../domain/insight_watcher_service.dart';
 import '../ml/activity_classifier_service.dart';
@@ -231,6 +232,7 @@ class DashboardScreen extends StatelessWidget {
         padding: const EdgeInsets.all(12),
         children: [
           if (alertActive) const _FallAlertBanner(),
+          const _RecoveredEmergencyBanner(),
           if (!connected) _ConnectWearableBanner(),
           const _InsightsSection(),
           _DisasterMapNavCard(risk: disaster.risk),
@@ -744,6 +746,47 @@ class _DisasterMapNavCard extends StatelessWidget {
                 : scheme.onPrimaryContainer),
         onTap: () => Navigator.of(context).push(
           MaterialPageRoute(builder: (_) => const MapScreen()),
+        ),
+      ),
+    );
+  }
+}
+
+/// Surfaces a prior emergency workflow that didn't finish because the app
+/// process was killed mid-run — deliberately shown rather than silently
+/// resumed (re-placing real calls after a silent relaunch would be more
+/// dangerous than informative). See EmergencyWorkflowService.init().
+class _RecoveredEmergencyBanner extends StatelessWidget {
+  const _RecoveredEmergencyBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    final workflow = context.watch<EmergencyWorkflowService>();
+    if (!workflow.recoveredIncompleteRun) return const SizedBox.shrink();
+    return Card(
+      color: Theme.of(context).colorScheme.errorContainer,
+      margin: const EdgeInsets.only(bottom: 12),
+      child: ListTile(
+        leading: Icon(Icons.warning_amber,
+            color: Theme.of(context).colorScheme.onErrorContainer),
+        title: Text(
+          'An emergency workflow didn\'t finish',
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onErrorContainer,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        subtitle: Text(
+          'It was interrupted at "${workflow.recoveredStateLabel}" — the app '
+          'was likely closed mid-emergency. If you still need help, use the '
+          'SOS button above.',
+          style:
+              TextStyle(color: Theme.of(context).colorScheme.onErrorContainer),
+        ),
+        trailing: IconButton(
+          icon: Icon(Icons.close,
+              color: Theme.of(context).colorScheme.onErrorContainer),
+          onPressed: () => workflow.acknowledgeRecoveredRun(),
         ),
       ),
     );
