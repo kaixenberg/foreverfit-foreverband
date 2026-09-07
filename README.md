@@ -92,23 +92,25 @@ Run on a **physical Android phone**, not an emulator — BLE central support
 on emulators is unreliable. Grant the Bluetooth and location permissions
 when prompted (Android requires location permission for BLE scanning).
 
-The app opens into a bottom-nav shell (Dashboard / Map / Health Log) that
+The app opens straight into a single Dashboard — no bottom nav/tabs — that
 works with or without the wearable connected — see ARCHITECTURE.md's "App
-navigation" section. The Dashboard tab discovers/connects the
-`HealthCompanion` wearable via a "Connect" button and shows heart rate,
-SpO2, body temperature, and environmental readings with a recent
-heart-rate trend chart when connected (placeholders otherwise); readings
-persist locally via Hive. It also reads the phone's own
+navigation" section. It discovers/connects the `HealthCompanion` wearable
+via a "Connect" button/banner and shows heart rate, SpO2, body
+temperature, and environmental readings (falling back to online weather
+when the wearable isn't connected) with a recent heart-rate trend chart;
+readings persist locally via Hive. It also reads the phone's own
 accelerometer/gyroscope and runs an on-device fall-detection CNN — see
 [ARCHITECTURE.md](ARCHITECTURE.md) and [ml/README.md](ml/README.md) for
 how that model was trained. Currently phone-only (the wearable's MPU6050
 is dead on this build — see Hardware above); the original wrist+phone
 fusion design resumes once that's replaced. A detected fall latches an
 alert banner open until dismissed or a 10s dummy emergency-call
-escalation fires. The Map tab shows a GPS-centered, India-focused
-disaster-risk view (earthquake/cyclone/flood/rain) that works fully
-offline (cached tiles + a static state-level hazard baseline) and prefers
-live data (Open-Meteo, USGS) when online.
+escalation fires. A "Body & activity" section tracks weight, height, BMI,
+body fat, hydration, and phone step count locally (no Health Connect). A
+dashboard nav card leads to the GPS-centered, India-focused disaster-risk
+map (earthquake/cyclone/flood/rain) that works fully offline (cached
+tiles + a static state-level hazard baseline) and prefers live data
+(Open-Meteo, USGS) when online.
 
 ## Status
 
@@ -116,7 +118,8 @@ live data (Open-Meteo, USGS) when online.
       confirmed dead via I2C scan — motion now comes from the phone only
 - [x] Firmware: BLE streaming of vitals/environment (motion channel idle
       until the wearable's IMU is replaced)
-- [x] App: bottom-nav shell (Dashboard/Map/Health Log/Settings), all
+- [x] App: single-dashboard navigation (no tabs) — Map, Health Log, and
+      Settings are all pushed routes reached from the Dashboard, all
       reachable without a wearable; BLE connect + live dashboard + local
       history confirmed working end-to-end on a physical Android phone
 - [x] On-device fall-detection CNN (currently phone-only, 94% recall on
@@ -163,6 +166,11 @@ live data (Open-Meteo, USGS) when online.
       applied app-wide; one idea (score + reasoning screen shape) drawn
       from a reviewed reference app, reimplemented from scratch in Dart,
       no code copied (see ARCHITECTURE.md)
+- [x] Body & activity tracking, local storage (no Health Connect): weight,
+      height, BMI (computed), body fat %, and hydration (with one-tap
+      quick-add) log to Hive via `MetricsStore`; phone step count via the
+      hardware step counter (`pedometer`), daily-reset logic handled
+      locally — see ARCHITECTURE.md
 - [x] Heat-index formula (`lib/utils/heat_index.dart`) — the on-device
       heat-stress CNN originally planned was dropped after its dataset
       (WESAD) turned out to be a dead end on direct verification (dead
@@ -170,8 +178,8 @@ live data (Open-Meteo, USGS) when online.
       transparent NOAA/Rothfusz formula was built instead — see
       `ml/README.md`
 - [x] UI stubs for everything below (Map's Air Quality row, Health Log's
-      tracking tiles, Settings' emergency contact form) — visible, not
-      yet wired to real data/logic
+      remaining tracking tiles, Settings' emergency contact form) —
+      visible, not yet wired to real data/logic
 - [ ] Air quality integration
 - [ ] Sleep tracking
 - [ ] Trend/daily-summary views
@@ -179,7 +187,10 @@ live data (Open-Meteo, USGS) when online.
       — this item is wiring it to the wearable's own BME280 instead of
       phone GPS, plus BME280 pressure drop-rate) once the wearable's IMU
       is replaced
-- [ ] Health tracking (weight/height/meds/insulin/Medical ID) — UI stub only
+- [ ] Remaining health tracking (blood pressure/glucose/insulin/meds/
+      sleep/Medical ID) — UI stub only, reachable via the Dashboard's
+      "More health tracking" card. Weight/height/body fat/hydration/steps
+      are implemented, see above
 - [ ] Real SOS (SMS/call + emergency contact storage) — countdown/
       escalation UX and manual trigger are wired end-to-end, but still
       end in a dummy logged action, not a real call/SMS

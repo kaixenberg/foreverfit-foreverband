@@ -129,16 +129,23 @@ synchronized phone signal resolves that ambiguity.
   only, no real call placed) — see `fall_detector_service.dart`. Wiring
   that escalation to a real SMS/call is the SOS item below, not yet built.
 
-## App navigation (implemented)
+## App navigation (implemented, single-dashboard — no bottom nav)
 
-The app opens into `HomeShell` (`lib/screens/home_shell.dart`), a bottom
-`NavigationBar` with three tabs — Dashboard, Map, Health Log (placeholder)
-— all reachable with or without a wearable connected. Previously the app
-opened straight into the BLE scan screen and `DashboardScreen` bounced
-back to it whenever disconnected, which made features that don't need a
-wearable at all (fall detection, and now the map) unreachable without
-one. `ScanConnectScreen` is now a pushed route reached via a "Connect"
-button/banner on the dashboard, not the app's home.
+`DashboardScreen` is the app's home route directly (`main.dart`'s
+`home:`) — no shell, no bottom `NavigationBar`. Replaced the earlier
+three-tab layout (`home_shell.dart`, deleted) after reviewing a cloned
+reference app (`app/mobile-app` — OpenVitals, see the "Visual design"
+section above) whose single-dashboard-with-widget-grid pattern reads as
+more information-dense than tabs for an app with this many small stats.
+Everything else is a pushed route reached from the dashboard: `Settings`
+via an app-bar gear icon, the disaster `MapScreen` via a dedicated nav
+card (shows the current warning inline when there is one, not just a
+generic link — see `_DisasterMapNavCard`), `ScanConnectScreen` via the
+Connect banner/button, `HealthLogScreen` via a "More health tracking"
+card for whatever hasn't been promoted to a real dashboard widget yet.
+All of it is reachable with or without a wearable connected, same as
+before — `DashboardScreen` never bounces to `ScanConnectScreen`
+automatically.
 
 `BleService` tracks `FlutterBluePlus.adapterState` directly (initialized
 from `adapterStateNow`, kept live via the `adapterState` stream) instead
@@ -337,6 +344,45 @@ scratch in Dart — no OpenVitals code was copied:
   OpenVitals' Daily Readiness screen; the content, data, and code are
   this app's own.
 
+## Body & activity metrics (implemented, local storage — no Health Connect)
+
+A second pass at OpenVitals, this time asked to consider its full feature
+set (39 dashboard widgets, 11 settings sections, GPS/watch/import/export
+subsystems — see its `docs/features/feature-map.md`). Verdict, given
+before starting: porting "every feature" isn't realistic in the time
+available, and more importantly almost none of it is custom logic to
+port in the first place — nearly every OpenVitals metric is a thin
+display layer over **Health Connect**, Android's system health data
+store, which this app doesn't integrate with and has a fundamentally
+different data model from (BLE-wearable + phone-sensor first, not
+Health-Connect-aggregation first). Scoped down to: the single-dashboard
+*shape* (see "App navigation" above) plus a handful of the manual-entry
+metrics, built for real against this app's own local storage instead of
+Health Connect:
+
+- **`lib/storage/metrics_store.dart`**: a `ChangeNotifier` Hive store
+  (same offline-first pattern as `HistoryStore`) for weight, height, and
+  body fat % log entries, plus hydration entries. `bmi` is computed from
+  the latest logged weight + height (no separate stored field). Dashboard
+  taps open `lib/widgets/log_value_dialog.dart` (one shared numeric-entry
+  dialog reused for all three) to log a new value.
+- **`lib/widgets/hydration_card.dart`**: today's total plus one-tap
+  quick-add chips (+100/250/500ml) — logging water shouldn't need a form.
+- **`lib/services/step_counter_service.dart`**: the phone's own hardware
+  step counter (`pedometer` package, Android `TYPE_STEP_COUNTER`), not
+  Health Connect and not the wearable (no step sensor on it). That sensor
+  reports a cumulative count since last boot, not since midnight, so this
+  stores a "steps at start of today" baseline in Hive and reports the
+  difference — persisted so a restart mid-day doesn't reset it. Needs the
+  `ACTIVITY_RECOGNITION` runtime permission (Android 10+), requested in
+  `start()`.
+- **`HealthLogScreen`** trimmed to only what's *not* yet real (blood
+  pressure, glucose, insulin, meds, sleep, Medical ID) — weight, height,
+  body fat, hydration, and steps moved to the Dashboard's "Body &
+  activity" section as real widgets, reachable via a "More health
+  tracking" card rather than being a nav destination of its own now that
+  there's no tab bar.
+
 ## Roadmap (not yet implemented)
 
 UI stubs exist for everything below (Map's Air Quality row, Health Log's
@@ -412,8 +458,9 @@ network without data connectivity:
   while another alert is already active, so it can't stomp on one in
   progress. Still ends in the same dummy call as fall detection — real
   SMS/call wiring is the one piece above still open.
-- **Settings tab + emergency contact form** now exist as a UI stub
-  (`SettingsScreen`) — not persisted yet, just the layout.
+- **Settings screen + emergency contact form** now exist as a UI stub
+  (`SettingsScreen`, reached via the Dashboard's app-bar gear icon) — not
+  persisted yet, just the layout.
 - An online webhook/push notification path can be added later as a
   supplementary channel, never a dependency.
 
@@ -441,22 +488,22 @@ sih26-health-companion/
         ├── ble/{protocol.dart, ble_service.dart}
         ├── sensors/phone_motion_service.dart
         ├── ml/{fall_detector_service.dart, activity_classifier_service.dart}
-        ├── services/{alarm_sound_service.dart, baseline_service.dart}
+        ├── services/{alarm_sound_service.dart, baseline_service.dart,
+        │   step_counter_service.dart}
         ├── utils/heat_index.dart
         ├── theme/app_theme.dart
         ├── models/{sensor_reading.dart, wellness_snapshot.dart}
         ├── disaster/{disaster_service.dart, india_hazard_data.dart,
         │   hazard_type.dart, imminent_warning_gate.dart}
-        ├── storage/history_store.dart
+        ├── storage/{history_store.dart, metrics_store.dart}
         ├── screens/
-        │   ├── home_shell.dart              # bottom-nav shell, app's home route
-        │   ├── dashboard_screen.dart
+        │   ├── dashboard_screen.dart         # app's home route, no bottom nav
         │   ├── wellness_detail_screen.dart
-        │   ├── map_screen.dart
-        │   ├── health_log_screen.dart       # stub tiles
-        │   ├── settings_screen.dart         # wearable mgmt + emergency contact stub
-        │   │                                 # + disaster-warning preview
+        │   ├── map_screen.dart               # pushed from a Dashboard nav card
+        │   ├── health_log_screen.dart        # remaining stub tiles only
+        │   ├── settings_screen.dart          # wearable mgmt + emergency contact stub
+        │   │                                  # + disaster-warning preview
         │   ├── imminent_warning_screen.dart
-        │   └── scan_connect_screen.dart     # pushed route, not the home route
-        └── widgets/metric_card.dart
+        │   └── scan_connect_screen.dart      # pushed route, not the home route
+        └── widgets/{metric_card.dart, hydration_card.dart, log_value_dialog.dart}
 ```

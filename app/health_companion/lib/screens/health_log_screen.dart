@@ -1,18 +1,13 @@
 import 'package:flutter/material.dart';
 
-/// Placeholder — see ARCHITECTURE.md roadmap item 4. Every tile here is a
-/// UI stub only; tapping shows what it'll eventually do, nothing is
-/// tracked or persisted yet.
+/// Remaining health-tracking ideas not yet promoted to real Dashboard
+/// widgets — see ARCHITECTURE.md roadmap item 3. Weight/height/body
+/// fat/hydration/steps moved to the Dashboard's "Body & activity" section
+/// and are real, not stubs; every tile here still is one.
 class HealthLogScreen extends StatelessWidget {
   const HealthLogScreen({super.key});
 
   static const _stubs = [
-    (
-      Icons.monitor_weight_outlined,
-      'Weight',
-      'Track weight over time with BMI'
-    ),
-    (Icons.height, 'Height', 'One-time or periodic height entry'),
     (
       Icons.favorite_border,
       'Blood pressure',
@@ -34,7 +29,6 @@ class HealthLogScreen extends StatelessWidget {
       'Schedule, dosage, and refill reminders'
     ),
     (Icons.bedtime_outlined, 'Sleep', 'Duration and quality tracking'),
-    (Icons.local_drink_outlined, 'Hydration', 'Daily water intake'),
     (
       Icons.badge_outlined,
       'Medical ID',
@@ -51,7 +45,9 @@ class HealthLogScreen extends StatelessWidget {
         children: [
           const Padding(
             padding: EdgeInsets.fromLTRB(16, 8, 16, 8),
-            child: Text('Health tracking is coming soon. Planned features:'),
+            child:
+                Text('More tracking is coming soon. Weight, height, body fat, '
+                    'hydration, and steps are already live on the Dashboard.'),
           ),
           for (final (icon, title, subtitle) in _stubs)
             ListTile(

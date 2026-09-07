@@ -8,11 +8,18 @@ import '../ml/activity_classifier_service.dart';
 import '../ml/fall_detector_service.dart';
 import '../models/wellness_snapshot.dart';
 import '../services/baseline_service.dart';
+import '../services/step_counter_service.dart';
 import '../storage/history_store.dart';
+import '../storage/metrics_store.dart';
 import '../theme/app_theme.dart';
 import '../utils/heat_index.dart';
+import '../widgets/hydration_card.dart';
+import '../widgets/log_value_dialog.dart';
 import '../widgets/metric_card.dart';
+import 'health_log_screen.dart';
+import 'map_screen.dart';
 import 'scan_connect_screen.dart';
+import 'settings_screen.dart';
 import 'wellness_detail_screen.dart';
 
 /// Heart-rate ceiling above which a reading is flagged, conditioned on
@@ -128,6 +135,8 @@ class DashboardScreen extends StatelessWidget {
     final activityClassifier = context.watch<ActivityClassifierService>();
     final baseline = context.watch<BaselineService>();
     final disaster = context.watch<DisasterService>();
+    final metrics = context.watch<MetricsStore>();
+    final steps = context.watch<StepCounterService>();
     final history = context.read<HistoryStore>();
     final connected = ble.status == ConnectionStatus.connected;
 
@@ -194,7 +203,7 @@ class DashboardScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Live Dashboard'),
+        title: const Text('Health Companion'),
         actions: [
           IconButton(
             icon: const Icon(Icons.sos),
@@ -216,6 +225,13 @@ class DashboardScreen extends StatelessWidget {
                           builder: (_) => const ScanConnectScreen()),
                     ),
           ),
+          IconButton(
+            icon: const Icon(Icons.settings_outlined),
+            tooltip: 'Settings',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const SettingsScreen()),
+            ),
+          ),
         ],
       ),
       body: ListView(
@@ -224,6 +240,8 @@ class DashboardScreen extends StatelessWidget {
           if (fallDetector.alertActive)
             _FallAlertBanner(fallDetector: fallDetector),
           if (!connected) _ConnectWearableBanner(),
+          _DisasterMapNavCard(risk: disaster.risk),
+          const SizedBox(height: 12),
           GridView.count(
             crossAxisCount: 2,
             shrinkWrap: true,
@@ -346,7 +364,147 @@ class DashboardScreen extends StatelessWidget {
             height: 140,
             child: _HeartRateSparkline(history: history),
           ),
+          const SizedBox(height: 16),
+          Text('Body & activity',
+              style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          GridView.count(
+            crossAxisCount: 3,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            childAspectRatio: 1.1,
+            mainAxisSpacing: 8,
+            crossAxisSpacing: 8,
+            children: [
+              MetricCard(
+                label: 'Steps today',
+                value: steps.todaySteps.toString(),
+                unit: '',
+                icon: Icons.directions_walk,
+                accentColor: AppTheme.accentGreen,
+              ),
+              MetricCard(
+                label: 'Weight',
+                value: metrics.latestWeightKg?.toStringAsFixed(1) ?? '--',
+                unit: metrics.latestWeightKg == null ? '' : 'kg',
+                icon: Icons.monitor_weight_outlined,
+                accentColor: AppTheme.accentCoral,
+                onTap: () async {
+                  final value = await showLogValueDialog(
+                    context: context,
+                    title: 'Log weight',
+                    unit: 'kg',
+                  );
+                  if (value != null) metrics.addWeightKg(value);
+                },
+              ),
+              MetricCard(
+                label: 'Height',
+                value: metrics.latestHeightCm?.toStringAsFixed(0) ?? '--',
+                unit: metrics.latestHeightCm == null ? '' : 'cm',
+                icon: Icons.height,
+                accentColor: AppTheme.accentPurple,
+                onTap: () async {
+                  final value = await showLogValueDialog(
+                    context: context,
+                    title: 'Log height',
+                    unit: 'cm',
+                  );
+                  if (value != null) metrics.addHeightCm(value);
+                },
+              ),
+              MetricCard(
+                label: 'BMI',
+                value: metrics.bmi?.toStringAsFixed(1) ?? '--',
+                unit: '',
+                icon: Icons.calculate_outlined,
+                accentColor: AppTheme.accentBlue,
+              ),
+              MetricCard(
+                label: 'Body fat',
+                value: metrics.latestBodyFatPercent?.toStringAsFixed(1) ?? '--',
+                unit: metrics.latestBodyFatPercent == null ? '' : '%',
+                icon: Icons.percent,
+                accentColor: AppTheme.accentTeal,
+                onTap: () async {
+                  final value = await showLogValueDialog(
+                    context: context,
+                    title: 'Log body fat',
+                    unit: '%',
+                  );
+                  if (value != null) metrics.addBodyFatPercent(value);
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          HydrationCard(metrics: metrics),
+          const SizedBox(height: 12),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.list_alt_outlined),
+              title: const Text('More health tracking'),
+              subtitle: const Text(
+                  'Blood pressure, glucose, insulin, meds, sleep, Medical ID'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const HealthLogScreen()),
+              ),
+            ),
+          ),
         ],
+      ),
+    );
+  }
+}
+
+/// Entry point to the disaster/GPS map — a button on the dashboard rather
+/// than a tab, since single-dashboard navigation replaced the old bottom
+/// nav bar. Shows the current warning inline when there is one, so it's
+/// not just a generic link.
+class _DisasterMapNavCard extends StatelessWidget {
+  const _DisasterMapNavCard({required this.risk});
+
+  final DisasterRisk? risk;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final hasWarning = risk?.hasWarning ?? false;
+    return Card(
+      color: hasWarning ? scheme.errorContainer : scheme.primaryContainer,
+      child: ListTile(
+        leading: Icon(
+          hasWarning ? Icons.warning_amber_rounded : Icons.map_outlined,
+          color:
+              hasWarning ? scheme.onErrorContainer : scheme.onPrimaryContainer,
+        ),
+        title: Text(
+          'Disaster & safety map',
+          style: TextStyle(
+            color: hasWarning
+                ? scheme.onErrorContainer
+                : scheme.onPrimaryContainer,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        subtitle: Text(
+          hasWarning
+              ? (risk?.warningMessage ?? 'Elevated risk in your area')
+              : 'GPS-based earthquake, flood, and cyclone risk for your area',
+          style: TextStyle(
+            color: hasWarning
+                ? scheme.onErrorContainer
+                : scheme.onPrimaryContainer,
+          ),
+        ),
+        trailing: Icon(Icons.chevron_right,
+            color: hasWarning
+                ? scheme.onErrorContainer
+                : scheme.onPrimaryContainer),
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const MapScreen()),
+        ),
       ),
     );
   }
