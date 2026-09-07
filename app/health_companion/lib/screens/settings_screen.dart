@@ -1,246 +1,119 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 
-import '../disaster/hazard_type.dart';
-import '../domain/emergency_workflow_service.dart';
-import '../storage/emergency_contact_store.dart';
-import 'imminent_warning_screen.dart';
-import 'scan_connect_screen.dart';
+import 'profile_medical_screen.dart';
+import 'settings/appearance_settings_screen.dart';
+import 'settings/background_permission_screen.dart';
+import 'settings/data_backup_screen.dart';
+import 'settings/developer_demo_screen.dart';
+import 'settings/medical_emergency_screen.dart';
+import 'settings/permissions_screen.dart';
+import 'settings/sensor_precedence_screen.dart';
+import 'settings/units_settings_screen.dart';
+import 'settings/warning_choices_screen.dart';
+import 'settings/wearable_settings_screen.dart';
 
-class SettingsScreen extends StatefulWidget {
+class _SettingsCategory {
+  const _SettingsCategory(this.icon, this.title, this.subtitle, this.builder);
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final WidgetBuilder builder;
+}
+
+final _categories = [
+  _SettingsCategory(
+    Icons.person_outline,
+    'Profile & Medical',
+    'Your info, blood type, allergies, conditions, weight, height',
+    (_) => const ProfileMedicalScreen(isOnboarding: false),
+  ),
+  _SettingsCategory(
+    Icons.straighten_outlined,
+    'Units',
+    'Metric, Imperial, or match your device',
+    (_) => const UnitsSettingsScreen(),
+  ),
+  _SettingsCategory(
+    Icons.palette_outlined,
+    'Appearance',
+    'Theme, OLED black, dynamic color',
+    (_) => const AppearanceSettingsScreen(),
+  ),
+  _SettingsCategory(
+    Icons.import_export_outlined,
+    'Data export & import',
+    'Back up or restore all your data',
+    (_) => const DataBackupScreen(),
+  ),
+  _SettingsCategory(
+    Icons.watch_outlined,
+    'Wearable',
+    'Connect and manage devices',
+    (_) => const WearableSettingsScreen(),
+  ),
+  _SettingsCategory(
+    Icons.tune_outlined,
+    'Sensor precedence',
+    'Which source wins when more than one is available',
+    (_) => const SensorPrecedenceScreen(),
+  ),
+  _SettingsCategory(
+    Icons.notifications_active_outlined,
+    'Warning choices',
+    'Which notification categories to receive',
+    (_) => const WarningChoicesScreen(),
+  ),
+  _SettingsCategory(
+    Icons.emergency_outlined,
+    'Medical emergency',
+    'Emergency contact and local hotline number',
+    (_) => const MedicalEmergencyScreen(),
+  ),
+  _SettingsCategory(
+    Icons.verified_user_outlined,
+    'Permissions',
+    'What this app can currently access',
+    (_) => const PermissionsScreen(),
+  ),
+  _SettingsCategory(
+    Icons.battery_saver_outlined,
+    'Background permission',
+    'Keep monitoring running when the screen is off',
+    (_) => const BackgroundPermissionScreen(),
+  ),
+  _SettingsCategory(
+    Icons.developer_mode_outlined,
+    'Developer / demo',
+    'Test mode and full-screen warning previews',
+    (_) => const DeveloperDemoScreen(),
+  ),
+];
+
+class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
 
   @override
-  State<SettingsScreen> createState() => _SettingsScreenState();
-}
-
-class _SettingsScreenState extends State<SettingsScreen> {
-  final _nameController = TextEditingController();
-  final _phoneController = TextEditingController();
-  final _emergencyNumberController = TextEditingController();
-  bool _prefilled = false;
-
-  @override
-  void dispose() {
-    _nameController.dispose();
-    _phoneController.dispose();
-    _emergencyNumberController.dispose();
-    super.dispose();
-  }
-
-  void _prefillOnce(EmergencyContactStore store) {
-    if (_prefilled) return;
-    _prefilled = true;
-    _nameController.text = store.contactName;
-    _phoneController.text = store.contactPhone;
-    _emergencyNumberController.text = store.customEmergencyNumber;
-  }
-
-  Future<void> _confirmDisableMockMode(EmergencyContactStore store) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Turn off test mode?'),
-        content: const Text(
-          'With test mode off, a real fall or manual SOS will place a REAL '
-          'phone call to emergency services, REAL calls to your emergency '
-          'contact, and may send a REAL SMS. Only turn this off when you '
-          'mean it.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Turn off test mode'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed == true) {
-      await store.setMockMode(false);
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final contactStore = context.watch<EmergencyContactStore>();
-    final workflow = context.watch<EmergencyWorkflowService>();
-    _prefillOnce(contactStore);
-
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
-      body: ListView(
+      body: ListView.separated(
         padding: const EdgeInsets.all(16),
-        children: [
-          Card(
+        itemCount: _categories.length,
+        separatorBuilder: (_, __) => const SizedBox(height: 8),
+        itemBuilder: (context, i) {
+          final category = _categories[i];
+          return Card(
             child: ListTile(
-              leading: const Icon(Icons.watch_outlined),
-              title: const Text('Wearable'),
-              subtitle:
-                  const Text('Connect or manage your Health Companion device'),
+              leading: Icon(category.icon),
+              title: Text(category.title),
+              subtitle: Text(category.subtitle),
               trailing: const Icon(Icons.chevron_right),
               onTap: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const ScanConnectScreen()),
+                MaterialPageRoute(builder: category.builder),
               ),
             ),
-          ),
-          const SizedBox(height: 16),
-          Text('Emergency contact',
-              style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 4),
-          Text(
-            'Called automatically (with a spoken summary) after a fall or '
-            'manual SOS, following the emergency-services call. See '
-            'ARCHITECTURE.md for how this works and its platform limits.',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _nameController,
-            decoration: const InputDecoration(
-              labelText: 'Contact name',
-              border: OutlineInputBorder(),
-            ),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _phoneController,
-            keyboardType: TextInputType.phone,
-            decoration: const InputDecoration(
-              labelText: 'Phone number',
-              border: OutlineInputBorder(),
-            ),
-          ),
-          const SizedBox(height: 12),
-          FilledButton(
-            onPressed: () async {
-              await contactStore.saveContact(
-                name: _nameController.text,
-                phone: _phoneController.text,
-              );
-              if (!context.mounted) return;
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Emergency contact saved')),
-              );
-            },
-            child: const Text('Save contact'),
-          ),
-          const SizedBox(height: 24),
-          Text('Emergency number',
-              style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 4),
-          Text(
-            "Leave blank to auto-detect your region's emergency number "
-            '(falls back to 112). Set this only if auto-detection is wrong '
-            'for your device.',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _emergencyNumberController,
-            keyboardType: TextInputType.phone,
-            decoration: const InputDecoration(
-              labelText: 'Custom emergency number (optional)',
-              border: OutlineInputBorder(),
-            ),
-          ),
-          const SizedBox(height: 12),
-          OutlinedButton(
-            onPressed: () => contactStore
-                .setCustomEmergencyNumber(_emergencyNumberController.text),
-            child: const Text('Save emergency number'),
-          ),
-          const SizedBox(height: 24),
-          Text('Test mode', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 4),
-          Text(
-            contactStore.mockMode
-                ? 'On — a triggered emergency simulates calls/SMS instead of '
-                    'placing real ones. Safe to leave on for demos.'
-                : 'OFF — a triggered emergency will place REAL calls and may '
-                    'send a REAL SMS.',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: contactStore.mockMode
-                      ? null
-                      : Theme.of(context).colorScheme.error,
-                  fontWeight: contactStore.mockMode ? null : FontWeight.bold,
-                ),
-          ),
-          SwitchListTile(
-            title: const Text('Test mode (simulate calls/SMS)'),
-            value: contactStore.mockMode,
-            onChanged: (value) {
-              if (value) {
-                contactStore.setMockMode(true);
-              } else {
-                _confirmDisableMockMode(contactStore);
-              }
-            },
-          ),
-          if (contactStore.mockMode) ...[
-            const SizedBox(height: 4),
-            Text('Simulated contact answers on attempt:',
-                style: Theme.of(context).textTheme.bodySmall),
-            Wrap(
-              spacing: 8,
-              children: [
-                for (final n in [1, 2, 3, 4, 5])
-                  ChoiceChip(
-                    label: Text('$n'),
-                    selected: contactStore.mockAnswerOnAttempt == n,
-                    onSelected: (_) => contactStore.setMockAnswerOnAttempt(n),
-                  ),
-                ChoiceChip(
-                  label: const Text('Never'),
-                  selected: contactStore.mockAnswerOnAttempt == null,
-                  onSelected: (_) => contactStore.setMockAnswerOnAttempt(null),
-                ),
-              ],
-            ),
-          ],
-          const SizedBox(height: 12),
-          FilledButton.tonal(
-            onPressed: workflow.isActive
-                ? null
-                : () => workflow.start(
-                      triggerReason: 'this is a preview — no real emergency '
-                          'was detected',
-                      forceMock: true,
-                    ),
-            child: const Text('Preview emergency workflow'),
-          ),
-          const SizedBox(height: 24),
-          Text('Preview disaster warnings',
-              style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 4),
-          Text(
-            'Shows the full-screen warning that normally appears only when '
-            'a hazard crosses the imminent threshold (see ARCHITECTURE.md) — '
-            'useful for demos since real conditions rarely cross it live.',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-          const SizedBox(height: 12),
-          for (final hazard in HazardType.values)
-            Card(
-              child: ListTile(
-                leading: Icon(hazardGuidance[hazard]!.icon),
-                title: Text(hazardGuidance[hazard]!.title),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    fullscreenDialog: true,
-                    builder: (_) => ImminentWarningScreen(
-                      hazards: [hazard],
-                      reason: 'Preview — no real threat detected',
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
+          );
+        },
       ),
     );
   }

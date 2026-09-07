@@ -58,6 +58,19 @@ class AppTheme {
   static ThemeData get light => _build(_lightScheme, const Color(0xFFFDECE0));
   static ThemeData get dark => _build(_darkScheme, const Color(0xFF1E140D));
 
+  /// True-black variant for OLED screens — same accent/primary colors as
+  /// [dark], just `surface`/`scaffoldBackgroundColor` forced to pure
+  /// black instead of the warm dark-brown default, so pixels can
+  /// actually turn off. Funneled through the same [_build] so shape/
+  /// typography stay identical to every other appearance mode.
+  static ThemeData get oledDark => _build(
+        _darkScheme.copyWith(
+          surface: Colors.black,
+          surfaceContainerHighest: const Color(0xFF141414),
+        ),
+        Colors.black,
+      );
+
   static ThemeData _build(ColorScheme scheme, Color scaffoldBg) {
     final base = ThemeData(colorScheme: scheme, useMaterial3: true);
     return base.copyWith(

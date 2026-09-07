@@ -209,8 +209,8 @@ tiles + a static state-level hazard baseline) and prefers live data
       links, and signals that don't match this app's sensors); a
       transparent NOAA/Rothfusz formula was built instead — see
       `ml/README.md`
-- [x] UI stubs for everything below (Settings' emergency contact form) —
-      visible, not yet wired to real data/logic
+- [x] Settings' emergency contact form (now real and wired — see the
+      AI-assisted emergency call and onboarding/Settings items below)
 - [x] Air quality: US AQI + PM2.5/PM10 from Open-Meteo's air-quality API
       (free, no key, verified live) on the Map screen, live-or-cached
       only (no static baseline — AQI swings too fast hour to hour for a
@@ -233,12 +233,21 @@ tiles + a static state-level hazard baseline) and prefers live data
       6s grace period — the platform gives no precise signal), falling
       back to SMS if never answered. Hand-rolled native Kotlin telephony
       channel (no third-party call/SMS plugin), explicit state machine
-      (`EmergencyWorkflowService`), mock mode on by default (real
-      calls/SMS need an explicit confirmed opt-out in Settings), 17
-      passing unit tests against a fake telephony backend — see
+      (`EmergencyWorkflowService`), 13 passing unit tests against a fake
+      telephony backend (the spec's scenarios plus 3 cancellation
+      regression tests — cancel used to be able to get stuck mid-wait
+      or mid-TTS-announcement) — mock mode on by default (real calls/SMS
+      need an explicit confirmed opt-out in Settings) — see
       ARCHITECTURE.md for the three Android platform ceilings this
       works around and what's still deferred (auto-resume after a
       process kill; full 12-scenario instrumentation test)
+- [x] Onboarding (permissions + profile/medical info on first launch) and
+      a categorized Settings screen (~10 sections: Profile & Medical,
+      Units, Appearance, Data export & import, Wearable, Sensor
+      precedence, Warning choices, Medical emergency, Permissions,
+      Background permission, Developer/demo) — see ARCHITECTURE.md for
+      what's deliberately simplified (unencrypted/manual-only backup, no
+      Material You, single-case sensor precedence)
 - [ ] Wearable-sensor disaster heuristics (heat-index formula now exists
       — this item is wiring it to the wearable's own BME280 instead of
       phone GPS, plus BME280 pressure drop-rate) once the wearable's IMU

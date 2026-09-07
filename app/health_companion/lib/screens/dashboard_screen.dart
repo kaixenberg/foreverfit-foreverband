@@ -6,12 +6,14 @@ import '../disaster/disaster_service.dart';
 import '../domain/emergency_workflow_service.dart';
 import '../domain/health_thresholds.dart';
 import '../domain/insight_watcher_service.dart';
+import '../domain/units.dart';
 import '../ml/activity_classifier_service.dart';
 import '../ml/fall_detector_service.dart';
 import '../models/insight.dart';
 import '../models/wellness_snapshot.dart';
 import '../services/baseline_service.dart';
 import '../services/step_counter_service.dart';
+import '../storage/app_settings_store.dart';
 import '../storage/health_log_store.dart';
 import '../storage/metrics_store.dart';
 import '../theme/app_theme.dart';
@@ -132,6 +134,8 @@ class DashboardScreen extends StatelessWidget {
     final disaster = context.watch<DisasterService>();
     final metrics = context.watch<MetricsStore>();
     final healthLog = context.watch<HealthLogStore>();
+    final appSettings = context.watch<AppSettingsStore>();
+    final unitSystem = resolveEffectiveUnitSystem(appSettings.unitSystem);
     final connected = ble.status == ConnectionStatus.connected;
 
     final vitals = ble.latestVitals;
@@ -153,13 +157,22 @@ class DashboardScreen extends StatelessWidget {
     final bodyTempWarn =
         vitals != null && (bodyTemp > bodyTempHighC || bodyTemp < bodyTempLowC);
 
-    // Wearable sensor first, online weather (DisasterService already fetches
-    // it for the Map) second, "--" only when neither is available.
-    final resolvedAmbientTemp =
-        env?.ambientTempC ?? disaster.risk?.ambientTempC;
-    final resolvedHumidity = env?.humidity ?? disaster.risk?.humidityPercent;
-    final resolvedPressure = env?.pressureHPa ?? disaster.risk?.pressureHPa;
-    final ambientIsFromWearable = env != null;
+    // Which source wins when both are available is a Settings choice
+    // (Sensor precedence) — "--" only when neither is available either way.
+    final preferWearable = appSettings.ambientSourcePreference ==
+        AmbientSourcePreference.preferWearable;
+    final resolvedAmbientTemp = preferWearable
+        ? (env?.ambientTempC ?? disaster.risk?.ambientTempC)
+        : (disaster.risk?.ambientTempC ?? env?.ambientTempC);
+    final resolvedHumidity = preferWearable
+        ? (env?.humidity ?? disaster.risk?.humidityPercent)
+        : (disaster.risk?.humidityPercent ?? env?.humidity);
+    final resolvedPressure = preferWearable
+        ? (env?.pressureHPa ?? disaster.risk?.pressureHPa)
+        : (disaster.risk?.pressureHPa ?? env?.pressureHPa);
+    final ambientIsFromWearable = preferWearable
+        ? env != null
+        : (disaster.risk?.ambientTempC == null && env != null);
 
     final ambientWarn = resolvedAmbientTemp != null &&
         resolvedHumidity != null &&
@@ -267,8 +280,12 @@ class DashboardScreen extends StatelessWidget {
               ),
               MetricCard(
                 label: 'Body temp',
-                value: vitals == null ? '--' : bodyTemp.toStringAsFixed(1),
-                unit: '°C',
+                value: vitals == null
+                    ? '--'
+                    : formatTemperatureC(bodyTemp, unitSystem)
+                        .value
+                        .toStringAsFixed(1),
+                unit: formatTemperatureC(bodyTemp, unitSystem).unit,
                 icon: Icons.thermostat,
                 warn: bodyTempWarn,
                 accentColor: AppTheme.accentCoral,
@@ -277,10 +294,13 @@ class DashboardScreen extends StatelessWidget {
                 label: 'Ambient temp',
                 value: resolvedAmbientTemp == null
                     ? '--'
-                    : resolvedAmbientTemp.toStringAsFixed(1),
+                    : formatTemperatureC(resolvedAmbientTemp, unitSystem)
+                        .value
+                        .toStringAsFixed(1),
                 unit: resolvedAmbientTemp == null
                     ? ''
-                    : (ambientIsFromWearable ? '°C' : '°C (online)'),
+                    : '${formatTemperatureC(resolvedAmbientTemp, unitSystem).unit}'
+                        '${ambientIsFromWearable ? '' : ' (online)'}',
                 icon: Icons.wb_sunny_outlined,
                 warn: ambientWarn,
                 accentColor: AppTheme.accentCoral,
@@ -370,8 +390,14 @@ class DashboardScreen extends StatelessWidget {
               ),
               MetricCard(
                 label: 'Weight',
-                value: metrics.latestWeightKg?.toStringAsFixed(1) ?? '--',
-                unit: metrics.latestWeightKg == null ? '' : 'kg',
+                value: metrics.latestWeightKg == null
+                    ? '--'
+                    : formatWeightKg(metrics.latestWeightKg!, unitSystem)
+                        .value
+                        .toStringAsFixed(1),
+                unit: metrics.latestWeightKg == null
+                    ? ''
+                    : formatWeightKg(metrics.latestWeightKg!, unitSystem).unit,
                 icon: Icons.monitor_weight_outlined,
                 accentColor: AppTheme.accentCoral,
                 onTap: () => Navigator.of(context).push(
@@ -381,8 +407,14 @@ class DashboardScreen extends StatelessWidget {
               ),
               MetricCard(
                 label: 'Height',
-                value: metrics.latestHeightCm?.toStringAsFixed(0) ?? '--',
-                unit: metrics.latestHeightCm == null ? '' : 'cm',
+                value: metrics.latestHeightCm == null
+                    ? '--'
+                    : formatHeightCm(metrics.latestHeightCm!, unitSystem)
+                        .value
+                        .toStringAsFixed(0),
+                unit: metrics.latestHeightCm == null
+                    ? ''
+                    : formatHeightCm(metrics.latestHeightCm!, unitSystem).unit,
                 icon: Icons.height,
                 accentColor: AppTheme.accentPurple,
                 onTap: () => Navigator.of(context).push(
@@ -410,8 +442,13 @@ class DashboardScreen extends StatelessWidget {
               ),
               MetricCard(
                 label: 'Hydration',
-                value: (metrics.todayHydrationMl / 1000).toStringAsFixed(2),
-                unit: 'L',
+                value: formatHydrationMl(
+                        metrics.todayHydrationMl.toDouble(), unitSystem)
+                    .value
+                    .toStringAsFixed(2),
+                unit: formatHydrationMl(
+                        metrics.todayHydrationMl.toDouble(), unitSystem)
+                    .unit,
                 icon: Icons.local_drink_outlined,
                 accentColor: AppTheme.accentBlue,
                 onTap: () => Navigator.of(context).push(
@@ -474,18 +511,6 @@ class DashboardScreen extends StatelessWidget {
                 accentColor: AppTheme.accentGreen,
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const MedicationsScreen()),
-                ),
-              ),
-              MetricCard(
-                label: 'Medical ID',
-                value: (healthLog.medicalId?.bloodType.isNotEmpty ?? false)
-                    ? healthLog.medicalId!.bloodType
-                    : '--',
-                unit: '',
-                icon: Icons.badge_outlined,
-                accentColor: AppTheme.accentPink,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const MedicalIdScreen()),
                 ),
               ),
             ],

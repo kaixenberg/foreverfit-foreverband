@@ -131,8 +131,11 @@ synchronized phone signal resolves that ambiguity.
 
 ## App navigation (implemented, single-dashboard — no bottom nav)
 
-`DashboardScreen` is the app's home route directly (`main.dart`'s
-`home:`) — no shell, no bottom `NavigationBar`. Replaced the earlier
+First launch goes through `OnboardingGate` → `OnboardingScreen` before
+anything else (permissions, then profile & medical info — see "Onboarding
++ categorized Settings" below); after that, `DashboardScreen` is the
+app's home route directly (`main.dart`'s `home:`) — no shell, no bottom
+`NavigationBar`. Replaced the earlier
 three-tab layout (`home_shell.dart`, deleted) after reviewing a cloned
 reference app (`app/mobile-app` — OpenVitals, see the "Visual design"
 section above) whose single-dashboard-with-widget-grid pattern reads as
@@ -513,14 +516,18 @@ pattern at all:
   app-bar action on `MedicationsScreen` rather than being its main
   focus.
 - **Medical ID is a static profile, not time-series data** — there's no
-  "average blood type." `MedicalIdScreen` is a plain saved form (blood
-  type, allergies, conditions, notes), the one Health Log item that
-  deliberately does *not* get a `MetricHistoryScreen` — a chart/stats
-  treatment would be meaningless here, not just extra work skipped.
-- All six are Dashboard cards in the same paged `_PagedCardGrid` as
-  everything else (13 cards total now, 3 pages) — `HealthLogScreen` and
-  its Settings entry are both gone; there's nothing left for an
-  intermediate "more tracking" list to point to.
+  "average blood type." The underlying `MedicalIdProfile`/`saveMedicalId`
+  API (still in `health_log_store.dart`) is a plain saved form (blood
+  type, allergies, conditions, notes), never a `MetricHistoryScreen` — a
+  chart/stats treatment would be meaningless here, not just extra work
+  skipped. The standalone `MedicalIdScreen` that used to expose this has
+  since been folded into `ProfileMedicalScreen` (see "Onboarding +
+  categorized Settings" below) and deleted — one place to edit this
+  data, not two; its Dashboard card was removed for the same reason.
+- The remaining five are Dashboard cards in the same paged
+  `_PagedCardGrid` as everything else — `HealthLogScreen` and its
+  Settings entry are both gone; there's nothing left for an intermediate
+  "more tracking" list to point to.
 
 ## AI-based insights & notifications (implemented)
 
@@ -701,6 +708,106 @@ than silently dropped:
   Not automated: on-device instrumentation of an actual process kill
   mid-run (covered only at the design level, per the point above).
 
+## Onboarding + categorized Settings (implemented)
+
+First launch now goes through a real flow instead of piecemeal
+permission prompts scattered across whichever feature needed them
+first, and Settings is now ~10 category screens instead of one
+ever-growing flat list.
+
+- **`OnboardingGate`** (`lib/domain/onboarding_gate.dart`) — outermost of
+  the app's four gates (wraps `ImminentWarningGate`, which wraps
+  `EmergencyCallGate`, which wraps `DashboardScreen`), same
+  `_showing`-guarded push pattern as the other two, keyed on
+  `!UserProfileStore.onboardingCompleted` — a one-shot condition that
+  stays false forever once finished.
+- **`OnboardingScreen`** (2 pages, `PopScope(canPop: false)` — mandatory
+  until finished): a permissions page (rationale text per permission,
+  live granted/denied status, "Continue" always enabled regardless — a
+  denied permission degrades gracefully the same way it already does
+  everywhere else in this app, never a hard block) and
+  **`ProfileMedicalScreen`** (name/DOB/sex, weight/height, and the old
+  Medical ID fields all on one form). That same screen is reused
+  standalone from Settings → Profile & Medical for later edits — one
+  form, two entry points, not two separate screens to keep in sync.
+- **`lib/storage/user_profile_store.dart`** (new): name/DOB/sex/
+  `onboardingCompleted` — deliberately doesn't duplicate weight/height
+  (still `MetricsStore`, the same place the Dashboard cards read them
+  from) or medical info (still `HealthLogStore.medicalId`).
+- **`lib/storage/app_settings_store.dart`** (new): unit system, theme
+  mode, OLED-black, ambient-sensor-source preference, and the three
+  notification-category toggles — one Hive box, one document, same
+  pattern as `EmergencyContactStore`. **Deliberately excluded from data
+  export/import** (see below) — preference, not user data.
+- **Settings home** (`lib/screens/settings_screen.dart`) is now a list of
+  category tiles pushing dedicated screens under `lib/screens/settings/`:
+  Profile & Medical, Units, Appearance, Data export & import, Wearable,
+  Sensor precedence, Warning choices, Medical emergency (today's
+  emergency-contact + hotline fields, migrated as-is), Permissions,
+  Background permission, and Developer/demo (test mode + both full-screen
+  preview buttons — moved out of the everyday flow).
+- **Units** (`lib/domain/units.dart`): storage stays metric everywhere,
+  unconditionally — these are pure display-formatting/input-parsing
+  functions only, threaded into the Dashboard's Weight/Height/Hydration/
+  Body-temp/Ambient-temp cards, their `MetricHistoryScreen`s, their log
+  dialogs, and the Map's wind-speed row. Deliberately **not** converted
+  (not part of the metric/imperial axis in most health apps): blood
+  pressure, blood glucose, barometric pressure, heart rate, sleep hours,
+  body fat %, steps.
+- **Appearance**: Light/Dark/System (`ThemeMode`, now actually wired into
+  `MaterialApp.themeMode` — previously hardcoded, defaulting to system
+  with no user control at all) plus an OLED-black variant
+  (`AppTheme.oledDark`, forces `surface`/`scaffoldBackgroundColor` to
+  true black while keeping the existing warm accent palette, funneled
+  through the same `_build()` every other appearance mode uses).
+  **Material You dynamic color is a disabled "coming soon" row** — not
+  wired to anything; adding it means a new `dynamic_color` dependency and
+  a conditional theme graph, scoped out given the deadline.
+- **Sensor precedence**: scoped to the one place the app currently has
+  more than one source for the same reading — ambient temp/humidity/
+  pressure (wearable BME280 vs. online weather). Everything else (heart
+  rate/SpO2/body temp, GPS) has exactly one source today, so there's
+  nothing else to prioritize yet; a reset button restores the default
+  (prefer wearable, matching the old hardcoded behavior).
+- **Warning choices**: 3 toggles matching the insight engine's existing
+  categories (vitals, hazard, reminder) — `InsightWatcherService` filters
+  `computeInsights()`'s output by these *before* both storing the list
+  (so a disabled category disappears from the Dashboard's Insights card
+  too) and before notifying. The full-screen imminent-disaster warning
+  and the fall/SOS countdown are **not** covered here and can't be
+  silenced — they're the safety-critical path, not a notification
+  preference.
+- **Permissions** (`lib/screens/settings/permissions_screen.dart`):
+  read-only status (`Permission.x.status`, never `.request()` from this
+  screen) for every permission the app uses, refreshed on resume; a
+  "Request"/"Open app settings" action per row depending on current
+  status.
+- **Background permission**
+  (`lib/screens/settings/background_permission_screen.dart`): a new
+  `battery_optimization` Kotlin `MethodChannel` (`MainActivity.kt`, same
+  convention as the existing `alarm_volume`/`telephony` channels) checks
+  `PowerManager.isIgnoringBatteryOptimizations()` and can fire
+  `ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`. Explains plainly that
+  some OEMs (Xiaomi/Huawei/etc.) also need a separate manual "autostart"
+  allow this app can't request on the user's behalf.
+- **Data export & import** (`lib/domain/backup_service.dart`): SAF-based
+  (`saf_util` + `saf_stream` — the user picks a real destination/source
+  each time, never app-internal storage) JSON export of every "user
+  data" Hive box (a hardcoded canonical list — vitals/env history, body
+  metrics, hydration, the Health Log boxes, emergency contact, step daily
+  history, user profile), generic `{key: value}` dump per box so no
+  per-box special-casing is needed. Import clears and repopulates every
+  box in that list from the file, then tells the user to close and
+  reopen the app — deliberately **not** attempting a live in-process
+  refresh across ~6 independently-initialized stores, a much larger and
+  more error-prone piece of work for a feature already scoped down.
+  **Deliberately simplified, documented as roadmap, not silently
+  dropped**: the export is plain-text JSON (no passphrase encryption),
+  and there's no scheduled automatic backup — both would need real
+  background-execution work (`workmanager`, with well-known Doze/OEM
+  reliability caveats) and a key-derivation/encryption library
+  (`cryptography`), out of scope for this pass.
+
 ## Roadmap (not yet implemented)
 
 ### 1. Wearable-sensor disaster heuristics
@@ -733,6 +840,21 @@ above for what's already implemented)
 - Now that Medical ID is a real saved profile (see "Health log" above),
   the emergency summary could include blood type/allergies/conditions
   alongside vitals — not built yet, just newly possible.
+
+### 3. Settings/backup hardening (see "Onboarding + categorized Settings"
+above for what's already implemented)
+
+- Passphrase encryption for exported backups (`cryptography` package —
+  Argon2id/PBKDF2 key derivation + AES-GCM).
+- Scheduled automatic backup (`workmanager`) — real Doze/App-Standby and
+  OEM battery-manager restrictions mean this could never honestly promise
+  exact timing, only "backs up periodically when the device is idle."
+- Material You dynamic color (`dynamic_color` package) as an alternative
+  to the app's own warm palette.
+- Sensor precedence beyond the one existing multi-source case (ambient
+  temp/humidity/pressure) — would need a second real multi-source sensor
+  situation to exist first (e.g. a second wearable type reporting the
+  same vitals).
 
 ## Repo layout
 

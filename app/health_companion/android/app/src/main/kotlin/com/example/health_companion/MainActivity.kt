@@ -7,6 +7,8 @@ import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
+import android.provider.Settings
 import android.telephony.PhoneStateListener
 import android.telephony.SmsManager
 import android.telephony.TelephonyCallback
@@ -24,6 +26,7 @@ class MainActivity : FlutterActivity() {
     private val alarmVolumeChannelName = "com.example.health_companion/alarm_volume"
     private val telephonyChannelName = "com.example.health_companion/telephony"
     private val telephonyEventsChannelName = "com.example.health_companion/telephony_events"
+    private val batteryOptimizationChannelName = "com.example.health_companion/battery_optimization"
 
     // Only one of these is ever non-null, depending on API level — see
     // startCallStateWatch(). Kept as fields so stopCallStateWatch() can
@@ -140,6 +143,31 @@ class MainActivity : FlutterActivity() {
                     stopCallStateWatch(telephonyManager)
                 }
             })
+
+        // Lets Settings show whether background vitals/fall-detection
+        // monitoring is exempt from Doze battery restrictions, and offer
+        // the system prompt to grant that exemption.
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, batteryOptimizationChannelName)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "isIgnoringBatteryOptimizations" -> {
+                        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+                        result.success(powerManager.isIgnoringBatteryOptimizations(packageName))
+                    }
+                    "requestIgnoreBatteryOptimizations" -> {
+                        try {
+                            val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+                            intent.data = Uri.parse("package:$packageName")
+                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            startActivity(intent)
+                            result.success(null)
+                        } catch (e: Exception) {
+                            result.error("REQUEST_FAILED", e.message, null)
+                        }
+                    }
+                    else -> result.notImplemented()
+                }
+            }
     }
 
     /// API 29+ can ask the platform for the device's actual regional

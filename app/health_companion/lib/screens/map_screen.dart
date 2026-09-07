@@ -12,6 +12,8 @@ import 'package:provider/provider.dart';
 
 import '../disaster/disaster_service.dart';
 import '../disaster/india_hazard_data.dart';
+import '../domain/units.dart';
+import '../storage/app_settings_store.dart';
 
 /// Default map center when there's no GPS fix yet — geographic center of
 /// India, so the map still shows something sensible.
@@ -187,6 +189,8 @@ class _RiskPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final unitSystem = resolveEffectiveUnitSystem(
+        context.watch<AppSettingsStore>().unitSystem);
     return Card(
       margin: const EdgeInsets.all(8),
       child: Padding(
@@ -249,7 +253,8 @@ class _RiskPanel extends StatelessWidget {
               _RiskRow(
                 icon: Icons.air,
                 label: 'Current wind speed',
-                value: '${risk.windSpeedKmh!.round()} km/h',
+                value: formatWindSpeedKmh(risk.windSpeedKmh!, unitSystem)
+                    .toStringAsFixed(0),
                 freshness: risk.weatherFreshness,
                 asOf: risk.weatherAsOf,
               ),

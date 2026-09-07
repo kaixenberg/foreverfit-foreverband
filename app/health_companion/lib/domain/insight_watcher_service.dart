@@ -8,6 +8,7 @@ import '../ml/activity_classifier_service.dart';
 import '../models/insight.dart';
 import '../services/baseline_service.dart';
 import '../services/notification_service.dart';
+import '../storage/app_settings_store.dart';
 import '../storage/health_log_store.dart';
 import '../storage/metrics_store.dart';
 import 'insight_engine.dart';
@@ -28,6 +29,7 @@ class InsightWatcherService extends ChangeNotifier {
     required this.healthLog,
     required this.metrics,
     required this.notifications,
+    required this.appSettings,
   });
 
   final BleService ble;
@@ -37,6 +39,7 @@ class InsightWatcherService extends ChangeNotifier {
   final HealthLogStore healthLog;
   final MetricsStore metrics;
   final NotificationService notifications;
+  final AppSettingsStore appSettings;
 
   static const _periodicInterval = Duration(minutes: 15);
   static const _notifyCooldown = Duration(hours: 1);
@@ -53,12 +56,13 @@ class InsightWatcherService extends ChangeNotifier {
     activityClassifier.addListener(_recompute);
     healthLog.addListener(_recompute);
     metrics.addListener(_recompute);
+    appSettings.addListener(_recompute);
     _timer = Timer.periodic(_periodicInterval, (_) => _recompute());
     _recompute();
   }
 
   void _recompute() {
-    final next = computeInsights(
+    final computed = computeInsights(
       ble: ble,
       disaster: disaster,
       baseline: baseline,
@@ -66,6 +70,13 @@ class InsightWatcherService extends ChangeNotifier {
       healthLog: healthLog,
       metrics: metrics,
     );
+    // Filtered by category before it's stored OR notified on — a
+    // disabled category should disappear from the Dashboard's Insights
+    // card too, not just stop notifying (showing a card for a category
+    // the user explicitly turned off would be confusing).
+    final next = computed
+        .where((i) => appSettings.isCategoryEnabled(i.category))
+        .toList();
     insights = next;
 
     final now = DateTime.now();
@@ -91,6 +102,7 @@ class InsightWatcherService extends ChangeNotifier {
     activityClassifier.removeListener(_recompute);
     healthLog.removeListener(_recompute);
     metrics.removeListener(_recompute);
+    appSettings.removeListener(_recompute);
     super.dispose();
   }
 }
