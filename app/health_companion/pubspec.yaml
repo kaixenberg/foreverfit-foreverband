@@ -38,4 +38,5 @@ flutter:
   assets:
     - assets/models/fall_detector.tflite
     - assets/models/fall_detector_phone_only.tflite
+    - assets/models/activity_classifier.tflite
     - assets/sounds/alarm_siren.wav

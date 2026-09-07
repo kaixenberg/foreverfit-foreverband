@@ -3,10 +3,64 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../ble/ble_service.dart';
+import '../ml/activity_classifier_service.dart';
 import '../ml/fall_detector_service.dart';
+import '../services/baseline_service.dart';
 import '../storage/history_store.dart';
+import '../utils/heat_index.dart';
 import '../widgets/metric_card.dart';
 import 'scan_connect_screen.dart';
+
+/// Heart-rate ceiling above which a reading is flagged, conditioned on
+/// what the user is currently doing — a fixed threshold can't tell
+/// "elevated HR because you're running" from "elevated HR while sitting
+/// still," so it either misses real anomalies at rest or false-alarms
+/// during exercise. See ARCHITECTURE.md's AI/ML roadmap item 1.
+int _heartRateCeiling(Activity? activity) {
+  switch (activity) {
+    case Activity.running:
+      return 180;
+    case Activity.walking:
+      return 140;
+    case Activity.still:
+    case null:
+      return 120;
+  }
+}
+
+String _activityLabel(Activity activity) {
+  switch (activity) {
+    case Activity.still:
+      return 'Still';
+    case Activity.walking:
+      return 'Walking';
+    case Activity.running:
+      return 'Running';
+  }
+}
+
+/// Transparent, calibrated formula rather than a trained model — explainable
+/// to judges, and there's no labeled "wellness score" training data anyway.
+/// Deducts points per concerning signal currently showing; null (not 0)
+/// when there's nothing to score yet. See ARCHITECTURE.md's AI/ML roadmap
+/// item 4.
+int? _wellnessScore({
+  required bool hasVitals,
+  required bool heartRateWarn,
+  required bool spo2Warn,
+  required bool bodyTempWarn,
+  required bool ambientWarn,
+  required bool heatStressWarn,
+}) {
+  if (!hasVitals) return null;
+  var score = 100;
+  if (heartRateWarn) score -= 25;
+  if (spo2Warn) score -= 30;
+  if (bodyTempWarn) score -= 20;
+  if (ambientWarn) score -= 10;
+  if (heatStressWarn) score -= 15;
+  return score.clamp(0, 100);
+}
 
 class DashboardScreen extends StatelessWidget {
   const DashboardScreen({super.key});
@@ -15,6 +69,8 @@ class DashboardScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final ble = context.watch<BleService>();
     final fallDetector = context.watch<FallDetectorService>();
+    final activityClassifier = context.watch<ActivityClassifierService>();
+    final baseline = context.watch<BaselineService>();
     final history = context.read<HistoryStore>();
     final connected = ble.status == ConnectionStatus.connected;
 
@@ -24,6 +80,30 @@ class DashboardScreen extends StatelessWidget {
     final heartRate = vitals?.heartRate ?? 0;
     final spo2 = vitals?.spo2 ?? 0;
     final bodyTemp = vitals?.bodyTempC ?? 0;
+    final heartRateCeiling = _heartRateCeiling(activityClassifier.current);
+    final heartRateWarn = vitals != null &&
+        (heartRate < 50 ||
+            heartRate > heartRateCeiling ||
+            baseline.isAnomalous(heartRate));
+    final spo2Warn = vitals != null && spo2 < 92 && spo2 > 0;
+    final bodyTempWarn = vitals != null && (bodyTemp > 37.8 || bodyTemp < 35.5);
+    final ambientWarn = env != null &&
+        heatRiskLevel(heatIndexCelsius(env.ambientTempC, env.humidity)) == HeatRisk.danger;
+    final heatStressWarn = env != null &&
+        vitals != null &&
+        isHeatStressRisk(
+          ambientC: env.ambientTempC,
+          humidityPercent: env.humidity,
+          bodyTempC: bodyTemp,
+        );
+    final wellnessScore = _wellnessScore(
+      hasVitals: vitals != null,
+      heartRateWarn: heartRateWarn,
+      spo2Warn: spo2Warn,
+      bodyTempWarn: bodyTempWarn,
+      ambientWarn: ambientWarn,
+      heatStressWarn: heatStressWarn,
+    );
 
     return Scaffold(
       appBar: AppBar(
@@ -66,28 +146,28 @@ class DashboardScreen extends StatelessWidget {
                 value: vitals == null ? '--' : heartRate.toStringAsFixed(0),
                 unit: 'bpm',
                 icon: Icons.favorite,
-                warn: vitals != null && (heartRate < 50 || heartRate > 120),
+                warn: heartRateWarn,
               ),
               MetricCard(
                 label: 'SpO2',
                 value: vitals == null ? '--' : spo2.toStringAsFixed(0),
                 unit: '%',
                 icon: Icons.bloodtype,
-                warn: vitals != null && spo2 < 92 && spo2 > 0,
+                warn: spo2Warn,
               ),
               MetricCard(
                 label: 'Body temp',
                 value: vitals == null ? '--' : bodyTemp.toStringAsFixed(1),
                 unit: '°C',
                 icon: Icons.thermostat,
-                warn: vitals != null && (bodyTemp > 37.8 || bodyTemp < 35.5),
+                warn: bodyTempWarn,
               ),
               MetricCard(
                 label: 'Ambient temp',
                 value: env == null ? '--' : env.ambientTempC.toStringAsFixed(1),
                 unit: '°C',
                 icon: Icons.wb_sunny_outlined,
-                warn: env != null && env.ambientTempC > 40,
+                warn: ambientWarn,
               ),
               MetricCard(
                 label: 'Humidity',
@@ -104,8 +184,7 @@ class DashboardScreen extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 16),
-          Text('Wellness overview (coming soon)',
-              style: Theme.of(context).textTheme.titleMedium),
+          Text('Wellness overview', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
           GridView.count(
             crossAxisCount: 3,
@@ -114,23 +193,28 @@ class DashboardScreen extends StatelessWidget {
             childAspectRatio: 1.1,
             mainAxisSpacing: 8,
             crossAxisSpacing: 8,
-            children: const [
+            children: [
               MetricCard(
                 label: 'Wellness',
-                value: '--',
-                unit: '',
+                value: wellnessScore == null ? '--' : wellnessScore.toString(),
+                unit: wellnessScore == null ? '' : '/100',
                 icon: Icons.favorite_border,
+                warn: wellnessScore != null && wellnessScore < 70,
               ),
               MetricCard(
                 label: 'Activity',
-                value: '--',
+                value: activityClassifier.current == null
+                    ? '--'
+                    : _activityLabel(activityClassifier.current!),
                 unit: '',
                 icon: Icons.directions_walk,
               ),
               MetricCard(
                 label: 'Baseline',
-                value: '--',
-                unit: '',
+                value: baseline.heartRateMean == null
+                    ? '--'
+                    : baseline.heartRateMean!.toStringAsFixed(0),
+                unit: baseline.heartRateMean == null ? '' : 'bpm',
                 icon: Icons.show_chart,
               ),
             ],

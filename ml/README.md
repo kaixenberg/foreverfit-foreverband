@@ -1,8 +1,10 @@
-# Fall-detection model training pipeline
+# ML training pipelines
 
-Trains the CNN used by the app's on-device fall detector. See
+Two independent pipelines live here: the fall-detection CNN and the
+activity classifier. Both share the same `uv`-managed Python env and the
+same "verify the dataset directly before trusting it" discipline. See
 `ARCHITECTURE.md` at the repo root for the full design rationale; this
-file covers how to actually run it.
+file covers how to actually run them.
 
 **Currently active: phone-only** (`*_phone_only.py` scripts). The
 wearable's MPU6050 died on the breadboard build (confirmed via an I2C bus
@@ -142,9 +144,83 @@ then — see git history for `fall_detector_service.dart` at that point;
 that threshold choice should be revisited against the corrected labeling
 before this model is put back into the app.
 
-## Retraining
+## Retraining (fall detector)
 
 Rerun the four scripts above after any change. If the dataset URL ever
 moves, update `ZIP_FILENAME`/`ARTICLE_API` in `download_dataset.py` — the
 Figshare article page is
 https://figshare.com/articles/dataset/UMA_ADL_FALL_Dataset_zip/4214283.
+
+---
+
+# Activity classifier
+
+Trains the 3-class CNN (still/walking/running) the app uses to gate
+vitals anomaly thresholds — see `ARCHITECTURE.md`'s AI/ML roadmap item 1
+("elevated HR while running is normal, elevated HR while sitting still
+isn't").
+
+```bash
+cd ml
+uv run python download_activity_dataset.py   # fetches MotionSense from GitHub, no auth
+uv run python prepare_activity_windows.py    # -> ml/data/processed/activity_windows.npz
+uv run python train_activity_model.py        # -> ml/data/activity_model.keras, prints eval metrics
+uv run python convert_activity_to_tflite.py  # -> .../assets/models/activity_classifier.tflite
+```
+
+## Dataset: MotionSense
+
+Malekzadeh et al., *"Mobile Sensor Data Anonymization"*, IoTDI '19. MIT
+licensed, downloaded directly from the [GitHub
+repo](https://github.com/mmalekzadeh/motion-sense) (verified: real repo,
+`LICENSE` file present, files return `200`/`application/zip` on direct
+fetch — not just linked from a paper). 24 subjects, 6 activities
+(downstairs, upstairs, sitting, standing, walking, jogging) at 50Hz, an
+iPhone 6s in the front trouser pocket. Used the raw single-sensor folders
+(`B_Accelerometer_data`, `C_Gyroscope_data` — accel and gyro each ~20MB
+zipped) rather than the combined `A_DeviceMotion_data` folder (~74MB,
+includes attitude/gravity/rotation-rate the app doesn't need).
+
+**Units confirmed by inspecting actual value ranges, not just Apple's
+docs**: accelerometer values peaked around ±3.3 while walking —
+consistent with **G**'s (would be ±30+ if already m/s², so converted the
+same way UMAFall's accel was, `× 9.80665`); gyroscope values peaked
+around ±6.3 — consistent with **rad/s** already (would be ±350+ in
+deg/s), so used as-is.
+
+**Label mapping**: MotionSense's 6 raw activities collapse to the 3
+classes the app actually acts on — `still` = sit+stand, `walking` =
+walking+downstairs+upstairs (kept together; a finer stairs-vs-level split
+isn't needed for HR-threshold gating), `running` = jogging.
+
+Same architecture family as the fall detector (`BatchNorm -> Conv1D(32)
+-> MaxPool -> Conv1D(64) -> MaxPool -> GlobalAveragePooling -> Dense(32)
+-> Dropout -> Dense(3, softmax)`), same subject-disjoint split
+methodology (train 1-18, val 19-21, test 22-24 of 24 subjects). Held-out
+test performance: **99.9% accuracy** (still/walking: 1.00 precision and
+recall; running: 0.99 precision, 1.00 recall) — much higher than the fall
+detector's, because distinguishing sustained activity patterns over a 3s
+window is a substantially easier task than catching a brief 1-2s impact
+signature; this is a real, expected result for this task, not a red flag.
+
+## Heat-stress CNN: investigated, not built
+
+The original AI/ML roadmap scoped a WESAD-trained heat-stress anomaly
+CNN. Verified directly before starting (not assumed): WESAD's documented
+primary host (`ubi29.informatik.uni-siegen.de/.../WESAD.zip`) and its
+commonly-cited Sciebo mirror both return `404`. The remaining path (Kaggle,
+auth-gated, ~2.5GB) has a more fundamental problem beyond availability:
+WESAD's signals are chest/wrist ECG, EMG, EDA, and respiration from a lab
+rig — this app's wearable has none of those, only HR/SpO2/body
+temp/ambient temp/humidity/pressure. Same shape of dead end as the flood
+dataset described in `ARCHITECTURE.md` — training on it would mean
+reconstructing most of the feature set as a mismatch-driven exercise, not
+a small conversion fix.
+
+Implemented instead: a transparent heat-index formula (NOAA/Rothfusz
+regression) combining the wearable's real ambient temp + humidity
+readings, in `app/health_companion/lib/utils/heat_index.dart` — feeds
+both the Dashboard's Ambient Temp warning and the composite wellness
+score. Consistent with the composite-score philosophy elsewhere in this
+app: reach for a trained model only once a formula demonstrably
+underperforms, not by default.

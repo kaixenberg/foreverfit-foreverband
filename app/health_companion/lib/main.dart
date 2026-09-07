@@ -4,9 +4,11 @@ import 'package:provider/provider.dart';
 import 'ble/ble_service.dart';
 import 'disaster/disaster_service.dart';
 import 'disaster/imminent_warning_gate.dart';
+import 'ml/activity_classifier_service.dart';
 import 'ml/fall_detector_service.dart';
 import 'screens/home_shell.dart';
 import 'sensors/phone_motion_service.dart';
+import 'services/baseline_service.dart';
 import 'storage/history_store.dart';
 
 Future<void> main() async {
@@ -34,7 +36,15 @@ class HealthCompanionApp extends StatelessWidget {
             phoneMotionService: context.read<PhoneMotionService>(),
           )..start(),
         ),
+        ChangeNotifierProvider(
+          create: (context) => ActivityClassifierService(
+            phoneMotionService: context.read<PhoneMotionService>(),
+          )..start(),
+        ),
         ChangeNotifierProvider(create: (_) => DisasterService()..init()),
+        ChangeNotifierProvider(
+          create: (_) => BaselineService(historyStore: historyStore)..start(),
+        ),
       ],
       child: MaterialApp(
         title: 'Health Companion',

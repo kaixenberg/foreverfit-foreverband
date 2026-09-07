@@ -134,19 +134,32 @@ live data (Open-Meteo, USGS) when online.
       the phone is silenced — stricter trigger than the Map banner, plus
       a manual preview in Settings since real conditions rarely cross it
       live — see ARCHITECTURE.md
-- [x] UI stubs for everything below (Dashboard's Wellness/Activity/
-      Baseline cards, Map's Air Quality row, Health Log's tracking tiles,
-      Settings' emergency contact form) — visible, not yet wired to real
-      data/logic
-- [ ] Activity-conditioned vitals anomaly detection
-- [ ] Personalized (per-user) baseline learning
-- [ ] On-device vitals/heat-stress anomaly CNN
-- [ ] Composite wellness/risk score
+- [x] Activity-conditioned vitals anomaly detection: on-device 3-class
+      CNN (still/walking/running, 99.9% held-out accuracy — see `ml/`)
+      gates the Dashboard's HR warning threshold by what the user is
+      currently doing, fills the "Activity" card
+- [x] Personalized (per-user) baseline learning: rolling 7-day mean/std
+      of resting HR from local history, flags >2 personal std-devs from
+      *this user's own* baseline, fills the "Baseline" card
+- [x] Composite wellness score: transparent formula (not a trained
+      model) combining HR/SpO2/body-temp/heat-index into the "Wellness"
+      card
+- [x] Heat-index formula (`lib/utils/heat_index.dart`) — the on-device
+      heat-stress CNN originally planned was dropped after its dataset
+      (WESAD) turned out to be a dead end on direct verification (dead
+      links, and signals that don't match this app's sensors); a
+      transparent NOAA/Rothfusz formula was built instead — see
+      `ml/README.md`
+- [x] UI stubs for everything below (Map's Air Quality row, Health Log's
+      tracking tiles, Settings' emergency contact form) — visible, not
+      yet wired to real data/logic
 - [ ] Air quality integration
 - [ ] Sleep tracking
 - [ ] Trend/daily-summary views
-- [ ] Wearable-sensor disaster heuristics (BME280 heat-index, pressure
-      drop-rate) once the wearable's IMU is replaced
+- [ ] Wearable-sensor disaster heuristics (heat-index formula now exists
+      — this item is wiring it to the wearable's own BME280 instead of
+      phone GPS, plus BME280 pressure drop-rate) once the wearable's IMU
+      is replaced
 - [ ] Health tracking (weight/height/meds/insulin/Medical ID) — UI stub only
 - [ ] Real SOS (SMS/call + emergency contact storage) — countdown/
       escalation UX and manual trigger are wired end-to-end, but still

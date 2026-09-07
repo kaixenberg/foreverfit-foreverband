@@ -213,45 +213,62 @@ banner so it doesn't cause alert fatigue.
   section that opens the full-screen warning (with siren) for any hazard
   type on demand — this is the reliable way to demo the feature.
 
-## Roadmap (not yet implemented)
+## AI/ML: activity gating, personalized baseline, wellness score (implemented)
 
-UI stubs exist for everything below (Dashboard's Wellness/Activity/
-Baseline cards + SOS button, Map's Air Quality row, Health Log's
-tracking tiles, Settings' emergency contact form) so the shape of the
-full app is visible even where the logic isn't built yet.
+All four items originally scoped in the AI/ML roadmap were attempted, in
+priority order; three landed as designed and the fourth pivoted after
+direct verification ruled out its planned dataset. See `ml/README.md` for
+the full training-pipeline writeups.
 
-### 1. AI/ML opportunities, roughly in priority order
-
-- **Activity-conditioned vitals anomaly detection** (highest value per
-  effort): a lightweight activity classifier (walking/running/sitting/
-  still) over the accel+gyro stream already flowing for fall detection —
-  same infrastructure, reused. Lets HR/SpO2 anomaly checks know "elevated
-  HR while running is normal, elevated HR while sitting still isn't,"
-  directly cutting false positives in whatever anomaly detection exists.
-- **Personalized baseline learning**: NOT necessarily a CNN — a rolling
-  per-user mean/std (z-score deviation from *this user's own* resting
-  HR/SpO2 over the past week) catches "unusual for you" in a way a fixed
-  global threshold can't, is simple statistics, and is more honest about
+- **Activity-conditioned vitals anomaly detection**
+  (`lib/ml/activity_classifier_service.dart`): a 3-class 1D-CNN
+  (still/walking/running) over the same 60-sample/20Hz accel+gyro window
+  infrastructure the fall detector already uses, trained on the
+  MotionSense dataset (24 subjects, MIT licensed — verified as a real,
+  directly-downloadable repo before use, see `ml/README.md`). 99.9% test
+  accuracy on held-out subjects — much higher than fall detection's,
+  because sustained activity patterns over a 3s window are an easier
+  signal than a brief impact. `DashboardScreen._heartRateCeiling()` uses
+  the live activity to set the HR warning threshold: 120bpm at rest,
+  140bpm walking, 180bpm running — replacing one fixed threshold that
+  couldn't tell "elevated because you're running" from "elevated at
+  rest."
+- **Personalized baseline learning** (`lib/services/baseline_service.dart`):
+  deliberately *not* a CNN — a rolling mean/std of this user's own resting
+  heart rate over the past 7 days (min 20 samples before it activates),
+  from the same Hive-backed history the dashboard's HR sparkline already
+  reads. Flags a live reading more than 2 personal standard deviations
+  from *this user's* baseline, catching "unusual for you" in a way no
+  fixed global threshold can — plain statistics, and more honest about
   what it is than dressing it up as deep learning.
-- **On-device vitals/heat-stress anomaly CNN**: multi-class classifier
-  over a sliding window (e.g. last 2–5 minutes) of HR, SpO2, body temp,
-  ambient temp, humidity. Training data: **WESAD** (wearable
-  stress/affect, has physiological signals under thermal/physical
-  stress) as a starting point, plus heat-index-labeled synthetic
-  augmentation since WESAD alone won't cover heat-stress specifically.
-  Output classes: normal / possible heat stress / possible dehydration /
-  possible respiratory or cardiac concern. Same small-CNN-via-TFLite
-  approach as the fall detector — expect another dataset-reality-check
-  along the way, same as UMAFall and the flood data both needed.
-- **Composite wellness/risk score**: combining HR/SpO2/temp/environment
-  into one number for the dashboard. Start with a transparent calibrated
-  formula (no training data needed, explainable to judges) — only reach
-  for a learned model if the formula demonstrably underperforms.
+- **On-device heat-stress detection** — investigated as a WESAD-trained
+  CNN, not built that way: WESAD's documented host and its commonly-cited
+  mirror both returned `404` on direct verification, and the remaining
+  path (Kaggle, ~2.5GB) has chest/wrist ECG/EMG/EDA signals that don't
+  map onto what this app's wearable actually streams — the same shape of
+  dead end as the flood dataset earlier. Built instead:
+  `lib/utils/heat_index.dart`, a transparent NOAA/Rothfusz heat-index
+  formula over the wearable's real ambient temp + humidity readings,
+  feeding both the Ambient Temp card's warning and the wellness score
+  below. See `ml/README.md` for the full verification trail.
+- **Composite wellness score** (`DashboardScreen._wellnessScore()`): a
+  transparent calibrated formula, not a trained model — no labeled
+  "wellness score" data exists to train on anyway, and a formula is
+  explainable to judges in a way a black-box score isn't. Starts at 100,
+  deducts per concerning signal currently showing (HR -25, SpO2 -30, body
+  temp -20, ambient heat index -10, heat-stress combination -15), shown
+  in the Dashboard's Wellness card.
 - Deliberately not pursuing: an on-device LLM/chatbot layer. Heavy for a
   phone app on this timeline, and cuts against the offline-first,
   privacy-preserving pitch if it ever needs cloud inference.
 
-### 2. Gaps against the original problem statement
+## Roadmap (not yet implemented)
+
+UI stubs exist for everything below (Map's Air Quality row, Health Log's
+tracking tiles, Settings' emergency contact form) so the shape of the
+full app is visible even where the logic isn't built yet.
+
+### 1. Gaps against the original problem statement
 
 - **Air quality**: mentioned in the original brief (pollution events,
   respiratory risk) but never integrated — WAQI or OpenWeatherMap's air
@@ -264,21 +281,24 @@ full app is visible even where the logic isn't built yet.
   the problem statement's "Personal Wellness Dashboard" section calls
   for.
 
-### 3. Wearable-sensor disaster heuristics
+### 2. Wearable-sensor disaster heuristics
 
 The disaster map above uses live weather + static state data, not the
 wearable's own sensors yet. Two refinements once the wearable's IMU is
 back (see fall-detection CNN's "on hold" state):
-- **Heat-wave risk**: standard heat-index formula from `ambientTempC` +
-  `humidity` (BME280, already streaming over BLE), thresholded per IMD
-  heat-wave guidance — more locally accurate than the phone-GPS-based
-  Open-Meteo call for a wearable actually on the body.
+- **Heat-wave risk**: `lib/utils/heat_index.dart`'s formula already
+  exists (built for the AI/ML wellness score above) — this item is just
+  wiring it to the wearable's own `ambientTempC` + `humidity` (BME280,
+  already streaming over BLE) instead of only the phone-GPS-based
+  Open-Meteo call, more locally accurate for a device actually on the
+  body, and thresholded per IMD heat-wave guidance for the disaster map
+  specifically (vs. the dashboard's personal wellness framing).
 - **Cyclone/storm risk refinement**: BME280 pressure **drop-rate** over a
   rolling window (a fast, sustained fall in hPa/hour is a classic
   pre-storm signal) as a supplementary signal alongside the map's
   wind-speed-based check.
 
-### 4. Health tracking (weight, height, meds, insulin, etc.)
+### 3. Health tracking (weight, height, meds, insulin, etc.)
 
 `HealthLogScreen` now shows stub tiles for each of these (tapping any
 shows "coming soon"). Ideas gathered so far: core tracking (weight/height
@@ -286,16 +306,17 @@ with auto-BMI, blood pressure, blood glucose, insulin dosing log,
 medication reminders, sleep, hydration, symptom journal); safety-oriented
 additions that double as real SOS infrastructure (a **Medical ID** card —
 blood type, allergies, conditions, current meds, visible to a responder
-in an emergency; proper **emergency contacts management**, which item 5
+in an emergency; proper **emergency contacts management**, which item 4
 below needs anyway — a stub form exists on the new Settings tab;
 caregiver/family sharing for remote monitoring); and disaster tie-ins
-(flag extra heat-stress risk for a diabetic during a heatwave, extra
-caution for a respiratory condition on a high-AQI day; a bundled offline
-"what to do during X" checklist needing no data at all — the full-screen
+(flag extra heat-stress risk for a diabetic during a heatwave — now
+computable via `lib/utils/heat_index.dart`, extra caution for a
+respiratory condition on a high-AQI day; a bundled offline "what to do
+during X" checklist needing no data at all — the full-screen
 imminent-warning feature above already has this per-hazard, so reuse that
 content rather than duplicating it).
 
-### 5. SOS / emergency assistance
+### 4. SOS / emergency assistance
 
 Since "network is icing on the cake," SOS must work over the cellular
 network without data connectivity:
@@ -327,24 +348,28 @@ network without data connectivity:
 sih26-health-companion/
 ├── firmware/health_companion/   # Arduino IDE sketch (ESP32-S3, Arduino Core 3.3.11)
 │   └── health_companion.ino
-├── ml/                           # fall-detector training pipeline (see ml/README.md)
+├── ml/                           # training pipelines (see ml/README.md)
 │   ├── download_dataset.py
 │   ├── prepare_windows_phone_only.py, train_fall_model_phone_only.py,
-│   │   convert_to_tflite_phone_only.py   # currently active
-│   ├── prepare_windows.py, train_fall_model.py, convert_to_tflite.py  # on hold
-│   └── data/                     # gitignored — regenerate by rerunning the pipeline
+│   │   convert_to_tflite_phone_only.py   # fall detector, currently active
+│   ├── prepare_windows.py, train_fall_model.py, convert_to_tflite.py  # fall detector, on hold
+│   ├── download_activity_dataset.py, prepare_activity_windows.py,
+│   │   train_activity_model.py, convert_activity_to_tflite.py  # activity classifier
+│   └── data/                     # gitignored — regenerate by rerunning the pipelines
 └── app/health_companion/        # Flutter app
     ├── assets/models/fall_detector_phone_only.tflite  # currently loaded
     ├── assets/models/fall_detector.tflite              # on hold
+    ├── assets/models/activity_classifier.tflite
     ├── assets/sounds/alarm_siren.wav                   # synthesized, not downloaded
     └── lib/
         ├── main.dart
         ├── ble/{protocol.dart, ble_service.dart}
         ├── sensors/phone_motion_service.dart
-        ├── ml/fall_detector_service.dart
+        ├── ml/{fall_detector_service.dart, activity_classifier_service.dart}
+        ├── services/{alarm_sound_service.dart, baseline_service.dart}
+        ├── utils/heat_index.dart
         ├── disaster/{disaster_service.dart, india_hazard_data.dart,
         │   hazard_type.dart, imminent_warning_gate.dart}
-        ├── services/alarm_sound_service.dart
         ├── models/sensor_reading.dart
         ├── storage/history_store.dart
         ├── screens/
