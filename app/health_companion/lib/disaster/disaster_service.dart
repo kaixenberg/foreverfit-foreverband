@@ -5,6 +5,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:http/http.dart' as http;
 
+import 'hazard_type.dart';
 import 'india_hazard_data.dart';
 
 enum DataFreshness { live, cachedStale, staticOnly }
@@ -58,6 +59,41 @@ class DisasterRisk {
     }
     if (reasons.isEmpty) return null;
     return 'Elevated risk: ${reasons.join(', ')}.';
+  }
+
+  /// Stricter tier than [hasWarning] — reserved for the full-screen,
+  /// explicit-acknowledgment warning. Deliberately much higher bars than
+  /// the low-key Map banner so it doesn't fire at the same rate and cause
+  /// alert fatigue.
+  List<HazardType> get imminentHazards {
+    final hazards = <HazardType>[];
+    if ((nearbyMaxQuakeMagnitude ?? 0) >= 5.5) {
+      hazards.add(HazardType.earthquake);
+    }
+    if (hazardProfile.floodProne && (precipitationProbabilityPercent ?? 0) > 85) {
+      hazards.add(HazardType.flood);
+    }
+    if (hazardProfile.cycloneProne && (windSpeedKmh ?? 0) > 60) {
+      hazards.add(HazardType.cyclone);
+    }
+    return hazards;
+  }
+
+  String? get imminentReason {
+    final parts = <String>[];
+    if (imminentHazards.contains(HazardType.earthquake)) {
+      parts.add('M${nearbyMaxQuakeMagnitude!.toStringAsFixed(1)} earthquake '
+          'detected nearby in the last 30 days');
+    }
+    if (imminentHazards.contains(HazardType.flood)) {
+      parts.add('${precipitationProbabilityPercent!.round()}% chance of '
+          'heavy rain today in a flood-prone area');
+    }
+    if (imminentHazards.contains(HazardType.cyclone)) {
+      parts.add('${windSpeedKmh!.round()} km/h winds in a cyclone-prone area');
+    }
+    if (parts.isEmpty) return null;
+    return parts.join('; ');
   }
 }
 

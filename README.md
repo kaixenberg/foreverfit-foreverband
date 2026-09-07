@@ -125,6 +125,12 @@ live data (Open-Meteo, USGS) when online.
       emergency-call escalation — real SMS/call wiring not yet built
 - [x] Disaster-risk map: GPS + India state-level hazard baseline + live
       Open-Meteo/USGS data with offline fallback — see ARCHITECTURE.md
+- [x] Full-screen imminent-disaster warning with per-hazard safety
+      guidance (e.g. "get under a table" for earthquakes) and a siren
+      that plays through Android's alarm stream at max volume even when
+      the phone is silenced — stricter trigger than the Map banner, plus
+      a manual preview in Settings since real conditions rarely cross it
+      live — see ARCHITECTURE.md
 - [x] UI stubs for everything below (Dashboard's Wellness/Activity/
       Baseline cards + manual SOS button, Map's Air Quality row, Health
       Log's tracking tiles, Settings' emergency contact form) — visible,
@@ -135,9 +141,6 @@ live data (Open-Meteo, USGS) when online.
 - [ ] Composite wellness/risk score
 - [ ] Air quality integration
 - [ ] Sleep tracking
-- [ ] Full-screen imminent-disaster warning with per-hazard safety
-      guidance (e.g. "get under a table" for earthquakes) — the current
-      Map banner is a low-key, dismissible notice, not this
 - [ ] Trend/daily-summary views
 - [ ] Wearable-sensor disaster heuristics (BME280 heat-index, pressure
       drop-rate) once the wearable's IMU is replaced

@@ -26,6 +26,7 @@ dependencies:
   path_provider: ^2.1.6
   geolocator: ^14.0.3
   http: ^1.6.0
+  audioplayers: ^6.8.1
 
 dev_dependencies:
   flutter_test:
@@ -37,3 +38,4 @@ flutter:
   assets:
     - assets/models/fall_detector.tflite
     - assets/models/fall_detector_phone_only.tflite
+    - assets/sounds/alarm_siren.wav

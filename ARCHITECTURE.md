@@ -175,6 +175,44 @@ falling back to cached-then-static data when not — see
   state — dismissible, no countdown/escalation (an area-awareness
   warning, not the fall detector's emergency-response flow).
 
+## Full-screen imminent-disaster warning (implemented)
+
+A harder-to-miss tier above the Map screen's dismissible banner, for when
+a hazard crosses a much stricter threshold — `DisasterRisk.imminentHazards`
+in `lib/disaster/disaster_service.dart` requires a nearby M5.5+ quake (vs.
+the banner's M4.5+), >85% rain probability in a flood-prone state (vs.
+>70% with no flood-prone requirement), or >60 km/h wind in a
+cyclone-prone state (vs. >40 km/h) — deliberately much rarer than the
+banner so it doesn't cause alert fatigue.
+
+- **`ImminentWarningGate`** (`lib/disaster/imminent_warning_gate.dart`)
+  wraps the whole app (`main.dart`), watches `DisasterService`, and pushes
+  `ImminentWarningScreen` full-screen the moment a *new* hazard set
+  crosses the threshold (deduped so it doesn't re-push on every refresh
+  while the same hazard is still active).
+- **`ImminentWarningScreen`** (`lib/screens/imminent_warning_screen.dart`)
+  blocks the back gesture (`PopScope(canPop: false)`) — the only way out
+  is the explicit "I understand" button — and shows static, bundled
+  per-hazard guidance (`lib/disaster/hazard_type.dart`): Drop/Cover/Hold
+  On for earthquakes, move to higher ground for floods, stay indoors for
+  cyclones, hydration/heat-exhaustion signs for heat waves (heat wave has
+  guidance text ready but no live trigger yet — `DisasterService` doesn't
+  track temperature; see the wearable heat-index item below for where
+  that data would come from).
+- **Siren audio**: loops through Android's `STREAM_ALARM` (not the
+  ringer/media stream), via `lib/services/alarm_sound_service.dart`
+  (`audioplayers` with `AndroidUsageType.alarm`) plus a small native
+  `MethodChannel` (`MainActivity.kt`) that temporarily forces
+  `STREAM_ALARM` to max volume for the duration of the warning and
+  restores the user's previous alarm volume when dismissed — the same
+  mechanism alarm-clock apps use to be heard over silent/DND mode. The
+  siren tone (`assets/sounds/alarm_siren.wav`) is synthesized, not a
+  downloaded sample.
+- **Manual preview**: since real conditions rarely cross the imminent
+  threshold live, `SettingsScreen` has a "Preview disaster warnings"
+  section that opens the full-screen warning (with siren) for any hazard
+  type on demand — this is the reliable way to demo the feature.
+
 ## Roadmap (not yet implemented)
 
 UI stubs exist for everything below (Dashboard's Wellness/Activity/
@@ -229,27 +267,7 @@ full app is visible even where the logic isn't built yet.
   fall detector firing automatically. Someone conscious during a medical
   episode has no way to proactively ask for help.
 
-### 3. Full-screen imminent-disaster warning with safety guidance
-
-The current warning (Map screen banner) is a dismissible, non-blocking
-notice for "elevated risk" — fine for area awareness, not urgent enough
-for a genuinely imminent event. Missing a harder-to-miss tier: a
-full-screen modal requiring explicit acknowledgment, with concrete
-per-hazard actionable guidance, not just a risk label:
-- Earthquake: "Drop, Cover, Hold On — get under a sturdy table"
-- Flood: "Move to higher ground immediately"
-- Cyclone/storm: "Stay indoors, away from windows"
-- Heat wave: "Stay hydrated, avoid outdoor activity"
-
-Needs its own, stricter trigger threshold distinct from `hasWarning`
-(e.g. a very high precip probability *and* flood-prone, or a close
-M5.5+ quake, not just "elevated risk") — reusing the existing banner's
-threshold as-is would cause alert fatigue by firing this at the same
-rate as the low-key banner. The per-hazard "what to do" text is static
-and bundled, needs no data source, similar in spirit to the offline
-safety-checklist idea in the health-tracking gap above.
-
-### 4. Wearable-sensor disaster heuristics
+### 3. Wearable-sensor disaster heuristics
 
 The disaster map above uses live weather + static state data, not the
 wearable's own sensors yet. Two refinements once the wearable's IMU is
@@ -263,7 +281,7 @@ back (see fall-detection CNN's "on hold" state):
   pre-storm signal) as a supplementary signal alongside the map's
   wind-speed-based check.
 
-### 5. Health tracking (weight, height, meds, insulin, etc.)
+### 4. Health tracking (weight, height, meds, insulin, etc.)
 
 `HealthLogScreen` now shows stub tiles for each of these (tapping any
 shows "coming soon"). Ideas gathered so far: core tracking (weight/height
@@ -271,15 +289,16 @@ with auto-BMI, blood pressure, blood glucose, insulin dosing log,
 medication reminders, sleep, hydration, symptom journal); safety-oriented
 additions that double as real SOS infrastructure (a **Medical ID** card —
 blood type, allergies, conditions, current meds, visible to a responder
-in an emergency; proper **emergency contacts management**, which item 6
+in an emergency; proper **emergency contacts management**, which item 5
 below needs anyway — a stub form exists on the new Settings tab;
 caregiver/family sharing for remote monitoring); and disaster tie-ins
 (flag extra heat-stress risk for a diabetic during a heatwave, extra
 caution for a respiratory condition on a high-AQI day; a bundled offline
-"what to do during X" checklist needing no data at all — the same
-checklist content item 3 above needs, so build it once and reuse it).
+"what to do during X" checklist needing no data at all — the full-screen
+imminent-warning feature above already has this per-hazard, so reuse that
+content rather than duplicating it).
 
-### 6. SOS / emergency assistance
+### 5. SOS / emergency assistance
 
 Since "network is icing on the cake," SOS must work over the cellular
 network without data connectivity:
@@ -315,19 +334,25 @@ sih26-health-companion/
 └── app/health_companion/        # Flutter app
     ├── assets/models/fall_detector_phone_only.tflite  # currently loaded
     ├── assets/models/fall_detector.tflite              # on hold
+    ├── assets/sounds/alarm_siren.wav                   # synthesized, not downloaded
     └── lib/
         ├── main.dart
         ├── ble/{protocol.dart, ble_service.dart}
         ├── sensors/phone_motion_service.dart
         ├── ml/fall_detector_service.dart
-        ├── disaster/{disaster_service.dart, india_hazard_data.dart}
+        ├── disaster/{disaster_service.dart, india_hazard_data.dart,
+        │   hazard_type.dart, imminent_warning_gate.dart}
+        ├── services/alarm_sound_service.dart
         ├── models/sensor_reading.dart
         ├── storage/history_store.dart
         ├── screens/
-        │   ├── home_shell.dart          # bottom-nav shell, app's home route
+        │   ├── home_shell.dart              # bottom-nav shell, app's home route
         │   ├── dashboard_screen.dart
         │   ├── map_screen.dart
-        │   ├── health_log_screen.dart   # placeholder
-        │   └── scan_connect_screen.dart # pushed route, not the home route
+        │   ├── health_log_screen.dart       # stub tiles
+        │   ├── settings_screen.dart         # wearable mgmt + emergency contact stub
+        │   │                                 # + disaster-warning preview
+        │   ├── imminent_warning_screen.dart
+        │   └── scan_connect_screen.dart     # pushed route, not the home route
         └── widgets/metric_card.dart
 ```

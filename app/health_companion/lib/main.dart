@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import 'ble/ble_service.dart';
 import 'disaster/disaster_service.dart';
+import 'disaster/imminent_warning_gate.dart';
 import 'ml/fall_detector_service.dart';
 import 'screens/home_shell.dart';
 import 'sensors/phone_motion_service.dart';
@@ -47,7 +48,7 @@ class HealthCompanionApp extends StatelessWidget {
           useMaterial3: true,
           brightness: Brightness.dark,
         ),
-        home: const HomeShell(),
+        home: const ImminentWarningGate(child: HomeShell()),
       ),
     );
   }

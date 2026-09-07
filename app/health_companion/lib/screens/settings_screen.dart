@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../disaster/hazard_type.dart';
+import 'imminent_warning_screen.dart';
 import 'scan_connect_screen.dart';
 
 /// Placeholder — see ARCHITECTURE.md roadmap item 5 (SOS). The emergency
@@ -73,6 +75,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             child: const Text('Save'),
           ),
+          const SizedBox(height: 24),
+          Text('Preview disaster warnings', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 4),
+          Text(
+            'Shows the full-screen warning that normally appears only when '
+            'a hazard crosses the imminent threshold (see ARCHITECTURE.md) — '
+            'useful for demos since real conditions rarely cross it live.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 12),
+          for (final hazard in HazardType.values)
+            Card(
+              child: ListTile(
+                leading: Icon(hazardGuidance[hazard]!.icon),
+                title: Text(hazardGuidance[hazard]!.title),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    fullscreenDialog: true,
+                    builder: (_) => ImminentWarningScreen(
+                      hazards: [hazard],
+                      reason: 'Preview — no real threat detected',
+                    ),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
