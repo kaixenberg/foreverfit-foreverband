@@ -387,19 +387,27 @@ Health Connect:
   nothing for steps since it's automatic). Tapping a Dashboard card now
   opens its history screen rather than a log dialog directly, so logging
   and trend-viewing share one entry point.
-- **Dashboard card layout**: the Wellness overview and Body & activity
-  sections are a horizontally scrollable row of fixed-width rectangular
-  cards (`_CardRow` in `dashboard_screen.dart`), not a wrapping
-  `GridView` — 3-per-row grids were truncating labels ("Well…", "Basel…")
-  and don't scale as cards get added. Hydration and a "Health log" nav
-  card (→ `HealthLogScreen`) are cards in this same row rather than
-  separately-styled widgets below it, for one consistent card language
-  across the whole section.
+- **Dashboard card layout**: Wellness overview (3 cards) is a
+  horizontally scrollable row of fixed-width rectangular cards (`_CardRow`
+  in `dashboard_screen.dart`) — 3-per-row `GridView`s were truncating
+  labels ("Well…", "Basel…"). Body & activity (7 cards: steps, heart
+  rate, weight, height, BMI, body fat, hydration) outgrew a single row,
+  so it's a swipeable, paged 2-column x 3-row grid with a dot-page
+  indicator instead (`_PagedCardGrid`) — the OpenVitals
+  dashboard-carousel pattern, reimplemented from scratch (AGPL, no code
+  copied). Heart rate appears both here (alongside the other logged/
+  tracked body stats, no separate history screen — the "Heart rate —
+  recent" sparkline above already covers its trend) and in the top
+  vitals grid (the always-visible, no-swipe-needed live-wearable-reading
+  group) — deliberate duplication, not an oversight: the vitals grid is
+  the safety-critical always-visible one, this one is the "all your
+  stats in one browsable place" one.
 - **`HealthLogScreen`** trimmed to only what's *not* yet real (blood
   pressure, glucose, insulin, meds, sleep, Medical ID) — weight, height,
-  body fat, hydration, and steps are real Dashboard cards now, reachable
-  from there via the "Health log" card rather than being a nav
-  destination of its own now that there's no tab bar.
+  body fat, hydration, and steps are real Dashboard cards now. No longer
+  a Dashboard card itself (the Body & activity grid is metrics only, not
+  a mix of metrics and nav links) — reachable from `SettingsScreen`
+  instead, alongside the Wearable management entry.
 
 ### Performance: scoped rebuilds instead of one `context.watch` per service
 

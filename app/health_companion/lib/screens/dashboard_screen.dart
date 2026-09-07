@@ -14,7 +14,6 @@ import '../storage/metrics_store.dart';
 import '../theme/app_theme.dart';
 import '../utils/heat_index.dart';
 import '../widgets/metric_card.dart';
-import 'health_log_screen.dart';
 import 'map_screen.dart';
 import 'metric_detail_screens.dart';
 import 'scan_connect_screen.dart';
@@ -368,9 +367,17 @@ class DashboardScreen extends StatelessWidget {
           Text('Body & activity',
               style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
-          _CardRow(
+          _PagedCardGrid(
             cards: [
               const _StepsCard(),
+              MetricCard(
+                label: 'Heart rate',
+                value: hasFingerReading ? heartRate.toStringAsFixed(0) : '--',
+                unit: vitals != null && !hasFingerReading ? 'no finger' : 'bpm',
+                icon: Icons.favorite,
+                warn: heartRateWarn,
+                accentColor: AppTheme.accentPink,
+              ),
               MetricCard(
                 label: 'Weight',
                 value: metrics.latestWeightKg?.toStringAsFixed(1) ?? '--',
@@ -422,16 +429,6 @@ class DashboardScreen extends StatelessWidget {
                       builder: (_) => const HydrationHistoryScreen()),
                 ),
               ),
-              MetricCard(
-                label: 'Health log',
-                value: 'More',
-                unit: '',
-                icon: Icons.list_alt_outlined,
-                accentColor: AppTheme.accentPurple,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const HealthLogScreen()),
-                ),
-              ),
             ],
           ),
         ],
@@ -441,10 +438,8 @@ class DashboardScreen extends StatelessWidget {
 }
 
 /// A horizontally scrollable row of fixed-size, rectangular cards — used
-/// for both the Wellness overview and Body & activity sections instead of
-/// a wrapping GridView, which squeezed labels into "Well…"/"Basel…"
-/// ellipsis at 3-per-row and doesn't scale as more cards get added (e.g.
-/// merging Hydration and Health log in as cards here too).
+/// for the Wellness overview section (just 3 cards, no paging needed).
+/// Body & activity uses `_PagedCardGrid` instead — see below.
 class _CardRow extends StatelessWidget {
   const _CardRow({required this.cards});
 
@@ -464,6 +459,112 @@ class _CardRow extends StatelessWidget {
         itemBuilder: (_, i) => SizedBox(width: _cardWidth, child: cards[i]),
       ),
     );
+  }
+}
+
+/// A swipeable, paged 2-column x 3-row grid with a dot-page indicator —
+/// the OpenVitals dashboard-carousel pattern, reimplemented from scratch
+/// here (AGPL, see ARCHITECTURE.md — no code copied). Used for Body &
+/// activity now that it's grown past what a single row or a wrapping
+/// GridView comfortably shows.
+class _PagedCardGrid extends StatefulWidget {
+  const _PagedCardGrid({required this.cards});
+
+  final List<Widget> cards;
+
+  static const _perPage = 6; // 2 columns x 3 rows
+  static const _pageHeight = 420.0;
+
+  @override
+  State<_PagedCardGrid> createState() => _PagedCardGridState();
+}
+
+class _PagedCardGridState extends State<_PagedCardGrid> {
+  final _controller = PageController();
+  int _page = 0;
+
+  List<List<Widget>> get _pages {
+    final pages = <List<Widget>>[];
+    for (var i = 0; i < widget.cards.length; i += _PagedCardGrid._perPage) {
+      pages.add(widget.cards.sublist(
+        i,
+        (i + _PagedCardGrid._perPage).clamp(0, widget.cards.length),
+      ));
+    }
+    return pages;
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pages = _pages;
+    return Column(
+      children: [
+        SizedBox(
+          height: _PagedCardGrid._pageHeight,
+          child: PageView.builder(
+            controller: _controller,
+            onPageChanged: (i) => setState(() => _page = i),
+            itemCount: pages.length,
+            itemBuilder: (_, i) => _CardGridPage(cards: pages[i]),
+          ),
+        ),
+        if (pages.length > 1) ...[
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              for (var i = 0; i < pages.length; i++)
+                Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 3),
+                  width: 7,
+                  height: 7,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: i == _page
+                        ? Theme.of(context).colorScheme.primary
+                        : Theme.of(context).colorScheme.outline,
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// One page of up to 6 cards, laid out as 3 rows of 2 — plain Rows +
+/// Expanded rather than GridView, so each row's height is a simple even
+/// share of the fixed page height instead of depending on an
+/// aspect-ratio guess that would vary with screen width.
+class _CardGridPage extends StatelessWidget {
+  const _CardGridPage({required this.cards});
+
+  final List<Widget> cards;
+
+  @override
+  Widget build(BuildContext context) {
+    final rows = <Widget>[];
+    for (var i = 0; i < cards.length; i += 2) {
+      if (rows.isNotEmpty) rows.add(const SizedBox(height: 8));
+      final second = i + 1 < cards.length ? cards[i + 1] : null;
+      rows.add(Expanded(
+        child: Row(
+          children: [
+            Expanded(child: cards[i]),
+            const SizedBox(width: 8),
+            Expanded(child: second ?? const SizedBox()),
+          ],
+        ),
+      ));
+    }
+    return Column(children: rows);
   }
 }
 

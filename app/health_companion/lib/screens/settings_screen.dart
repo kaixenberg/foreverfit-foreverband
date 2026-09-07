@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../disaster/hazard_type.dart';
+import 'health_log_screen.dart';
 import 'imminent_warning_screen.dart';
 import 'scan_connect_screen.dart';
 
@@ -41,6 +42,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
               trailing: const Icon(Icons.chevron_right),
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const ScanConnectScreen()),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.list_alt_outlined),
+              title: const Text('Health log'),
+              subtitle: const Text(
+                  'Blood pressure, glucose, insulin, meds, sleep, Medical ID'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const HealthLogScreen()),
               ),
             ),
           ),

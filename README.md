@@ -166,11 +166,13 @@ tiles + a static state-level hazard baseline) and prefers live data
       applied app-wide; one idea (score + reasoning screen shape) drawn
       from a reviewed reference app, reimplemented from scratch in Dart,
       no code copied (see ARCHITECTURE.md)
-- [x] Body & activity tracking, local storage (no Health Connect): weight,
-      height, BMI (computed), body fat %, and hydration (with one-tap
-      quick-add) log to Hive via `MetricsStore`; phone step count via the
-      hardware step counter (`pedometer`), daily-reset logic handled
-      locally, with a growing daily-history archive — see ARCHITECTURE.md
+- [x] Body & activity tracking, local storage (no Health Connect): steps,
+      heart rate, weight, height, BMI (computed), body fat %, and
+      hydration (with one-tap quick-add) in a swipeable, paged 2x3 card
+      grid with a dot-page indicator; weight/height/body-fat/hydration
+      log to Hive via `MetricsStore`, steps via the hardware step counter
+      (`pedometer`) with a growing daily-history archive — see
+      ARCHITECTURE.md
 - [x] Per-metric history: tapping a Body & activity card opens a shared
       chart+stats+period-selector screen (7 days/30 days/all time) with
       average/min/max/change — one generic screen reused for all five
@@ -198,9 +200,9 @@ tiles + a static state-level hazard baseline) and prefers live data
       phone GPS, plus BME280 pressure drop-rate) once the wearable's IMU
       is replaced
 - [ ] Remaining health tracking (blood pressure/glucose/insulin/meds/
-      sleep/Medical ID) — UI stub only, reachable via the Dashboard's
-      "More health tracking" card. Weight/height/body fat/hydration/steps
-      are implemented, see above
+      sleep/Medical ID) — UI stub only, reachable via Settings' "Health
+      log" entry. Weight/height/body fat/hydration/steps/heart rate are
+      implemented, see above
 - [ ] Real SOS (SMS/call + emergency contact storage) — countdown/
       escalation UX and manual trigger are wired end-to-end, but still
       end in a dummy logged action, not a real call/SMS
