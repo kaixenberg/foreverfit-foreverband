@@ -297,11 +297,13 @@ the full training-pipeline writeups.
   directly-downloadable repo before use, see `ml/README.md`). 99.9% test
   accuracy on held-out subjects — much higher than fall detection's,
   because sustained activity patterns over a 3s window are an easier
-  signal than a brief impact. `DashboardScreen._heartRateCeiling()` uses
-  the live activity to set the HR warning threshold: 120bpm at rest,
-  140bpm walking, 180bpm running — replacing one fixed threshold that
-  couldn't tell "elevated because you're running" from "elevated at
-  rest."
+  signal than a brief impact. `heartRateCeiling()`
+  (`lib/domain/health_thresholds.dart` — the single shared source of
+  truth for this and every other clinical threshold, also consumed by
+  the insight engine below) uses the live activity to set the HR warning
+  threshold: 120bpm at rest, 140bpm walking, 180bpm running — replacing
+  one fixed threshold that couldn't tell "elevated because you're
+  running" from "elevated at rest."
 - **Personalized baseline learning** (`lib/services/baseline_service.dart`):
   deliberately *not* a CNN — a rolling mean/std of this user's own resting
   heart rate over the past 7 days (min 20 samples before it activates),
@@ -519,6 +521,60 @@ pattern at all:
   everything else (13 cards total now, 3 pages) — `HealthLogScreen` and
   its Settings entry are both gone; there's nothing left for an
   intermediate "more tracking" list to point to.
+
+## AI-based insights & notifications (implemented)
+
+A rule-based suggestion/warning layer across all three categories the
+brief asked for — wellness/vitals anomalies, map/disaster events, and
+tracking reminders — chosen explicitly over an on-device trained model or
+LLM: it's the same "formula over black box" pattern as the wellness
+score, personalized baseline, and heat index above, and there's no
+labeled "should I warn this user" training data to learn from anyway.
+
+- **`lib/domain/health_thresholds.dart`**: every clinical/reference
+  threshold used anywhere in the app (HR ceiling/floor, SpO2 floor, body
+  temp range, BP high/crisis, glucose range, sleep floor, AQI
+  unhealthy/very-unhealthy) now lives in exactly one file, imported by
+  both `DashboardScreen`'s card-level warn flags and the insight engine
+  below — previously the HR ceiling logic and the SpO2/body-temp
+  literals lived only in `DashboardScreen`, with no second consumer to
+  keep in sync.
+- **`lib/models/insight.dart`**: an `Insight` (id, title, message,
+  `InsightSeverity` info/warning/critical, `InsightCategory`
+  vitals/hazard/reminder, icon) — the shared type produced by the engine
+  and consumed by both the Dashboard UI and the notification service.
+- **`lib/domain/insight_engine.dart`**: `computeInsights(...)`, a pure
+  function of live provider state → `List<Insight>`, covering:
+  - *Vitals*: HR out of range or off personal baseline
+    (`BaselineService.isAnomalous`), low SpO2, body temp out of range,
+    blood pressure elevated/crisis, glucose out of range, short sleep.
+  - *Hazards*: AQI unhealthy/very-unhealthy, flood risk (flood-prone
+    state + high rain), cyclone risk (cyclone-prone state + high wind),
+    nearby M4.0+ earthquake — reusing the same `DisasterService.risk`
+    the Map screen already computes, not a second fetch.
+  - *Reminders*: hydration (behind a time-of-day-proportional pace
+    target, so it doesn't fire at 8am for not having drunk a full day's
+    water yet) and medication (tracked medications with zero doses
+    logged today).
+- **`lib/services/notification_service.dart`**: thin wrapper around
+  `flutter_local_notifications` (`^22.3.0`, API verified against the
+  installed package source before use) — one Android notification
+  channel, `POST_NOTIFICATIONS` runtime permission requested on init
+  (Android 13+), severity mapped to `Importance`/`Priority`.
+- **`lib/domain/insight_watcher_service.dart`**: a `ChangeNotifier` that
+  recomputes insights whenever any input provider changes (BLE vitals,
+  disaster risk, baseline, activity, health log, metrics) plus on a
+  15-minute timer (needed for the reminders, which nothing else would
+  trigger a recompute for). Notifies for each new or still-active
+  warning/critical insight, cooled down per insight id (1 hour) so a
+  persisting condition doesn't re-notify on every recompute; info-severity
+  insights are shown but never push a notification. Exposes the current
+  `List<Insight>` so the Dashboard can display it, not just be notified.
+- **Dashboard surface**: an "Insights" card (`_InsightsSection` in
+  `dashboard_screen.dart`) shows the current list — self-watches its own
+  provider slice so an insight recompute doesn't rebuild the rest of the
+  dashboard. Hidden entirely when there's nothing to show, rather than an
+  empty-state card.
 
 ## Roadmap (not yet implemented)
 

@@ -215,6 +215,13 @@ tiles + a static state-level hazard baseline) and prefers live data
       only (no static baseline — AQI swings too fast hour to hour for a
       hardcoded per-state table to be honest); AQI >150 now also
       triggers the Map's warning banner — see ARCHITECTURE.md
+- [x] AI-based suggestions/warnings + notifications: rule-based insight
+      engine (`lib/domain/insight_engine.dart`) covering vitals anomalies,
+      map/disaster events (AQI, flood, cyclone, nearby quake), and
+      tracking reminders (hydration, medication); shown on the Dashboard
+      and pushed as local notifications (`flutter_local_notifications`,
+      cooldown per condition so a persisting warning doesn't spam) — see
+      ARCHITECTURE.md
 - [ ] Wearable-sensor disaster heuristics (heat-index formula now exists
       — this item is wiring it to the wearable's own BME280 instead of
       phone GPS, plus BME280 pressure drop-rate) once the wearable's IMU

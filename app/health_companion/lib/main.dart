@@ -4,11 +4,13 @@ import 'package:provider/provider.dart';
 import 'ble/ble_service.dart';
 import 'disaster/disaster_service.dart';
 import 'disaster/imminent_warning_gate.dart';
+import 'domain/insight_watcher_service.dart';
 import 'ml/activity_classifier_service.dart';
 import 'ml/fall_detector_service.dart';
 import 'screens/dashboard_screen.dart';
 import 'sensors/phone_motion_service.dart';
 import 'services/baseline_service.dart';
+import 'services/notification_service.dart';
 import 'services/step_counter_service.dart';
 import 'storage/health_log_store.dart';
 import 'storage/history_store.dart';
@@ -67,6 +69,18 @@ class HealthCompanionApp extends StatelessWidget {
         ChangeNotifierProvider.value(value: metricsStore),
         ChangeNotifierProvider.value(value: healthLogStore),
         ChangeNotifierProvider(create: (_) => StepCounterService()..start()),
+        Provider<NotificationService>(create: (_) => NotificationService()),
+        ChangeNotifierProvider(
+          create: (context) => InsightWatcherService(
+            ble: context.read<BleService>(),
+            disaster: context.read<DisasterService>(),
+            baseline: context.read<BaselineService>(),
+            activityClassifier: context.read<ActivityClassifierService>(),
+            healthLog: context.read<HealthLogStore>(),
+            metrics: context.read<MetricsStore>(),
+            notifications: context.read<NotificationService>(),
+          )..start(),
+        ),
       ],
       child: MaterialApp(
         title: 'Health Companion',

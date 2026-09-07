@@ -3,8 +3,11 @@ import 'package:provider/provider.dart';
 
 import '../ble/ble_service.dart';
 import '../disaster/disaster_service.dart';
+import '../domain/health_thresholds.dart';
+import '../domain/insight_watcher_service.dart';
 import '../ml/activity_classifier_service.dart';
 import '../ml/fall_detector_service.dart';
+import '../models/insight.dart';
 import '../models/wellness_snapshot.dart';
 import '../services/baseline_service.dart';
 import '../services/step_counter_service.dart';
@@ -19,23 +22,6 @@ import 'metric_detail_screens.dart';
 import 'scan_connect_screen.dart';
 import 'settings_screen.dart';
 import 'wellness_detail_screen.dart';
-
-/// Heart-rate ceiling above which a reading is flagged, conditioned on
-/// what the user is currently doing — a fixed threshold can't tell
-/// "elevated HR because you're running" from "elevated HR while sitting
-/// still," so it either misses real anomalies at rest or false-alarms
-/// during exercise. See ARCHITECTURE.md's AI/ML roadmap item 1.
-int _heartRateCeiling(Activity? activity) {
-  switch (activity) {
-    case Activity.running:
-      return 180;
-    case Activity.walking:
-      return 140;
-    case Activity.still:
-    case null:
-      return 120;
-  }
-}
 
 String _activityLabel(Activity activity) {
   switch (activity) {
@@ -157,13 +143,14 @@ class DashboardScreen extends StatelessWidget {
     // OLED already shows "no finger", so the app needs to too, rather
     // than reading a 0 as a genuine (and alarming) vital sign.
     final hasFingerReading = vitals != null && vitals.fingerPresent;
-    final heartRateCeiling = _heartRateCeiling(currentActivity);
+    final ceiling = heartRateCeiling(currentActivity);
     final heartRateWarn = hasFingerReading &&
-        (heartRate < 50 ||
-            heartRate > heartRateCeiling ||
+        (heartRate < heartRateFloor ||
+            heartRate > ceiling ||
             baseline.isAnomalous(heartRate));
-    final spo2Warn = hasFingerReading && spo2 < 92 && spo2 > 0;
-    final bodyTempWarn = vitals != null && (bodyTemp > 37.8 || bodyTemp < 35.5);
+    final spo2Warn = hasFingerReading && spo2 < spo2FloorPercent && spo2 > 0;
+    final bodyTempWarn =
+        vitals != null && (bodyTemp > bodyTempHighC || bodyTemp < bodyTempLowC);
 
     // Wearable sensor first, online weather (DisasterService already fetches
     // it for the Map) second, "--" only when neither is available.
@@ -198,7 +185,7 @@ class DashboardScreen extends StatelessWidget {
       score: wellnessScore,
       hasFingerReading: hasFingerReading,
       heartRate: heartRate,
-      heartRateCeiling: heartRateCeiling,
+      heartRateCeiling: ceiling,
       heartRateWarn: heartRateWarn,
       spo2: spo2,
       spo2Warn: spo2Warn,
@@ -245,6 +232,7 @@ class DashboardScreen extends StatelessWidget {
         children: [
           if (alertActive) const _FallAlertBanner(),
           if (!connected) _ConnectWearableBanner(),
+          const _InsightsSection(),
           _DisasterMapNavCard(risk: disaster.risk),
           const SizedBox(height: 12),
           GridView.count(
@@ -653,6 +641,58 @@ class _StepsCard extends StatelessWidget {
       accentColor: AppTheme.accentGreen,
       onTap: () => Navigator.of(context).push(
         MaterialPageRoute(builder: (_) => const StepsHistoryScreen()),
+      ),
+    );
+  }
+}
+
+/// Shows the current rule-based suggestions/warnings from
+/// InsightWatcherService — the same conditions that also trigger a local
+/// notification, surfaced here too so they're visible without leaving the
+/// app. Self-watches its own provider so an insight recompute only rebuilds
+/// this card, not the whole dashboard.
+class _InsightsSection extends StatelessWidget {
+  const _InsightsSection();
+
+  Color _severityColor(BuildContext context, InsightSeverity severity) {
+    final scheme = Theme.of(context).colorScheme;
+    switch (severity) {
+      case InsightSeverity.critical:
+        return scheme.error;
+      case InsightSeverity.warning:
+        return scheme.tertiary;
+      case InsightSeverity.info:
+        return scheme.primary;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final insights =
+        context.select<InsightWatcherService, List<Insight>>((s) => s.insights);
+    if (insights.isEmpty) return const SizedBox.shrink();
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+              child: Text('Insights',
+                  style: Theme.of(context).textTheme.titleMedium),
+            ),
+            for (final insight in insights)
+              ListTile(
+                leading: Icon(insight.icon,
+                    color: _severityColor(context, insight.severity)),
+                title: Text(insight.title,
+                    style: const TextStyle(fontWeight: FontWeight.w700)),
+                subtitle: Text(insight.message),
+              ),
+          ],
+        ),
       ),
     );
   }
