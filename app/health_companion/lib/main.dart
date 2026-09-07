@@ -10,6 +10,7 @@ import 'screens/dashboard_screen.dart';
 import 'sensors/phone_motion_service.dart';
 import 'services/baseline_service.dart';
 import 'services/step_counter_service.dart';
+import 'storage/health_log_store.dart';
 import 'storage/history_store.dart';
 import 'storage/metrics_store.dart';
 import 'theme/app_theme.dart';
@@ -20,10 +21,13 @@ Future<void> main() async {
   await historyStore.init();
   final metricsStore = MetricsStore();
   await metricsStore.init();
+  final healthLogStore = HealthLogStore();
+  await healthLogStore.init();
 
   runApp(HealthCompanionApp(
     historyStore: historyStore,
     metricsStore: metricsStore,
+    healthLogStore: healthLogStore,
   ));
 }
 
@@ -32,10 +36,12 @@ class HealthCompanionApp extends StatelessWidget {
     super.key,
     required this.historyStore,
     required this.metricsStore,
+    required this.healthLogStore,
   });
 
   final HistoryStore historyStore;
   final MetricsStore metricsStore;
+  final HealthLogStore healthLogStore;
 
   @override
   Widget build(BuildContext context) {
@@ -59,6 +65,7 @@ class HealthCompanionApp extends StatelessWidget {
           create: (_) => BaselineService(historyStore: historyStore)..start(),
         ),
         ChangeNotifierProvider.value(value: metricsStore),
+        ChangeNotifierProvider.value(value: healthLogStore),
         ChangeNotifierProvider(create: (_) => StepCounterService()..start()),
       ],
       child: MaterialApp(

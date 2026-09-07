@@ -141,8 +141,10 @@ Everything else is a pushed route reached from the dashboard: `Settings`
 via an app-bar gear icon, the disaster `MapScreen` via a dedicated nav
 card (shows the current warning inline when there is one, not just a
 generic link — see `_DisasterMapNavCard`), `ScanConnectScreen` via the
-Connect banner/button, `HealthLogScreen` via a "More health tracking"
-card for whatever hasn't been promoted to a real dashboard widget yet.
+Connect banner/button, and every metric/health-log card opens its own
+history or management screen directly (see "Body & activity metrics"
+and "Health log" below) — there's no longer an intermediate
+`HealthLogScreen` stub list; everything it used to stub out is real now.
 All of it is reachable with or without a wearable connected, same as
 before — `DashboardScreen` never bounces to `ScanConnectScreen`
 automatically.
@@ -423,12 +425,11 @@ Health Connect:
   gone now that every metric, heart rate included, follows the same
   tap-a-card-to-see-its-trend pattern instead of one metric getting
   special-cased screen space.
-- **`HealthLogScreen`** trimmed to only what's *not* yet real (blood
-  pressure, glucose, insulin, meds, sleep, Medical ID) — weight, height,
-  body fat, hydration, and steps are real Dashboard cards now. No longer
-  a Dashboard card itself (the Body & activity grid is metrics only, not
-  a mix of metrics and nav links) — reachable from `SettingsScreen`
-  instead, alongside the Wearable management entry.
+- **`HealthLogScreen` is gone** — every metric it used to stub out is a
+  real Dashboard card now (blood pressure, glucose, insulin, sleep, and
+  Medical ID landed alongside weight/height/body fat/hydration in the
+  next section below), so the intermediate "everything not yet built"
+  list has nothing left to list. Its Settings entry was removed too.
 
 ### Performance: scoped rebuilds instead of one `context.watch` per service
 
@@ -460,6 +461,49 @@ depends on:
 genuinely need to be live, and metrics only change on an explicit user
 log action, both legitimately infrequent-or-necessary.
 
+## Health log (implemented, local storage — no Health Connect)
+
+The six items `HealthLogScreen` used to stub out are all real now:
+blood pressure, blood glucose, insulin, medications, sleep, and Medical
+ID. `lib/storage/health_log_store.dart` (a `ChangeNotifier` Hive store,
+same pattern as `MetricsStore`) holds all six; `lib/screens/
+metric_detail_screens.dart` gained four more thin `MetricHistoryScreen`
+wrappers (blood pressure, blood glucose, insulin, sleep) and
+`lib/screens/health_log_screens.dart` holds the two that don't fit that
+pattern at all:
+
+- **Blood pressure is two numbers per reading**, not one — the first
+  metric that doesn't fit a single `MetricPoint` series.
+  `MetricHistoryScreen` gained optional `secondaryPoints`/
+  `secondaryLabel`/`secondaryColor` params: the chart draws both lines
+  (systolic primary, diastolic secondary) with a small legend and a
+  one-line secondary average note under the chart. The summary/
+  statistics cards still describe the primary series only — a fully
+  symmetric two-metric layout would roughly double the screen for this
+  one caller, and systolic is the number that actually drives the
+  medical urgency here anyway. `showBloodPressureDialog()`
+  (`lib/widgets/log_value_dialog.dart`) is a two-field entry dialog.
+- **Insulin** logs dose (the chartable `MetricPoint` value) *and* a type
+  (rapid/long-acting/intermediate/mixed — a category, not a number, so
+  it's captured but not charted) via `showInsulinDialog()`.
+- **Medications is a list, not a metric** — `MedicationsScreen`
+  (`health_log_screens.dart`) manages tracked medications (name/dosage/
+  frequency) and lets the user mark a dose taken. The one genuinely
+  chartable thing about medications is *adherence*, not the medications
+  themselves, so "doses taken per day" gets the same
+  `MetricHistoryScreen` treatment as everything else, reached via an
+  app-bar action on `MedicationsScreen` rather than being its main
+  focus.
+- **Medical ID is a static profile, not time-series data** — there's no
+  "average blood type." `MedicalIdScreen` is a plain saved form (blood
+  type, allergies, conditions, notes), the one Health Log item that
+  deliberately does *not* get a `MetricHistoryScreen` — a chart/stats
+  treatment would be meaningless here, not just extra work skipped.
+- All six are Dashboard cards in the same paged `_PagedCardGrid` as
+  everything else (13 cards total now, 3 pages) — `HealthLogScreen` and
+  its Settings entry are both gone; there's nothing left for an
+  intermediate "more tracking" list to point to.
+
 ## Roadmap (not yet implemented)
 
 UI stubs exist for everything below (Map's Air Quality row, Health Log's
@@ -472,8 +516,6 @@ full app is visible even where the logic isn't built yet.
   respiratory risk) but never integrated — WAQI or OpenWeatherMap's air
   pollution API would slot into `DisasterService` the same way
   Open-Meteo does.
-- **Sleep tracking**: named in the problem statement's "Continuous Health
-  Monitoring," not built.
 
 ### 2. Wearable-sensor disaster heuristics
 
@@ -492,25 +534,7 @@ back (see fall-detection CNN's "on hold" state):
   pre-storm signal) as a supplementary signal alongside the map's
   wind-speed-based check.
 
-### 3. Health tracking (weight, height, meds, insulin, etc.)
-
-`HealthLogScreen` now shows stub tiles for each of these (tapping any
-shows "coming soon"). Ideas gathered so far: core tracking (weight/height
-with auto-BMI, blood pressure, blood glucose, insulin dosing log,
-medication reminders, sleep, hydration, symptom journal); safety-oriented
-additions that double as real SOS infrastructure (a **Medical ID** card —
-blood type, allergies, conditions, current meds, visible to a responder
-in an emergency; proper **emergency contacts management**, which item 4
-below needs anyway — a stub form exists on the new Settings tab;
-caregiver/family sharing for remote monitoring); and disaster tie-ins
-(flag extra heat-stress risk for a diabetic during a heatwave — now
-computable via `lib/utils/heat_index.dart`, extra caution for a
-respiratory condition on a high-AQI day; a bundled offline "what to do
-during X" checklist needing no data at all — the full-screen
-imminent-warning feature above already has this per-hazard, so reuse that
-content rather than duplicating it).
-
-### 4. SOS / emergency assistance
+### 3. SOS / emergency assistance
 
 Since "network is icing on the cake," SOS must work over the cellular
 network without data connectivity:
@@ -536,6 +560,9 @@ network without data connectivity:
   persisted yet, just the layout.
 - An online webhook/push notification path can be added later as a
   supplementary channel, never a dependency.
+- Now that Medical ID is a real saved profile (see "Health log" above),
+  a real emergency SMS could include blood type/allergies/conditions
+  alongside GPS coordinates — not built yet, just newly possible.
 
 ## Repo layout
 
@@ -568,14 +595,14 @@ sih26-health-companion/
         ├── models/{sensor_reading.dart, wellness_snapshot.dart, metric_point.dart}
         ├── disaster/{disaster_service.dart, india_hazard_data.dart,
         │   hazard_type.dart, imminent_warning_gate.dart}
-        ├── storage/{history_store.dart, metrics_store.dart}
+        ├── storage/{history_store.dart, metrics_store.dart, health_log_store.dart}
         ├── screens/
         │   ├── dashboard_screen.dart         # app's home route, no bottom nav
         │   ├── wellness_detail_screen.dart
         │   ├── metric_history_screen.dart    # generic chart+stats+period screen
-        │   ├── metric_detail_screens.dart    # 5 thin per-metric wrappers around it
+        │   ├── metric_detail_screens.dart    # 9 thin per-metric wrappers around it
+        │   ├── health_log_screens.dart       # Medications + Medical ID (not chart-based)
         │   ├── map_screen.dart               # pushed from a Dashboard nav card
-        │   ├── health_log_screen.dart        # remaining stub tiles only
         │   ├── settings_screen.dart          # wearable mgmt + emergency contact stub
         │   │                                  # + disaster-warning preview
         │   ├── imminent_warning_screen.dart

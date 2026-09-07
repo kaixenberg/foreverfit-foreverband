@@ -8,10 +8,12 @@ import '../ml/fall_detector_service.dart';
 import '../models/wellness_snapshot.dart';
 import '../services/baseline_service.dart';
 import '../services/step_counter_service.dart';
+import '../storage/health_log_store.dart';
 import '../storage/metrics_store.dart';
 import '../theme/app_theme.dart';
 import '../utils/heat_index.dart';
 import '../widgets/metric_card.dart';
+import 'health_log_screens.dart';
 import 'map_screen.dart';
 import 'metric_detail_screens.dart';
 import 'scan_connect_screen.dart';
@@ -142,6 +144,7 @@ class DashboardScreen extends StatelessWidget {
         context.select<BaselineService, double?>((s) => s.heartRateMean);
     final disaster = context.watch<DisasterService>();
     final metrics = context.watch<MetricsStore>();
+    final healthLog = context.watch<HealthLogStore>();
     final connected = ble.status == ConnectionStatus.connected;
 
     final vitals = ble.latestVitals;
@@ -424,6 +427,75 @@ class DashboardScreen extends StatelessWidget {
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute(
                       builder: (_) => const HydrationHistoryScreen()),
+                ),
+              ),
+              MetricCard(
+                label: 'Blood pressure',
+                value: healthLog.latestBloodPressure == null
+                    ? '--'
+                    : '${healthLog.latestBloodPressure!.$1}/${healthLog.latestBloodPressure!.$2}',
+                unit: healthLog.latestBloodPressure == null ? '' : 'mmHg',
+                icon: Icons.favorite_border,
+                accentColor: AppTheme.accentCoral,
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                      builder: (_) => const BloodPressureHistoryScreen()),
+                ),
+              ),
+              MetricCard(
+                label: 'Blood glucose',
+                value: healthLog.latestGlucose?.toStringAsFixed(0) ?? '--',
+                unit: healthLog.latestGlucose == null ? '' : 'mg/dL',
+                icon: Icons.water_drop_outlined,
+                accentColor: AppTheme.accentPurple,
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                      builder: (_) => const BloodGlucoseHistoryScreen()),
+                ),
+              ),
+              MetricCard(
+                label: 'Insulin',
+                value: healthLog.latestInsulinDose?.toStringAsFixed(1) ?? '--',
+                unit: healthLog.latestInsulinDose == null ? '' : 'units',
+                icon: Icons.vaccines_outlined,
+                accentColor: AppTheme.accentTeal,
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                      builder: (_) => const InsulinHistoryScreen()),
+                ),
+              ),
+              MetricCard(
+                label: 'Sleep',
+                value: healthLog.latestSleepHours?.toStringAsFixed(1) ?? '--',
+                unit: healthLog.latestSleepHours == null ? '' : 'hrs',
+                icon: Icons.bedtime_outlined,
+                accentColor: AppTheme.accentBlue,
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const SleepHistoryScreen()),
+                ),
+              ),
+              MetricCard(
+                label: 'Medications',
+                value: healthLog.medications.isEmpty
+                    ? '--'
+                    : healthLog.medications.length.toString(),
+                unit: healthLog.medications.isEmpty ? '' : 'tracked',
+                icon: Icons.medication_outlined,
+                accentColor: AppTheme.accentGreen,
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const MedicationsScreen()),
+                ),
+              ),
+              MetricCard(
+                label: 'Medical ID',
+                value: (healthLog.medicalId?.bloodType.isNotEmpty ?? false)
+                    ? healthLog.medicalId!.bloodType
+                    : '--',
+                unit: '',
+                icon: Icons.badge_outlined,
+                accentColor: AppTheme.accentPink,
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const MedicalIdScreen()),
                 ),
               ),
             ],

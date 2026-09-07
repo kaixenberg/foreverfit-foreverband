@@ -22,6 +22,9 @@ class MetricHistoryScreen extends StatefulWidget {
     required this.points,
     this.logAction,
     this.accentColor,
+    this.secondaryPoints,
+    this.secondaryLabel,
+    this.secondaryColor,
   });
 
   final String title;
@@ -36,6 +39,16 @@ class MetricHistoryScreen extends StatefulWidget {
 
   /// Line/dot color — defaults to the theme's primary color if omitted.
   final Color? accentColor;
+
+  /// A second series plotted alongside the primary one — only used by
+  /// blood pressure (systolic as the primary series, diastolic here).
+  /// The summary/statistics cards still describe the primary series only
+  /// (a genuinely symmetric two-metric layout would roughly double this
+  /// screen's size for one caller); the chart legend and a one-line
+  /// average note are what represent the second series.
+  final List<MetricPoint>? secondaryPoints;
+  final String? secondaryLabel;
+  final Color? secondaryColor;
 
   @override
   State<MetricHistoryScreen> createState() => _MetricHistoryScreenState();
@@ -95,7 +108,11 @@ class _MetricHistoryScreenState extends State<MetricHistoryScreen> {
     final filtered = widget.points
         .where((p) => !p.at.isBefore(_rangeStart) && p.at.isBefore(_rangeEnd))
         .toList();
+    final secondaryFiltered = widget.secondaryPoints
+        ?.where((p) => !p.at.isBefore(_rangeStart) && p.at.isBefore(_rangeEnd))
+        .toList();
     final accent = widget.accentColor ?? Theme.of(context).colorScheme.primary;
+    final secondaryAccent = widget.secondaryColor ?? Colors.blueGrey;
 
     return Scaffold(
       appBar: AppBar(title: Text('${widget.title} history')),
@@ -124,10 +141,44 @@ class _MetricHistoryScreenState extends State<MetricHistoryScreen> {
             Card(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(8, 16, 16, 8),
-                child: SizedBox(
-                  height: 220,
-                  child: _Chart(
-                      points: filtered, unit: widget.unit, color: accent),
+                child: Column(
+                  children: [
+                    if (widget.secondaryLabel != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            _LegendDot(color: accent, label: widget.title),
+                            const SizedBox(width: 16),
+                            _LegendDot(
+                              color: secondaryAccent,
+                              label: widget.secondaryLabel!,
+                            ),
+                          ],
+                        ),
+                      ),
+                    SizedBox(
+                      height: 220,
+                      child: _Chart(
+                        points: filtered,
+                        unit: widget.unit,
+                        color: accent,
+                        secondaryPoints: secondaryFiltered,
+                        secondaryColor: secondaryAccent,
+                      ),
+                    ),
+                    if (secondaryFiltered != null &&
+                        secondaryFiltered.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          '${widget.secondaryLabel} avg: '
+                          '${(secondaryFiltered.map((p) => p.value).reduce((a, b) => a + b) / secondaryFiltered.length).toStringAsFixed(1)} ${widget.unit}',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ),
+                  ],
                 ),
               ),
             ),
@@ -425,12 +476,43 @@ class _StatBox extends StatelessWidget {
   }
 }
 
+class _LegendDot extends StatelessWidget {
+  const _LegendDot({required this.color, required this.label});
+
+  final Color color;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 6),
+        Text(label, style: Theme.of(context).textTheme.bodySmall),
+      ],
+    );
+  }
+}
+
 class _Chart extends StatelessWidget {
-  const _Chart({required this.points, required this.unit, required this.color});
+  const _Chart({
+    required this.points,
+    required this.unit,
+    required this.color,
+    this.secondaryPoints,
+    this.secondaryColor,
+  });
 
   final List<MetricPoint> points;
   final String unit;
   final Color color;
+  final List<MetricPoint>? secondaryPoints;
+  final Color? secondaryColor;
 
   /// Simple least-squares linear regression, endpoints only — the
   /// dashed "overall direction" line behind the real data line.
@@ -457,6 +539,12 @@ class _Chart extends StatelessWidget {
       for (var i = 0; i < points.length; i++)
         FlSpot(i.toDouble(), points[i].value),
     ];
+    final secondarySpots = secondaryPoints == null
+        ? null
+        : [
+            for (var i = 0; i < secondaryPoints!.length; i++)
+              FlSpot(i.toDouble(), secondaryPoints![i].value),
+          ];
     final trend = _trendSpots(spots);
     final scheme = Theme.of(context).colorScheme;
     final maxIndex = (points.length - 1).clamp(1, 1 << 30);
@@ -507,8 +595,12 @@ class _Chart extends StatelessWidget {
         lineTouchData: LineTouchData(
           touchTooltipData: LineTouchTooltipData(
             getTooltipItems: (touchedSpots) => touchedSpots.map((spot) {
-              if (spot.barIndex != 0) return null; // skip the dashed trend line
-              final point = points[spot.spotIndex];
+              if (spot.bar.dashArray != null) return null; // the trend line
+              final isSecondary =
+                  secondarySpots != null && spot.bar.color == secondaryColor;
+              final point = isSecondary
+                  ? secondaryPoints![spot.spotIndex]
+                  : points[spot.spotIndex];
               return LineTooltipItem(
                 '${point.value.toStringAsFixed(1)} $unit\n'
                 '${DateFormat.yMMMd().format(point.at)}',
@@ -542,6 +634,23 @@ class _Chart extends StatelessWidget {
               barWidth: 1.5,
               dashArray: const [6, 4],
               dotData: const FlDotData(show: false),
+            ),
+          if (secondarySpots != null && secondarySpots.isNotEmpty)
+            LineChartBarData(
+              spots: secondarySpots,
+              isCurved: true,
+              curveSmoothness: 0.25,
+              color: secondaryColor,
+              barWidth: 3,
+              dotData: FlDotData(
+                show: true,
+                getDotPainter: (spot, percent, bar, index) =>
+                    FlDotCirclePainter(
+                  radius: 3,
+                  color: secondaryColor ?? scheme.secondary,
+                  strokeWidth: 0,
+                ),
+              ),
             ),
         ],
       ),

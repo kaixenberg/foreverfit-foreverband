@@ -118,10 +118,11 @@ tiles + a static state-level hazard baseline) and prefers live data
       confirmed dead via I2C scan — motion now comes from the phone only
 - [x] Firmware: BLE streaming of vitals/environment (motion channel idle
       until the wearable's IMU is replaced)
-- [x] App: single-dashboard navigation (no tabs) — Map, Health Log, and
-      Settings are all pushed routes reached from the Dashboard, all
-      reachable without a wearable; BLE connect + live dashboard + local
-      history confirmed working end-to-end on a physical Android phone
+- [x] App: single-dashboard navigation (no tabs) — Map, Settings, and
+      every metric's own history/management screen are pushed routes
+      reached from the Dashboard, all reachable without a wearable; BLE
+      connect + live dashboard + local history confirmed working
+      end-to-end on a physical Android phone
 - [x] On-device fall-detection CNN (currently phone-only, 94% recall on
       held-out subjects; wrist+phone fusion on hold pending IMU repair —
       see `ml/`), with a latched alert + 10s countdown to a dummy
@@ -190,26 +191,31 @@ tiles + a static state-level hazard baseline) and prefers live data
       device testing, caused by the whole dashboard rebuilding on every
       fall-probability tick, activity-confidence tick, and (worst) every
       single step — see ARCHITECTURE.md
+- [x] Health log — every item that used to be a stub is real now: blood
+      pressure (dual-line systolic/diastolic chart), blood glucose,
+      insulin (dose + type), sleep (all four using the same
+      MetricHistoryScreen chart), Medications (a list manager with
+      mark-dose-taken and its own doses-per-day adherence chart), and
+      Medical ID (a saved blood-type/allergies/conditions profile — no
+      chart, since there's no such thing as an "average blood type").
+      13 Body & activity cards total now, across 3 swipe pages.
+      `HealthLogScreen` and its Settings entry are both gone — nothing
+      left for an intermediate stub list to point to — see
+      ARCHITECTURE.md
 - [x] Heat-index formula (`lib/utils/heat_index.dart`) — the on-device
       heat-stress CNN originally planned was dropped after its dataset
       (WESAD) turned out to be a dead end on direct verification (dead
       links, and signals that don't match this app's sensors); a
       transparent NOAA/Rothfusz formula was built instead — see
       `ml/README.md`
-- [x] UI stubs for everything below (Map's Air Quality row, Health Log's
-      remaining tracking tiles, Settings' emergency contact form) —
-      visible, not yet wired to real data/logic
+- [x] UI stubs for everything below (Map's Air Quality row, Settings'
+      emergency contact form) — visible, not yet wired to real data/logic
 - [ ] Air quality integration
-- [ ] Sleep tracking
 - [ ] Trend/daily-summary views
 - [ ] Wearable-sensor disaster heuristics (heat-index formula now exists
       — this item is wiring it to the wearable's own BME280 instead of
       phone GPS, plus BME280 pressure drop-rate) once the wearable's IMU
       is replaced
-- [ ] Remaining health tracking (blood pressure/glucose/insulin/meds/
-      sleep/Medical ID) — UI stub only, reachable via Settings' "Health
-      log" entry. Weight/height/body fat/hydration/steps/heart rate are
-      implemented, see above
 - [ ] Real SOS (SMS/call + emergency contact storage) — countdown/
       escalation UX and manual trigger are wired end-to-end, but still
       end in a dummy logged action, not a real call/SMS

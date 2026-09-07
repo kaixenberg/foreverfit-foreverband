@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../ble/ble_service.dart';
 import '../services/step_counter_service.dart';
+import '../storage/health_log_store.dart';
 import '../storage/history_store.dart';
 import '../storage/metrics_store.dart';
 import '../theme/app_theme.dart';
@@ -142,6 +143,103 @@ class HeartRateHistoryScreen extends StatelessWidget {
       unit: 'bpm',
       points: history.heartRateHistory(),
       accentColor: AppTheme.accentPink,
+    );
+  }
+}
+
+class BloodPressureHistoryScreen extends StatelessWidget {
+  const BloodPressureHistoryScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final log = context.watch<HealthLogStore>();
+    return MetricHistoryScreen(
+      title: 'Blood pressure',
+      unit: 'mmHg',
+      points: log.bloodPressureSystolicHistory(),
+      secondaryPoints: log.bloodPressureDiastolicHistory(),
+      secondaryLabel: 'Diastolic',
+      accentColor: AppTheme.accentCoral,
+      secondaryColor: AppTheme.accentBlue,
+      logAction: FilledButton.icon(
+        icon: const Icon(Icons.add),
+        label: const Text('Log blood pressure'),
+        onPressed: () async {
+          final result = await showBloodPressureDialog(context: context);
+          if (result != null) log.addBloodPressure(result.$1, result.$2);
+        },
+      ),
+    );
+  }
+}
+
+class BloodGlucoseHistoryScreen extends StatelessWidget {
+  const BloodGlucoseHistoryScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final log = context.watch<HealthLogStore>();
+    return MetricHistoryScreen(
+      title: 'Blood glucose',
+      unit: 'mg/dL',
+      points: log.glucoseHistory(),
+      accentColor: AppTheme.accentPurple,
+      logAction: FilledButton.icon(
+        icon: const Icon(Icons.add),
+        label: const Text('Log blood glucose'),
+        onPressed: () async {
+          final value = await showLogValueDialog(
+              context: context, title: 'Log blood glucose', unit: 'mg/dL');
+          if (value != null) log.addGlucose(value);
+        },
+      ),
+    );
+  }
+}
+
+class InsulinHistoryScreen extends StatelessWidget {
+  const InsulinHistoryScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final log = context.watch<HealthLogStore>();
+    return MetricHistoryScreen(
+      title: 'Insulin',
+      unit: 'units',
+      points: log.insulinDoseHistory(),
+      accentColor: AppTheme.accentTeal,
+      logAction: FilledButton.icon(
+        icon: const Icon(Icons.add),
+        label: const Text('Log insulin dose'),
+        onPressed: () async {
+          final result = await showInsulinDialog(context: context);
+          if (result != null) log.addInsulin(result.$1, result.$2);
+        },
+      ),
+    );
+  }
+}
+
+class SleepHistoryScreen extends StatelessWidget {
+  const SleepHistoryScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final log = context.watch<HealthLogStore>();
+    return MetricHistoryScreen(
+      title: 'Sleep',
+      unit: 'hrs',
+      points: log.sleepHistory(),
+      accentColor: AppTheme.accentBlue,
+      logAction: FilledButton.icon(
+        icon: const Icon(Icons.add),
+        label: const Text('Log sleep'),
+        onPressed: () async {
+          final value = await showLogValueDialog(
+              context: context, title: 'Log sleep duration', unit: 'hrs');
+          if (value != null) log.addSleep(value);
+        },
+      ),
     );
   }
 }
