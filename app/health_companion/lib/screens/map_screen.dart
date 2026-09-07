@@ -310,14 +310,22 @@ class _RiskRow extends StatelessWidget {
         children: [
           Icon(icon, size: 18, color: Theme.of(context).colorScheme.primary),
           const SizedBox(width: 8),
-          Expanded(child: Text(label)),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
-              Text(freshnessLabel,
-                  style: Theme.of(context).textTheme.bodySmall),
-            ],
+          Expanded(flex: 3, child: Text(label)),
+          const SizedBox(width: 8),
+          Expanded(
+            flex: 2,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  value,
+                  textAlign: TextAlign.end,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                Text(freshnessLabel,
+                    style: Theme.of(context).textTheme.bodySmall),
+              ],
+            ),
           ),
         ],
       ),
