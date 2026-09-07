@@ -140,6 +140,14 @@ wearable at all (fall detection, and now the map) unreachable without
 one. `ScanConnectScreen` is now a pushed route reached via a "Connect"
 button/banner on the dashboard, not the app's home.
 
+`BleService` tracks `FlutterBluePlus.adapterState` directly (initialized
+from `adapterStateNow`, kept live via the `adapterState` stream) instead
+of only surfacing a raw scan-failure exception when Bluetooth is off.
+`ScanConnectScreen` checks this before anything else and shows a "Turn on
+Bluetooth" button (`FlutterBluePlus.turnOn()`, which raises the system
+enable-Bluetooth dialog directly) rather than an unactionable error
+string.
+
 ## Disaster risk map (implemented, phone-only, no wearable needed)
 
 GPS-driven, India-focused disaster awareness: live data when online,
@@ -188,6 +196,28 @@ falling back to cached-then-static data when not — see
   nearby M4.5+ quake in the last 30 days, or high wind in a cyclone-prone
   state — dismissible, no countdown/escalation (an area-awareness
   warning, not the fall detector's emergency-response flow).
+- **Position fallback chain** (`DisasterService._getPosition()`): live GPS
+  first; if location services are off or a fix fails, `Geolocator.
+  getLastKnownPosition()` (the OS's cached fix, available even with
+  services currently off if one was obtained before); if that's also
+  unavailable, this app's own last-successfully-used lat/lon from the
+  Hive cache. Only once all three fail does the screen show an error —
+  previously it errored the moment location was off, with no fallback at
+  all. `DisasterService.positionIsStale` flags when a fallback position
+  is in use (shown as "(approximate)" next to the location name), and
+  `locationServiceEnabled` (checked fresh each refresh) drives a Map
+  banner with a one-tap `Geolocator.openLocationSettings()` button when
+  it's off, instead of a bare error.
+- **Ambient temp/humidity/pressure as a Dashboard fallback**: Open-Meteo's
+  `current` call was extended with `temperature_2m`, `relative_humidity_2m`,
+  `pressure_msl` (verified live: same units as the wearable's BME280 — °C,
+  %, hPa — no conversion needed) alongside the existing precipitation/wind
+  fields. `DashboardScreen` now resolves these three cards as wearable
+  sensor → online weather → "--", instead of only ever showing the
+  wearable value or nothing; the unit label gets an "(online)" suffix
+  when the value came from Open-Meteo rather than the wearable, and the
+  heat-index/heat-stress warnings use whichever value is actually being
+  shown so a hot online-sourced reading still visibly flags.
 
 ## Full-screen imminent-disaster warning (implemented)
 

@@ -13,8 +13,6 @@ enum ConnectionStatus { disconnected, scanning, connecting, connected }
 /// subscribing to the three notify characteristics, parsing packets, and
 /// persisting vitals/env history. Exposed to the widget tree via Provider.
 class BleService extends ChangeNotifier {
-  BleService(this._historyStore);
-
   final HistoryStore _historyStore;
 
   ConnectionStatus status = ConnectionStatus.disconnected;
@@ -23,11 +21,21 @@ class BleService extends ChangeNotifier {
   final List<StreamSubscription<List<int>>> _valueSubs = [];
   final List<ScanResult> discovered = [];
   StreamSubscription<List<ScanResult>>? _scanSub;
+  StreamSubscription<BluetoothAdapterState>? _adapterSub;
 
   VitalsReading? latestVitals;
   EnvReading? latestEnv;
   MotionReading? latestMotion;
   String? lastError;
+
+  BluetoothAdapterState adapterState = FlutterBluePlus.adapterStateNow;
+
+  BleService(this._historyStore) {
+    _adapterSub = FlutterBluePlus.adapterState.listen((state) {
+      adapterState = state;
+      notifyListeners();
+    });
+  }
 
   Future<void> startScan() async {
     discovered.clear();
@@ -165,6 +173,7 @@ class BleService extends ChangeNotifier {
   void dispose() {
     _scanSub?.cancel();
     _connSub?.cancel();
+    _adapterSub?.cancel();
     for (final s in _valueSubs) {
       s.cancel();
     }

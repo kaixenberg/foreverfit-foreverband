@@ -203,6 +203,32 @@ detector's, because distinguishing sustained activity patterns over a 3s
 window is a substantially easier task than catching a brief 1-2s impact
 signature; this is a real, expected result for this task, not a red flag.
 
+**Known gap — "running" underrepresented on-device, live-testing caught
+this, held-out metrics didn't**: two real differences between MotionSense
+and how this app is actually tested are worth checking before assuming a
+model bug if "running" never gets picked live:
+1. **Trial count imbalance**: MotionSense has only 2 jogging trial
+   recordings per subject vs. 3 each for the other activities (9.4% of
+   all windows are `running`, vs. 46.2%/44.4% for still/walking — see
+   `prepare_activity_windows.py`'s printed class breakdown). Class
+   weighting during training corrects the *loss function's* bias toward
+   the majority classes, but can't manufacture the pace/stride-style
+   diversity a larger jogging sample would have covered.
+2. **Sensor delivery rate assumption**: `activity_classifier_service.dart`
+   assumes ~20Hz (60 samples = 3s, matching training) but doesn't verify
+   it — if a device's actual `sensors_plus` event rate runs slower under
+   real conditions, the same 60-sample window spans *more* real time,
+   which smears out exactly the high-frequency cadence that separates
+   running from walking (a slower activity has less high-frequency
+   content to lose, so this would selectively hurt running detection
+   specifically — consistent with what live testing found). A
+   `windowSpanMs` value is now logged alongside the per-class
+   probabilities on every inference (`debugPrint` in `_runInference()`)
+   to check this against the real device rather than guessing.
+
+Neither has been confirmed as *the* cause yet — both are plausible,
+checkable candidates once there's a live log from a real run to look at.
+
 ## Heat-stress CNN: investigated, not built
 
 The original AI/ML roadmap scoped a WESAD-trained heat-stress anomaly

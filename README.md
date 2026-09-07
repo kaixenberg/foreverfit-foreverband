@@ -137,7 +137,20 @@ live data (Open-Meteo, USGS) when online.
 - [x] Activity-conditioned vitals anomaly detection: on-device 3-class
       CNN (still/walking/running, 99.9% held-out accuracy — see `ml/`)
       gates the Dashboard's HR warning threshold by what the user is
-      currently doing, fills the "Activity" card
+      currently doing, fills the "Activity" card. **Known gap**: live
+      testing found "running" rarely gets picked on-device despite the
+      held-out metrics above — two candidate causes (dataset's jogging
+      trials are thinner than other classes; possible sensor-rate
+      mismatch between training assumption and real device delivery) are
+      documented with a diagnostic log line in `ml/README.md`, not yet
+      confirmed
+- [x] Graceful degradation UX: Dashboard's ambient temp/humidity/pressure
+      fall back wearable → online weather → "--" instead of only ever
+      showing wearable-or-nothing; Map shows an "Enable location" prompt
+      instead of erroring when location is off, and falls back through
+      last-known/cached position rather than failing immediately;
+      Bluetooth-off now shows a "Turn on Bluetooth" button instead of a
+      raw error — see ARCHITECTURE.md
 - [x] Personalized (per-user) baseline learning: rolling 7-day mean/std
       of resting HR from local history, flags >2 personal std-devs from
       *this user's own* baseline, fills the "Baseline" card

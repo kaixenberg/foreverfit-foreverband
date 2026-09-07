@@ -20,6 +20,13 @@ class DisasterRisk {
   final DataFreshness weatherFreshness;
   final DateTime? weatherAsOf;
 
+  // Ambient conditions from the same Open-Meteo call — used by the
+  // Dashboard as a fallback when the wearable isn't connected, so those
+  // cards show *something* rather than "--" whenever there's network.
+  final double? ambientTempC;
+  final double? humidityPercent;
+  final double? pressureHPa;
+
   final int nearbyQuakeCount; // M4.0+ within ~200km, last 30 days
   final double? nearbyMaxQuakeMagnitude;
   final DataFreshness quakeFreshness;
@@ -32,6 +39,9 @@ class DisasterRisk {
     required this.windSpeedKmh,
     required this.weatherFreshness,
     required this.weatherAsOf,
+    required this.ambientTempC,
+    required this.humidityPercent,
+    required this.pressureHPa,
     required this.nearbyQuakeCount,
     required this.nearbyMaxQuakeMagnitude,
     required this.quakeFreshness,
@@ -120,6 +130,16 @@ class DisasterService extends ChangeNotifier {
   bool isLoading = false;
   String? lastError;
 
+  /// Whether the device's location toggle is on — checked fresh on every
+  /// refresh so MapScreen can show an "enable location" prompt instead of
+  /// a bare error when it's off.
+  bool locationServiceEnabled = true;
+
+  /// True when [lastPosition] came from a fallback (OS last-known fix or
+  /// this app's own cache) rather than a fresh GPS read — so the UI can
+  /// show it's approximate.
+  bool positionIsStale = false;
+
   Future<void> init() async {
     _cache = await Hive.openBox('disaster_cache');
     await refresh();
@@ -147,6 +167,9 @@ class DisasterService extends ChangeNotifier {
             ? (weather.isLive ? DataFreshness.live : DataFreshness.cachedStale)
             : DataFreshness.staticOnly,
         weatherAsOf: weather?.asOf,
+        ambientTempC: weather?.ambientTempC,
+        humidityPercent: weather?.humidityPercent,
+        pressureHPa: weather?.pressureHPa,
         nearbyQuakeCount: quakes?.count ?? 0,
         nearbyMaxQuakeMagnitude: quakes?.maxMagnitude,
         quakeFreshness: quakes != null
@@ -163,10 +186,14 @@ class DisasterService extends ChangeNotifier {
     }
   }
 
+  /// Live GPS fix when possible; falls back to the OS's last-known fix
+  /// (works even with location services currently off, if one was cached
+  /// before), then to this app's own last successfully-used position, so
+  /// the map/risk view still shows *something* rather than erroring out
+  /// the moment location is toggled off.
   Future<Position> _getPosition() async {
-    if (!await Geolocator.isLocationServiceEnabled()) {
-      throw Exception('Location services are off');
-    }
+    locationServiceEnabled = await Geolocator.isLocationServiceEnabled();
+
     var permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
@@ -175,7 +202,47 @@ class DisasterService extends ChangeNotifier {
         permission == LocationPermission.deniedForever) {
       throw Exception('Location permission denied');
     }
-    return Geolocator.getCurrentPosition();
+
+    if (locationServiceEnabled) {
+      try {
+        final position =
+            await Geolocator.getCurrentPosition().timeout(_fetchTimeout);
+        await _cache?.put('lastLat', position.latitude);
+        await _cache?.put('lastLon', position.longitude);
+        positionIsStale = false;
+        return position;
+      } catch (_) {
+        // Fall through to the fallbacks below.
+      }
+    }
+
+    final lastKnown = await Geolocator.getLastKnownPosition();
+    if (lastKnown != null) {
+      positionIsStale = true;
+      return lastKnown;
+    }
+
+    final lat = _cache?.get('lastLat') as double?;
+    final lon = _cache?.get('lastLon') as double?;
+    if (lat != null && lon != null) {
+      positionIsStale = true;
+      return Position(
+        latitude: lat,
+        longitude: lon,
+        timestamp: DateTime.now(),
+        accuracy: 0,
+        altitude: 0,
+        altitudeAccuracy: 0,
+        heading: 0,
+        headingAccuracy: 0,
+        speed: 0,
+        speedAccuracy: 0,
+      );
+    }
+
+    throw Exception(locationServiceEnabled
+        ? 'Could not get a GPS fix'
+        : 'Location services are off and no cached position is available');
   }
 
   Future<String?> _resolveState(Position position) async {
@@ -225,7 +292,8 @@ class DisasterService extends ChangeNotifier {
       final uri = Uri.https('api.open-meteo.com', '/v1/forecast', {
         'latitude': position.latitude.toString(),
         'longitude': position.longitude.toString(),
-        'current': 'precipitation,wind_speed_10m',
+        'current':
+            'precipitation,wind_speed_10m,temperature_2m,relative_humidity_2m,pressure_msl',
         'daily': 'precipitation_probability_max',
         'timezone': 'auto',
       });
@@ -238,26 +306,41 @@ class DisasterService extends ChangeNotifier {
       final precipProb =
           (daily['precipitation_probability_max'] as List).first as num;
       final windSpeed = current['wind_speed_10m'] as num;
+      final ambientTemp = current['temperature_2m'] as num;
+      final humidity = current['relative_humidity_2m'] as num;
+      final pressure = current['pressure_msl'] as num;
 
       final now = DateTime.now();
       await _cache?.put('lastPrecipProb', precipProb.toDouble());
       await _cache?.put('lastWindSpeed', windSpeed.toDouble());
+      await _cache?.put('lastAmbientTemp', ambientTemp.toDouble());
+      await _cache?.put('lastHumidity', humidity.toDouble());
+      await _cache?.put('lastPressure', pressure.toDouble());
       await _cache?.put('lastWeatherAt', now.toIso8601String());
 
       return _WeatherResult(
         precipProb: precipProb.toDouble(),
         windSpeed: windSpeed.toDouble(),
+        ambientTempC: ambientTemp.toDouble(),
+        humidityPercent: humidity.toDouble(),
+        pressureHPa: pressure.toDouble(),
         asOf: now,
         isLive: true,
       );
     } catch (_) {
       final precipProb = _cache?.get('lastPrecipProb') as double?;
       final windSpeed = _cache?.get('lastWindSpeed') as double?;
+      final ambientTemp = _cache?.get('lastAmbientTemp') as double?;
+      final humidity = _cache?.get('lastHumidity') as double?;
+      final pressure = _cache?.get('lastPressure') as double?;
       final asOfStr = _cache?.get('lastWeatherAt') as String?;
       if (precipProb == null || asOfStr == null) return null;
       return _WeatherResult(
         precipProb: precipProb,
         windSpeed: windSpeed,
+        ambientTempC: ambientTemp,
+        humidityPercent: humidity,
+        pressureHPa: pressure,
         asOf: DateTime.tryParse(asOfStr),
         isLive: false,
       );
@@ -315,12 +398,18 @@ class DisasterService extends ChangeNotifier {
 class _WeatherResult {
   final double precipProb;
   final double? windSpeed;
+  final double? ambientTempC;
+  final double? humidityPercent;
+  final double? pressureHPa;
   final DateTime? asOf;
   final bool isLive;
 
   _WeatherResult({
     required this.precipProb,
     required this.windSpeed,
+    required this.ambientTempC,
+    required this.humidityPercent,
+    required this.pressureHPa,
     required this.asOf,
     required this.isLive,
   });

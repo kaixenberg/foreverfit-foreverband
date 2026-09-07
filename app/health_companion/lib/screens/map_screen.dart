@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_map_cache/flutter_map_cache.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:http_cache_core/http_cache_core.dart';
 import 'package:http_cache_file_store/http_cache_file_store.dart';
 import 'package:latlong2/latlong.dart';
@@ -71,6 +72,8 @@ class _MapScreenState extends State<MapScreen> {
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
+                if (!disaster.locationServiceEnabled)
+                  const _LocationDisabledBanner(),
                 if (risk != null && risk.hasWarning) _WarningBanner(risk: risk),
                 Expanded(
                   child: FlutterMap(
@@ -113,9 +116,37 @@ class _MapScreenState extends State<MapScreen> {
                     ),
                   )
                 else if (risk != null)
-                  _RiskPanel(risk: risk),
+                  _RiskPanel(
+                      risk: risk, positionIsStale: disaster.positionIsStale),
               ],
             ),
+    );
+  }
+}
+
+/// Shown when the device's location toggle is off — the map still shows
+/// a last-known/cached position if one exists (see
+/// DisasterService._getPosition), but this makes it obvious why and
+/// offers a one-tap way to fix it instead of a bare error.
+class _LocationDisabledBanner extends StatelessWidget {
+  const _LocationDisabledBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: const EdgeInsets.all(8),
+      child: ListTile(
+        leading: const Icon(Icons.location_off_outlined),
+        title: const Text('Location is off'),
+        subtitle: const Text(
+          'Showing your last known position. Live GPS needs location '
+          'services enabled.',
+        ),
+        trailing: FilledButton(
+          onPressed: () => Geolocator.openLocationSettings(),
+          child: const Text('Enable'),
+        ),
+      ),
     );
   }
 }
@@ -149,9 +180,10 @@ class _WarningBanner extends StatelessWidget {
 }
 
 class _RiskPanel extends StatelessWidget {
-  const _RiskPanel({required this.risk});
+  const _RiskPanel({required this.risk, this.positionIsStale = false});
 
   final DisasterRisk risk;
+  final bool positionIsStale;
 
   @override
   Widget build(BuildContext context) {
@@ -162,9 +194,20 @@ class _RiskPanel extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              risk.stateName ?? 'Unknown location',
-              style: Theme.of(context).textTheme.titleMedium,
+            Row(
+              children: [
+                Text(
+                  risk.stateName ?? 'Unknown location',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                if (positionIsStale) ...[
+                  const SizedBox(width: 8),
+                  Text(
+                    '(approximate)',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ],
             ),
             const SizedBox(height: 8),
             _RiskRow(

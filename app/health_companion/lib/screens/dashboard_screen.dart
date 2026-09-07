@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../ble/ble_service.dart';
+import '../disaster/disaster_service.dart';
 import '../ml/activity_classifier_service.dart';
 import '../ml/fall_detector_service.dart';
 import '../models/wellness_snapshot.dart';
@@ -126,6 +127,7 @@ class DashboardScreen extends StatelessWidget {
     final fallDetector = context.watch<FallDetectorService>();
     final activityClassifier = context.watch<ActivityClassifierService>();
     final baseline = context.watch<BaselineService>();
+    final disaster = context.watch<DisasterService>();
     final history = context.read<HistoryStore>();
     final connected = ble.status == ConnectionStatus.connected;
 
@@ -146,14 +148,26 @@ class DashboardScreen extends StatelessWidget {
             baseline.isAnomalous(heartRate));
     final spo2Warn = hasFingerReading && spo2 < 92 && spo2 > 0;
     final bodyTempWarn = vitals != null && (bodyTemp > 37.8 || bodyTemp < 35.5);
-    final ambientWarn = env != null &&
-        heatRiskLevel(heatIndexCelsius(env.ambientTempC, env.humidity)) ==
+
+    // Wearable sensor first, online weather (DisasterService already fetches
+    // it for the Map) second, "--" only when neither is available.
+    final resolvedAmbientTemp =
+        env?.ambientTempC ?? disaster.risk?.ambientTempC;
+    final resolvedHumidity = env?.humidity ?? disaster.risk?.humidityPercent;
+    final resolvedPressure = env?.pressureHPa ?? disaster.risk?.pressureHPa;
+    final ambientIsFromWearable = env != null;
+
+    final ambientWarn = resolvedAmbientTemp != null &&
+        resolvedHumidity != null &&
+        heatRiskLevel(
+                heatIndexCelsius(resolvedAmbientTemp, resolvedHumidity)) ==
             HeatRisk.danger;
-    final heatStressWarn = env != null &&
+    final heatStressWarn = resolvedAmbientTemp != null &&
+        resolvedHumidity != null &&
         vitals != null &&
         isHeatStressRisk(
-          ambientC: env.ambientTempC,
-          humidityPercent: env.humidity,
+          ambientC: resolvedAmbientTemp,
+          humidityPercent: resolvedHumidity,
           bodyTempC: bodyTemp,
         );
     final wellnessScore = _wellnessScore(
@@ -244,23 +258,35 @@ class DashboardScreen extends StatelessWidget {
               ),
               MetricCard(
                 label: 'Ambient temp',
-                value: env == null ? '--' : env.ambientTempC.toStringAsFixed(1),
-                unit: '°C',
+                value: resolvedAmbientTemp == null
+                    ? '--'
+                    : resolvedAmbientTemp.toStringAsFixed(1),
+                unit: resolvedAmbientTemp == null
+                    ? ''
+                    : (ambientIsFromWearable ? '°C' : '°C (online)'),
                 icon: Icons.wb_sunny_outlined,
                 warn: ambientWarn,
                 accentColor: AppTheme.accentCoral,
               ),
               MetricCard(
                 label: 'Humidity',
-                value: env == null ? '--' : env.humidity.toStringAsFixed(0),
-                unit: '%',
+                value: resolvedHumidity == null
+                    ? '--'
+                    : resolvedHumidity.toStringAsFixed(0),
+                unit: resolvedHumidity == null
+                    ? ''
+                    : (ambientIsFromWearable ? '%' : '% (online)'),
                 icon: Icons.water_drop_outlined,
                 accentColor: AppTheme.accentTeal,
               ),
               MetricCard(
                 label: 'Pressure',
-                value: env == null ? '--' : env.pressureHPa.toStringAsFixed(0),
-                unit: 'hPa',
+                value: resolvedPressure == null
+                    ? '--'
+                    : resolvedPressure.toStringAsFixed(0),
+                unit: resolvedPressure == null
+                    ? ''
+                    : (ambientIsFromWearable ? 'hPa' : 'hPa (online)'),
                 icon: Icons.speed,
                 accentColor: AppTheme.accentPurple,
               ),

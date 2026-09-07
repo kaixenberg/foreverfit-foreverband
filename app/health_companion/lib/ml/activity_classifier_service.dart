@@ -79,6 +79,20 @@ class ActivityClassifierService extends ChangeNotifier {
     current = _classes[bestIdx];
     confidence = probs[bestIdx];
 
+    // Window span should be ~3000ms (60 samples @ nominal 20Hz, matching
+    // training). If a device delivers sensor events slower than that in
+    // practice, the same 60 samples span MORE real time, which smears out
+    // exactly the kind of fast, high-frequency cadence that distinguishes
+    // running from walking — worth checking here before assuming a model
+    // problem if "running" never gets picked.
+    final spanMs = _phoneBuffer.last.timestamp
+        .difference(_phoneBuffer.first.timestamp)
+        .inMilliseconds;
+    debugPrint('[ActivityClassifier] still=${probs[0].toStringAsFixed(3)} '
+        'walking=${probs[1].toStringAsFixed(3)} '
+        'running=${probs[2].toStringAsFixed(3)} '
+        'picked=$current windowSpanMs=$spanMs');
+
     notifyListeners();
   }
 

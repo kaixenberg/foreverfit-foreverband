@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 
@@ -63,6 +64,31 @@ class _ScanConnectScreenState extends State<ScanConnectScreen> {
   }
 
   Widget _buildBody(BleService ble) {
+    if (ble.adapterState != BluetoothAdapterState.on) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.bluetooth_disabled,
+                  size: 48, color: Theme.of(context).colorScheme.error),
+              const SizedBox(height: 12),
+              const Text(
+                'Bluetooth is off — turn it on to scan for the wearable.',
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+              FilledButton(
+                onPressed: () => FlutterBluePlus.turnOn(),
+                child: const Text('Turn on Bluetooth'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     if (ble.lastError != null) {
       return Center(
         child: Padding(
