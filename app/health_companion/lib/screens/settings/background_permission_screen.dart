@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../../background/background_monitoring_service.dart';
 import '../../services/battery_optimization_service.dart';
 
 class BackgroundPermissionScreen extends StatefulWidget {
@@ -15,6 +16,7 @@ class BackgroundPermissionScreen extends StatefulWidget {
 class _BackgroundPermissionScreenState extends State<BackgroundPermissionScreen>
     with WidgetsBindingObserver {
   bool? _ignoringOptimizations;
+  bool? _monitoringRunning;
 
   @override
   void initState() {
@@ -35,19 +37,61 @@ class _BackgroundPermissionScreenState extends State<BackgroundPermissionScreen>
   }
 
   Future<void> _refresh() async {
-    final service = context.read<BatteryOptimizationService>();
-    final ignoring = await service.isIgnoringBatteryOptimizations();
-    if (mounted) setState(() => _ignoringOptimizations = ignoring);
+    final battery = context.read<BatteryOptimizationService>();
+    final monitoring = context.read<BackgroundMonitoringService>();
+    final ignoring = await battery.isIgnoringBatteryOptimizations();
+    final running = await monitoring.isRunning;
+    if (mounted) {
+      setState(() {
+        _ignoringOptimizations = ignoring;
+        _monitoringRunning = running;
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final ignoring = _ignoringOptimizations;
+    final running = _monitoringRunning;
     return Scaffold(
       appBar: AppBar(title: const Text('Background permission')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          Text('Background fall detection',
+              style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 4),
+          Text(
+            'Keeps watching for falls even while another app is open or '
+            "the screen is off. Android requires a persistent, visible "
+            "notification while this runs — it can't be hidden. If a fall "
+            'is detected, you get 10 seconds to tap "I\'m OK" before the '
+            'app is brought to the foreground to call for help.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 8),
+          SwitchListTile(
+            title: const Text('Monitor for falls in the background'),
+            subtitle: Text(
+                running == null ? 'Checking…' : (running ? 'Running' : 'Off')),
+            value: running ?? false,
+            onChanged: running == null
+                ? null
+                : (value) async {
+                    final monitoring =
+                        context.read<BackgroundMonitoringService>();
+                    if (value) {
+                      await monitoring.start();
+                    } else {
+                      await monitoring.stop();
+                    }
+                    await _refresh();
+                  },
+          ),
+          const SizedBox(height: 24),
+          Text('Battery optimization',
+              style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 4),
           Text(
             'Lets fall detection, vitals monitoring, and the disaster '
             'warning keep running when the screen is off, instead of '

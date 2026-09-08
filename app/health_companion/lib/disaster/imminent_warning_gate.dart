@@ -18,9 +18,34 @@ class ImminentWarningGate extends StatefulWidget {
   State<ImminentWarningGate> createState() => _ImminentWarningGateState();
 }
 
-class _ImminentWarningGateState extends State<ImminentWarningGate> {
+class _ImminentWarningGateState extends State<ImminentWarningGate>
+    with WidgetsBindingObserver {
   Set<HazardType> _lastShown = {};
   bool _showing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Re-checks risk on resume — including when the app was brought
+    // forward by the background service's disaster-escalation launch
+    // (see BackgroundEscalationGate/fall_detection_task_handler.dart),
+    // so this gate sees fresh imminentHazards immediately rather than
+    // waiting for whatever periodic refresh would otherwise run next.
+    if (state == AppLifecycleState.resumed) {
+      context.read<DisasterService>().refresh();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {

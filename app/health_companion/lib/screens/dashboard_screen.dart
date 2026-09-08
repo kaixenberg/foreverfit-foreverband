@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../ble/ble_service.dart';
 import '../disaster/disaster_service.dart';
+import '../domain/body_composition.dart';
 import '../domain/emergency_workflow_service.dart';
 import '../domain/health_thresholds.dart';
 import '../domain/insight_watcher_service.dart';
@@ -16,6 +17,7 @@ import '../services/step_counter_service.dart';
 import '../storage/app_settings_store.dart';
 import '../storage/health_log_store.dart';
 import '../storage/metrics_store.dart';
+import '../storage/user_profile_store.dart';
 import '../theme/app_theme.dart';
 import '../utils/heat_index.dart';
 import '../widgets/metric_card.dart';
@@ -135,7 +137,13 @@ class DashboardScreen extends StatelessWidget {
     final metrics = context.watch<MetricsStore>();
     final healthLog = context.watch<HealthLogStore>();
     final appSettings = context.watch<AppSettingsStore>();
+    final userProfile = context.watch<UserProfileStore>();
     final unitSystem = resolveEffectiveUnitSystem(appSettings.unitSystem);
+    final bodyFatPercent = computeBodyFatPercent(
+      bmi: metrics.bmi,
+      dateOfBirth: userProfile.dateOfBirth,
+      sex: userProfile.sex,
+    );
     final connected = ble.status == ConnectionStatus.connected;
 
     final vitals = ble.latestVitals;
@@ -428,11 +436,14 @@ class DashboardScreen extends StatelessWidget {
                 unit: '',
                 icon: Icons.calculate_outlined,
                 accentColor: AppTheme.accentBlue,
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const BmiHistoryScreen()),
+                ),
               ),
               MetricCard(
                 label: 'Body fat',
-                value: metrics.latestBodyFatPercent?.toStringAsFixed(1) ?? '--',
-                unit: metrics.latestBodyFatPercent == null ? '' : '%',
+                value: bodyFatPercent?.toStringAsFixed(1) ?? '--',
+                unit: bodyFatPercent == null ? '' : '%',
                 icon: Icons.percent,
                 accentColor: AppTheme.accentTeal,
                 onTap: () => Navigator.of(context).push(

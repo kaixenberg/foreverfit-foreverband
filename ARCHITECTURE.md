@@ -384,12 +384,27 @@ metrics, built for real against this app's own local storage instead of
 Health Connect:
 
 - **`lib/storage/metrics_store.dart`**: a `ChangeNotifier` Hive store
-  (same offline-first pattern as `HistoryStore`) for weight, height, and
-  body fat % log entries, plus hydration entries — every entry is
-  timestamped (`at`), not just a "latest value" cache. `bmi` is computed
-  from the latest logged weight + height (no separate stored field).
-  `historyOfType()` and `hydrationDailyTotals()` expose the full
-  timestamped history as `MetricPoint`s for charting.
+  (same offline-first pattern as `HistoryStore`) for weight and height
+  log entries, plus hydration entries — every entry is timestamped
+  (`at`), not just a "latest value" cache. `bmi` is computed from the
+  latest logged weight + height (no separate stored field); `bmiHistory()`
+  pairs the full weight history against whatever height was on record
+  at-or-before each weigh-in (height rarely changes for an adult, so
+  this is realistically driven by the weight series). `historyOfType()`
+  and `hydrationDailyTotals()` expose the full timestamped history as
+  `MetricPoint`s for charting.
+- **Body fat is derived, not logged** (`lib/domain/body_composition.dart`,
+  `computeBodyFatPercent`): the Deurenberg et al. 1991 formula from BMI +
+  age (`UserProfileStore.dateOfBirth`) + sex (`UserProfileStore.sex`) —
+  another transparent formula rather than a trained model, same pattern
+  as the wellness score/baseline/heat index. Returns null (not a guess)
+  without a saved date of birth. "Other"/"Prefer not to say"/unset sex
+  splits the difference between the formula's male/female terms rather
+  than assuming one. There's no longer a manual body-fat entry dialog —
+  `BodyFatHistoryScreen` charts the computed value against `bmiHistory()`
+  instead (age/sex applied uniformly across the whole history, so the
+  chart's shape mirrors the BMI trend). `BmiHistoryScreen` is new too —
+  the BMI card previously had no history screen at all.
 - **`lib/services/step_counter_service.dart`**: the phone's own hardware
   step counter (`pedometer` package, Android `TYPE_STEP_COUNTER`), not
   Health Connect and not the wearable (no step sensor on it). That sensor
@@ -807,6 +822,122 @@ ever-growing flat list.
   background-execution work (`workmanager`, with well-known Doze/OEM
   reliability caveats) and a key-derivation/encryption library
   (`cryptography`), out of scope for this pass.
+
+## Background fall detection + full-screen escalation (implemented)
+
+Fall detection and the full-screen disaster/emergency-call warnings
+previously only worked while the app was in the foreground — everything
+(sensor streams, the TFLite inference timer, the `Navigator`-push "gate"
+pattern) was tied to a live, rebuilding widget tree. Confirmed by direct
+research before building this: Android hard-stops continuous-mode sensor
+delivery (accelerometer/gyroscope) to backgrounded apps on API 28+ —
+there is no way to keep detecting falls in the background without a
+**foreground service**.
+
+**Full-screen alert while backgrounded uses a real Activity launch, not
+`SYSTEM_ALERT_WINDOW`/"draw over other apps"** — a deliberate choice.
+Research confirmed a raw overlay window needs a *second* Flutter engine
+just to render existing UI inside it (heavy, fragile lifecycle), doesn't
+reliably draw over the lock screen, and draws heavier Play Store
+scrutiny. The mechanism actually used — bringing the app's own real
+`MainActivity`/Flutter route to the foreground via `Activity.
+setShowWhenLocked()` + a normal Activity launch — is the same class of
+solution alarm/calling apps use, reuses the existing screens completely
+unmodified, and needs no extra "special access" permission grant.
+
+- **`lib/ml/fall_inference.dart`** (new): the TFLite windowing/inference
+  extracted out of `FallDetectorService` (unchanged model/threshold/
+  channel order) into a small class with no `ChangeNotifier`/Provider
+  dependency — used by *both* the foreground `FallDetectorService`
+  (behavior unchanged) and the new background task handler, so only the
+  "what happens after a fall is detected" glue differs between them, not
+  the model logic itself.
+- **`flutter_foreground_task`** runs a persistent Android foreground
+  service (`foregroundServiceType="health"`, the type Android 14 added
+  specifically for continuous fitness/health sensor monitoring — this
+  app's existing `ACTIVITY_RECOGNITION` permission is sufficient to
+  start it, no new runtime permission needed). New manifest permissions:
+  `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_HEALTH`, `WAKE_LOCK`, plus
+  the package's own `<service>` declaration.
+- **`lib/background/fall_detection_task_handler.dart`** (new): a
+  `TaskHandler` running in the service's own background isolate. Owns a
+  *second* `PhoneMotionService` + `FallInference` instance (both plain
+  classes, reused completely unchanged — no BuildContext/Provider
+  dependency to work around). On a detected fall:
+  1. Updates the service's own mandatory persistent notification to show
+     the alert + an `AndroidNotificationAction`-style "I'm OK" button
+     (`NotificationButton`) — reusing the one notification Android
+     already requires, rather than showing a second one.
+  2. Starts its own 10-second `Timer` — the app's own decision window,
+     not a native notification-countdown widget (Android has no built-in
+     delay-then-escalate primitive on a single notification).
+  3. "I'm OK" within 10s (`onNotificationButtonPressed`) → cancels the
+     timer, reverts the notification to "Monitoring for falls".
+  4. Unaddressed after 10s → `FlutterForegroundTask.wakeUpScreen()` +
+     `FlutterForegroundTask.launchApp('escalate_fall')`, which launches
+     `MainActivity` (a plain `Intent.FLAG_ACTIVITY_NEW_TASK` launch, the
+     same mechanism `getLaunchIntentForPackage` uses — confirmed by
+     reading the package's own native source, not assumed) carrying a
+     `route` extra.
+  5. Also periodically (every 15 min, matching `InsightWatcherService`'s
+     existing cadence) constructs a plain `DisasterService()..init()` —
+     reusing 100% of its existing fetch/cache logic, zero new
+     disaster-risk code — and if `risk.imminentHazards` is non-empty,
+     fires the same wake+launch with `route: 'escalate_disaster'`.
+     **Skips this check entirely whenever `FlutterForegroundTask.
+     isAppOnForeground` is true** (the foregrounded app's own
+     `DisasterService` already handles it live), and explicitly closes
+     the `disaster_cache` Hive box again immediately after each check —
+     see the Hive caveat below.
+- **`MainActivity.kt`**: a new `escalation` channel. `onNewIntent`
+  (covers a warm relaunch — `android:launchMode="singleTop"` was already
+  set) and `configureFlutterEngine` (cold start) both read the launched
+  intent's `route` extra and forward it to Dart — this is Flutter's own
+  "initial route" extra convention (the same one `FlutterForegroundTask.
+  launchApp`/`PluginUtils.launchApp` sets), read directly here rather
+  than relying on implicit Dart-side initial-route plumbing, since it
+  needs to behave identically whether the engine was already alive or
+  not.
+- **`lib/domain/background_escalation_gate.dart`** (new): listens on
+  that channel. `route == 'escalate_fall'` calls
+  `FallDetectorService.triggerBackgroundEscalatedCall()` — a new method
+  with the same tail as the existing in-app `_triggerEmergencyCall()`
+  (starts `EmergencyWorkflowService`, which then runs through
+  `EmergencyCallGate`/`EmergencyCallScreen` completely unchanged), just
+  skipping the 10-second in-app countdown since it already elapsed in
+  the background. `route == 'escalate_disaster'` needs no special
+  handling — `ImminentWarningGate` gained a `WidgetsBindingObserver` that
+  calls `DisasterService.refresh()` on `AppLifecycleState.resumed`, so it
+  sees the fresh risk data and shows `ImminentWarningScreen` itself, the
+  same way it already does for a live in-app detection.
+- **`lib/background/background_monitoring_service.dart`** (new): starts/
+  stops the service. Started automatically once onboarding completes
+  (fall detection is a safety feature, not an opt-in extra) — Settings →
+  Background permission gained an explicit toggle to turn it back off,
+  alongside the existing battery-optimization section.
+
+**Documented limitations, not hidden:**
+- The persistent "Monitoring for falls" notification while the service
+  runs — Android does not allow hiding this, by design.
+- A **narrow, deliberate duplication**: `PhoneMotionService` and
+  `FallInference` each have a second live instance running in the
+  background isolate, since a background task handler and the main
+  UI isolate are genuinely separate Dart environments with no shared
+  memory — mitigated by both being plain, dependency-free classes reused
+  as-is rather than reimplemented.
+- **Hive multi-isolate access** is a real, known hazard — the core fall-
+  detection path is kept entirely Hive-free (confirmed: neither
+  `PhoneMotionService` nor `FallDetectorService` touch Hive), and the one
+  Hive-touching piece (the periodic disaster check) skips itself when the
+  app is foregrounded and closes its box immediately after each check —
+  a best-effort mitigation, not a guarantee, given two isolates could in
+  principle still race.
+- No automated test coverage for the service/notification/Activity-
+  launch integration itself — this is almost entirely platform surface
+  that isn't meaningfully unit-testable (consistent with this project's
+  existing precedent for other native-channel-heavy work). The one piece
+  that *is* unit-tested: `FallInference`'s windowing logic
+  (`test/ml/fall_inference_test.dart`).
 
 ## Roadmap (not yet implemented)
 

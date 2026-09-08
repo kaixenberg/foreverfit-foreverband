@@ -1,10 +1,10 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter_litert/flutter_litert.dart';
 
 import '../domain/emergency_workflow_service.dart';
 import '../sensors/phone_motion_service.dart';
+import 'fall_inference.dart';
 
 enum AlertSource { fall, manual }
 
@@ -34,22 +34,13 @@ class FallDetectorService extends ChangeNotifier {
   final PhoneMotionService phoneMotionService;
   final EmergencyWorkflowService emergencyWorkflow;
 
-  static const int _windowLen = 60; // 3s @ 20Hz
-  static const String _modelAsset =
-      'assets/models/fall_detector_phone_only.tflite';
-
-  // Tunable — matches the 0.5 threshold used when evaluating the trained
-  // model (ml/train_fall_model_phone_only.py: 99% accuracy, 94% fall
-  // recall, 88% fall precision on held-out subjects).
-  static const double _cnnThreshold = 0.5;
   static const int _consecutiveTriggersToAlert = 2;
   static const int _emergencyCountdownSeconds = 10;
 
-  Interpreter? _interpreter;
+  final _inference = FallInference();
   Timer? _timer;
   Timer? _countdownTimer;
 
-  final List<PhoneMotionSample> _phoneBuffer = [];
   int _consecutiveTriggers = 0;
 
   double fallProbability = 0.0;
@@ -70,7 +61,7 @@ class FallDetectorService extends ChangeNotifier {
 
   Future<void> start() async {
     try {
-      _interpreter = await Interpreter.fromAsset(_modelAsset);
+      await _inference.load();
     } catch (e) {
       lastError = 'Failed to load fall-detector model: $e';
       notifyListeners();
@@ -85,27 +76,22 @@ class FallDetectorService extends ChangeNotifier {
   void _onPhoneUpdate() {
     final sample = phoneMotionService.latest;
     if (sample == null) return;
-    _phoneBuffer.add(sample);
-    if (_phoneBuffer.length > _windowLen) _phoneBuffer.removeAt(0);
+    _inference.addSample(MotionSample(
+      ax: sample.ax,
+      ay: sample.ay,
+      az: sample.az,
+      gx: sample.gx,
+      gy: sample.gy,
+      gz: sample.gz,
+    ));
   }
 
   void _runInference() {
-    final interpreter = _interpreter;
-    if (interpreter == null) return;
-    if (_phoneBuffer.length < _windowLen) return;
+    final probability = _inference.runIfReady();
+    if (probability == null) return;
+    fallProbability = probability;
 
-    final input = [
-      List.generate(_windowLen, (i) {
-        final p = _phoneBuffer[i];
-        return [p.ax, p.ay, p.az, p.gx, p.gy, p.gz];
-      })
-    ];
-    final output = List.generate(1, (_) => List.filled(1, 0.0));
-
-    interpreter.run(input, output);
-    fallProbability = output[0][0];
-
-    final triggeredNow = fallProbability > _cnnThreshold;
+    final triggeredNow = fallProbability > FallInference.threshold;
     _consecutiveTriggers = triggeredNow ? _consecutiveTriggers + 1 : 0;
 
     // Only START a new alert from live detection — while one is already
@@ -160,6 +146,27 @@ class FallDetectorService extends ChangeNotifier {
     emergencyWorkflow.start(triggerReason: reason);
   }
 
+  /// A fall was detected while the app was backgrounded — the
+  /// background foreground-service task handler already ran its own
+  /// 10s "I'm OK" notification window (see
+  /// `lib/background/fall_detection_task_handler.dart`) and it went
+  /// unanswered, so this skips straight to the emergency workflow
+  /// instead of re-running the in-app countdown. Called from
+  /// `BackgroundEscalationGate` once the app is brought to the
+  /// foreground by the escalation launch.
+  void triggerBackgroundEscalatedCall() {
+    if (alertActive) return;
+    alertActive = true;
+    alertSource = AlertSource.fall;
+    isCalling = true;
+    secondsUntilCall = null;
+    notifyListeners();
+    emergencyWorkflow.start(
+      triggerReason: 'a possible fall was detected while the app was in '
+          'the background',
+    );
+  }
+
   /// Call when the user acknowledges the alert (e.g. taps "I'm OK") —
   /// cancels any pending countdown/call and fully re-arms detection. Also
   /// requests cancellation of the emergency workflow if it already
@@ -181,7 +188,7 @@ class FallDetectorService extends ChangeNotifier {
     _timer?.cancel();
     _countdownTimer?.cancel();
     phoneMotionService.removeListener(_onPhoneUpdate);
-    _interpreter?.close();
+    _inference.close();
     super.dispose();
   }
 }

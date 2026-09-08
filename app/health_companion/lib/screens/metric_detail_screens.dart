@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../ble/ble_service.dart';
+import '../domain/body_composition.dart';
 import '../domain/units.dart';
 import '../models/metric_point.dart';
 import '../services/step_counter_service.dart';
@@ -9,6 +10,7 @@ import '../storage/app_settings_store.dart';
 import '../storage/health_log_store.dart';
 import '../storage/history_store.dart';
 import '../storage/metrics_store.dart';
+import '../storage/user_profile_store.dart';
 import '../theme/app_theme.dart';
 import '../widgets/log_value_dialog.dart';
 import 'metric_history_screen.dart';
@@ -87,26 +89,49 @@ class HeightHistoryScreen extends StatelessWidget {
   }
 }
 
+class BmiHistoryScreen extends StatelessWidget {
+  const BmiHistoryScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final metrics = context.watch<MetricsStore>();
+    return MetricHistoryScreen(
+      title: 'BMI',
+      unit: '',
+      points: metrics.bmiHistory(),
+      accentColor: AppTheme.accentBlue,
+      // No log action — BMI is always derived from weight/height, logged
+      // from their own cards, never entered directly.
+    );
+  }
+}
+
+/// Body fat is derived from BMI + age + sex (Deurenberg formula, see
+/// body_composition.dart) — no longer manually logged. The chart mirrors
+/// the shape of the BMI trend, since age/sex are applied uniformly
+/// across the whole history rather than changing per point.
 class BodyFatHistoryScreen extends StatelessWidget {
   const BodyFatHistoryScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
     final metrics = context.watch<MetricsStore>();
+    final profile = context.watch<UserProfileStore>();
+    final points = [
+      for (final bmiPoint in metrics.bmiHistory())
+        if (computeBodyFatPercent(
+          bmi: bmiPoint.value,
+          dateOfBirth: profile.dateOfBirth,
+          sex: profile.sex,
+        )
+            case final bodyFat?)
+          MetricPoint(at: bmiPoint.at, value: bodyFat),
+    ];
     return MetricHistoryScreen(
       title: 'Body fat',
       unit: '%',
-      points: metrics.historyOfType('bodyFat'),
+      points: points,
       accentColor: AppTheme.accentTeal,
-      logAction: FilledButton.icon(
-        icon: const Icon(Icons.add),
-        label: const Text('Log body fat'),
-        onPressed: () async {
-          final value = await showLogValueDialog(
-              context: context, title: 'Log body fat', unit: '%');
-          if (value != null) metrics.addBodyFatPercent(value);
-        },
-      ),
     );
   }
 }

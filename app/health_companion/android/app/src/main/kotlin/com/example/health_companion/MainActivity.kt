@@ -27,12 +27,18 @@ class MainActivity : FlutterActivity() {
     private val telephonyChannelName = "com.example.health_companion/telephony"
     private val telephonyEventsChannelName = "com.example.health_companion/telephony_events"
     private val batteryOptimizationChannelName = "com.example.health_companion/battery_optimization"
+    private val escalationChannelName = "com.example.health_companion/escalation"
 
     // Only one of these is ever non-null, depending on API level — see
     // startCallStateWatch(). Kept as fields so stopCallStateWatch() can
     // unregister the same listener instance later.
     private var legacyCallStateListener: PhoneStateListener? = null
     private var modernCallStateListener: TelephonyCallback? = null
+
+    // Kept as a field (not local to configureFlutterEngine) so onNewIntent
+    // can forward through the same channel on a warm relaunch, not just
+    // the cold-start path.
+    private var escalationChannel: MethodChannel? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -168,6 +174,34 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+
+        // Fires when the background fall-detection service (see
+        // lib/background/fall_detection_task_handler.dart) brings the app
+        // forward via FlutterForegroundTask.launchApp('escalate_...') after
+        // an unaddressed fall alert or a detected disaster hazard —
+        // BackgroundEscalationGate listens on the Dart side and runs the
+        // matching in-app flow instead of leaving the launch a no-op.
+        escalationChannel =
+            MethodChannel(flutterEngine.dartExecutor.binaryMessenger, escalationChannelName)
+        forwardEscalationRoute(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        forwardEscalationRoute(intent)
+    }
+
+    /// The launched intent carries Flutter's own "route" extra
+    /// (FlutterForegroundTask.launchApp/PluginUtils.launchApp sets it via
+    /// the same convention Flutter's own deep-link handling uses) — read
+    /// directly here rather than relying on Dart-side initial-route
+    /// plumbing, since this needs to work identically for both a cold
+    /// start and a warm relaunch while the engine is already alive.
+    private fun forwardEscalationRoute(intent: Intent?) {
+        val route = intent?.getStringExtra("route") ?: return
+        if (!route.startsWith("escalate_")) return
+        escalationChannel?.invokeMethod("onEscalationRoute", route)
     }
 
     /// API 29+ can ask the platform for the device's actual regional

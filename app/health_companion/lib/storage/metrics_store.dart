@@ -40,15 +40,6 @@ class MetricsStore extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> addBodyFatPercent(double percent) async {
-    await _bodyBox.add({
-      'type': 'bodyFat',
-      'value': percent,
-      'at': DateTime.now().toIso8601String(),
-    });
-    notifyListeners();
-  }
-
   double? _latestOfType(String type) {
     Map? latest;
     DateTime? latestAt;
@@ -66,7 +57,6 @@ class MetricsStore extends ChangeNotifier {
 
   double? get latestWeightKg => _latestOfType('weight');
   double? get latestHeightCm => _latestOfType('height');
-  double? get latestBodyFatPercent => _latestOfType('bodyFat');
 
   /// Body Mass Index from the latest logged weight + height, or null if
   /// either is missing.
@@ -78,8 +68,35 @@ class MetricsStore extends ChangeNotifier {
     return w / (heightM * heightM);
   }
 
-  /// Full timestamped history for weight/height/bodyFat, oldest first —
-  /// backs MetricHistoryScreen's chart for each.
+  /// BMI over time, paired from the weight history against whatever
+  /// height was on record at-or-before each weigh-in (falls back to the
+  /// earliest known height for weigh-ins that predate any height log) —
+  /// height rarely changes for an adult, so this is realistically driven
+  /// by the weight series. Empty if either history is empty.
+  List<MetricPoint> bmiHistory() {
+    final weights = historyOfType('weight');
+    final heights = historyOfType('height');
+    if (weights.isEmpty || heights.isEmpty) return const [];
+    final points = <MetricPoint>[];
+    for (final w in weights) {
+      double? heightAtTime;
+      for (final h in heights) {
+        if (!h.at.isAfter(w.at)) {
+          heightAtTime = h.value;
+        } else {
+          break;
+        }
+      }
+      heightAtTime ??= heights.first.value;
+      if (heightAtTime <= 0) continue;
+      final heightM = heightAtTime / 100;
+      points.add(MetricPoint(at: w.at, value: w.value / (heightM * heightM)));
+    }
+    return points;
+  }
+
+  /// Full timestamped history for weight/height, oldest first — backs
+  /// MetricHistoryScreen's chart for each.
   List<MetricPoint> historyOfType(String type) {
     final points = <MetricPoint>[];
     for (final entry in _bodyBox.values) {

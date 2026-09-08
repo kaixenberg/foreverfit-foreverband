@@ -169,12 +169,13 @@ tiles + a static state-level hazard baseline) and prefers live data
       from a reviewed reference app, reimplemented from scratch in Dart,
       no code copied (see ARCHITECTURE.md)
 - [x] Body & activity tracking, local storage (no Health Connect): steps,
-      heart rate, weight, height, BMI (computed), body fat %, and
-      hydration (with one-tap quick-add) in a swipeable, paged 2x3 card
-      grid with a dot-page indicator; weight/height/body-fat/hydration
-      log to Hive via `MetricsStore`, steps via the hardware step counter
-      (`pedometer`) with a growing daily-history archive — see
-      ARCHITECTURE.md
+      heart rate, weight, height, BMI (computed, now with its own chart),
+      body fat % (now derived from BMI + age + sex via the Deurenberg
+      formula, not manually logged — see ARCHITECTURE.md), and hydration
+      (with one-tap quick-add) in a swipeable, paged 2x3 card grid with a
+      dot-page indicator; weight/height/hydration log to Hive via
+      `MetricsStore`, steps via the hardware step counter (`pedometer`)
+      with a growing daily-history archive — see ARCHITECTURE.md
 - [x] Per-metric history: tapping any Body & activity card (heart rate
       included, from either the vitals grid or this section) opens a
       shared chart+stats+period-selector screen — preset chips (7/30/90
@@ -248,6 +249,25 @@ tiles + a static state-level hazard baseline) and prefers live data
       Background permission, Developer/demo) — see ARCHITECTURE.md for
       what's deliberately simplified (unencrypted/manual-only backup, no
       Material You, single-case sensor precedence)
+- [x] Background fall detection + full-screen escalation: a foreground
+      service (`flutter_foreground_task`) keeps the same TFLite model
+      running even while the app is backgrounded/screen off (confirmed
+      Android hard-stops sensor delivery to backgrounded apps otherwise —
+      there's no way around a foreground service for this); a detected
+      fall shows an actionable "I'm OK" notification with a 10s window,
+      escalating to bringing the app to the foreground (over the lock
+      screen if needed) to run the same emergency-call workflow if
+      unaddressed. Disaster warnings escalate the same way from a
+      periodic background risk check. Uses a real Activity launch, not
+      `SYSTEM_ALERT_WINDOW`/"draw over other apps" — see ARCHITECTURE.md
+      for why, and for the documented limitations (the mandatory
+      persistent notification, a small unavoidable duplication between
+      the foreground/background detectors, and the Hive multi-isolate
+      coordination the background disaster check needs)
+- [x] BMI now has its own history chart (previously the only Body &
+      activity card without one); body fat is computed from BMI + age +
+      sex (Deurenberg formula) instead of manually logged — see
+      ARCHITECTURE.md
 - [ ] Wearable-sensor disaster heuristics (heat-index formula now exists
       — this item is wiring it to the wearable's own BME280 instead of
       phone GPS, plus BME280 pressure drop-rate) once the wearable's IMU
