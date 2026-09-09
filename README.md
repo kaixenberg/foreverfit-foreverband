@@ -357,3 +357,23 @@ tiles + a static state-level hazard baseline) and prefers live data
       "check for firmware update" stub (no OTA mechanism yet). Firmware
       verified with a real `arduino-cli compile --warnings all` — no new
       warnings/errors — see ARCHITECTURE.md
+- [x] On-device AI assistant (opt-in "wow" feature): fully offline chat
+      using Gemma 4 E2B (~2.6 GB, via `flutter_gemma`/LiteRT-LM) running
+      entirely on the phone — no server, no data leaves the device.
+      Settings → "AI Assistant" toggle shows an explicit download-size
+      warning first (Wi-Fi-only by default), then a WhatsApp-style
+      floating chat bubble appears — Dashboard only, per explicit
+      feedback, not app-wide. Raises the app's minimum Android version to
+      API 30 (a real, accepted trade for this feature). Two real
+      on-device crashes found (via a pulled crash log, not guessed) and
+      fixed: a GPU-backend segfault on model creation (now CPU backend)
+      and a WorkManager foreground-service manifest error on the model
+      download (now a `foregroundServiceType="dataSync"` manifest
+      override, independently verified against a real Gradle manifest
+      merge) — see ARCHITECTURE.md
+- [x] AI assistant: saved chat history (past conversations list, resume
+      or delete any of them), and photo/PDF attachments — Gemma 4 is
+      natively multimodal so images just work; PDFs are text-extracted
+      on-device (`syncfusion_flutter_pdf`, capped to fit the model's
+      context budget) since the model has no native document input. See
+      ARCHITECTURE.md

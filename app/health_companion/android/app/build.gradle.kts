@@ -22,7 +22,10 @@ android {
         applicationId = "com.example.health_companion"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        // 30, not flutter.minSdkVersion: the on-device AI assistant's
+        // flutter_gemma_litertlm engine (.litertlm FFI inference) requires
+        // API 30+ — see ai_chat/ai_chat_service.dart / ARCHITECTURE.md.
+        minSdk = 30
         targetSdk = flutter.targetSdkVersion
         // Uses the version code from pubspec.yaml. When using split APKs, 1000 * ABI_VERSION
         // is added automatically by Flutter. (https://developer.android.com/studio/build/configure-apk-splits#configure-APK-versions)
@@ -30,6 +33,11 @@ android {
         // flag during build.
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        // flutter_gemma_litertlm's .litertlm FFI inference only ships
+        // arm64-v8a native libraries — restrict the app to match rather
+        // than shipping an APK slice that would crash on load for the
+        // other ABIs.
+        ndk { abiFilters += "arm64-v8a" }
     }
 
     buildTypes {

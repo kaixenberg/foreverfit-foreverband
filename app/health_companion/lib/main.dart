@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'ai_chat/ai_chat_service.dart';
 import 'background/background_monitoring_service.dart';
 import 'ble/ble_service.dart';
 import 'disaster/disaster_service.dart';
@@ -24,6 +25,8 @@ import 'services/notification_service.dart';
 import 'services/step_counter_service.dart';
 import 'services/telephony_service.dart';
 import 'services/tts_service.dart';
+import 'storage/ai_chat_history_store.dart';
+import 'storage/ai_chat_settings_store.dart';
 import 'storage/app_settings_store.dart';
 import 'storage/emergency_contact_store.dart';
 import 'storage/health_log_store.dart';
@@ -32,6 +35,11 @@ import 'storage/metrics_store.dart';
 import 'storage/user_profile_store.dart';
 import 'storage/watch_settings_store.dart';
 import 'theme/app_theme.dart';
+
+/// Used by MaterialApp's own `navigatorKey:` — kept available for anything
+/// that needs to navigate from outside a widget's own BuildContext (e.g. a
+/// notification tap).
+final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -49,6 +57,10 @@ Future<void> main() async {
   await appSettingsStore.init();
   final watchSettingsStore = WatchSettingsStore();
   await watchSettingsStore.init();
+  final aiChatSettingsStore = AiChatSettingsStore();
+  await aiChatSettingsStore.init();
+  final aiChatHistoryStore = AiChatHistoryStore();
+  await aiChatHistoryStore.init();
 
   runApp(HealthCompanionApp(
     historyStore: historyStore,
@@ -58,6 +70,8 @@ Future<void> main() async {
     userProfileStore: userProfileStore,
     appSettingsStore: appSettingsStore,
     watchSettingsStore: watchSettingsStore,
+    aiChatSettingsStore: aiChatSettingsStore,
+    aiChatHistoryStore: aiChatHistoryStore,
   ));
 }
 
@@ -71,6 +85,8 @@ class HealthCompanionApp extends StatelessWidget {
     required this.userProfileStore,
     required this.appSettingsStore,
     required this.watchSettingsStore,
+    required this.aiChatSettingsStore,
+    required this.aiChatHistoryStore,
   });
 
   final HistoryStore historyStore;
@@ -80,6 +96,8 @@ class HealthCompanionApp extends StatelessWidget {
   final UserProfileStore userProfileStore;
   final AppSettingsStore appSettingsStore;
   final WatchSettingsStore watchSettingsStore;
+  final AiChatSettingsStore aiChatSettingsStore;
+  final AiChatHistoryStore aiChatHistoryStore;
 
   @override
   Widget build(BuildContext context) {
@@ -90,6 +108,14 @@ class HealthCompanionApp extends StatelessWidget {
         ChangeNotifierProvider(
           create: (context) =>
               BleService(historyStore, context.read<WatchSettingsStore>()),
+        ),
+        ChangeNotifierProvider.value(value: aiChatSettingsStore),
+        Provider<AiChatHistoryStore>.value(value: aiChatHistoryStore),
+        ChangeNotifierProvider(
+          create: (context) => AiChatService(
+            context.read<AiChatSettingsStore>(),
+            context.read<AiChatHistoryStore>(),
+          )..init(),
         ),
         ChangeNotifierProvider(create: (_) => PhoneMotionService()..start()),
         ChangeNotifierProvider.value(value: healthLogStore),
@@ -203,6 +229,7 @@ class _App extends StatelessWidget {
 
     return MaterialApp(
       title: 'ForeverFit',
+      navigatorKey: rootNavigatorKey,
       theme: AppTheme.light,
       darkTheme: darkTheme,
       themeMode: settings.themeMode,

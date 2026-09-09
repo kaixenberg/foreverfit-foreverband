@@ -20,6 +20,7 @@ import '../storage/metrics_store.dart';
 import '../storage/user_profile_store.dart';
 import '../theme/app_theme.dart';
 import '../utils/heat_index.dart';
+import '../widgets/ai_chat_bubble.dart';
 import '../widgets/metric_card.dart';
 import 'health_log_screens.dart';
 import 'map_screen.dart';
@@ -267,280 +268,303 @@ class DashboardScreen extends StatelessWidget {
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(12),
+      // The floating AI chat bubble is stacked on top of the Dashboard's
+      // own content, not mounted globally — per explicit user request, it
+      // should only ever appear on the main screen (Navigator.push covers
+      // it automatically once any other screen is pushed on top, same as
+      // any other widget below the active route).
+      body: Stack(
         children: [
-          if (alertActive) const _FallAlertBanner(),
-          const _RecoveredEmergencyBanner(),
-          if (!connected) _ConnectWearableBanner(),
-          const _InsightsSection(),
-          _DisasterMapNavCard(risk: disaster.risk),
-          const SizedBox(height: 12),
-          GridView.count(
-            crossAxisCount: 2,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            childAspectRatio: 1.6,
-            mainAxisSpacing: 8,
-            crossAxisSpacing: 8,
+          ListView(
+            padding: const EdgeInsets.all(12),
             children: [
-              MetricCard(
-                label: 'Heart rate',
-                value: hasFingerReading ? heartRate.toStringAsFixed(0) : '--',
-                unit: vitals != null && !hasFingerReading ? 'no finger' : 'bpm',
-                icon: Icons.favorite,
-                warn: heartRateWarn,
-                accentColor: AppTheme.accentPink,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                      builder: (_) => const HeartRateHistoryScreen()),
-                ),
-              ),
-              MetricCard(
-                label: 'SpO2',
-                value: hasFingerReading ? spo2.toStringAsFixed(0) : '--',
-                unit: vitals != null && !hasFingerReading ? 'no finger' : '%',
-                icon: Icons.bloodtype,
-                warn: spo2Warn,
-                accentColor: AppTheme.accentBlue,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const SpO2HistoryScreen()),
-                ),
-              ),
-              MetricCard(
-                label: 'Body temp',
-                value: hasFingerReading
-                    ? formatTemperatureC(bodyTemp, unitSystem)
-                        .value
-                        .toStringAsFixed(1)
-                    : '--',
-                unit: vitals != null && !hasFingerReading
-                    ? 'no finger'
-                    : formatTemperatureC(bodyTemp, unitSystem).unit,
-                icon: Icons.thermostat,
-                warn: bodyTempWarn,
-                accentColor: AppTheme.accentCoral,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                      builder: (_) => const BodyTempHistoryScreen()),
-                ),
-              ),
-              MetricCard(
-                label: 'Ambient temp',
-                value: resolvedAmbientTemp == null
-                    ? '--'
-                    : formatTemperatureC(resolvedAmbientTemp, unitSystem)
-                        .value
-                        .toStringAsFixed(1),
-                unit: resolvedAmbientTemp == null
-                    ? ''
-                    : '${formatTemperatureC(resolvedAmbientTemp, unitSystem).unit}'
-                        '${ambientIsFromWearable ? '' : ' (online)'}',
-                icon: Icons.wb_sunny_outlined,
-                warn: ambientWarn,
-                accentColor: AppTheme.accentCoral,
-              ),
-              MetricCard(
-                label: 'Humidity',
-                value: resolvedHumidity == null
-                    ? '--'
-                    : resolvedHumidity.toStringAsFixed(0),
-                unit: resolvedHumidity == null
-                    ? ''
-                    : (ambientIsFromWearable ? '%' : '% (online)'),
-                icon: Icons.water_drop_outlined,
-                accentColor: AppTheme.accentTeal,
-              ),
-              MetricCard(
-                label: 'Pressure',
-                value: resolvedPressure == null
-                    ? '--'
-                    : resolvedPressure.toStringAsFixed(0),
-                unit: resolvedPressure == null
-                    ? ''
-                    : (ambientIsFromWearable ? 'hPa' : 'hPa (online)'),
-                icon: Icons.speed,
-                accentColor: AppTheme.accentPurple,
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Text('Wellness overview',
-              style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          _CardRow(
-            cards: [
-              MetricCard(
-                label: 'Wellness',
-                value: wellnessScore == null ? '--' : wellnessScore.toString(),
-                unit: wellnessScore == null ? '' : '/100',
-                icon: Icons.favorite_border,
-                warn: wellnessScore != null && wellnessScore < 70,
-                accentColor: AppTheme.accentPink,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) =>
-                        WellnessDetailScreen(snapshot: wellnessSnapshot),
+              if (alertActive) const _FallAlertBanner(),
+              const _RecoveredEmergencyBanner(),
+              if (!connected) _ConnectWearableBanner(),
+              const _InsightsSection(),
+              _DisasterMapNavCard(risk: disaster.risk),
+              const SizedBox(height: 12),
+              GridView.count(
+                crossAxisCount: 2,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                childAspectRatio: 1.6,
+                mainAxisSpacing: 8,
+                crossAxisSpacing: 8,
+                children: [
+                  MetricCard(
+                    label: 'Heart rate',
+                    value:
+                        hasFingerReading ? heartRate.toStringAsFixed(0) : '--',
+                    unit: vitals != null && !hasFingerReading
+                        ? 'no finger'
+                        : 'bpm',
+                    icon: Icons.favorite,
+                    warn: heartRateWarn,
+                    accentColor: AppTheme.accentPink,
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                          builder: (_) => const HeartRateHistoryScreen()),
+                    ),
                   ),
-                ),
+                  MetricCard(
+                    label: 'SpO2',
+                    value: hasFingerReading ? spo2.toStringAsFixed(0) : '--',
+                    unit:
+                        vitals != null && !hasFingerReading ? 'no finger' : '%',
+                    icon: Icons.bloodtype,
+                    warn: spo2Warn,
+                    accentColor: AppTheme.accentBlue,
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                          builder: (_) => const SpO2HistoryScreen()),
+                    ),
+                  ),
+                  MetricCard(
+                    label: 'Body temp',
+                    value: hasFingerReading
+                        ? formatTemperatureC(bodyTemp, unitSystem)
+                            .value
+                            .toStringAsFixed(1)
+                        : '--',
+                    unit: vitals != null && !hasFingerReading
+                        ? 'no finger'
+                        : formatTemperatureC(bodyTemp, unitSystem).unit,
+                    icon: Icons.thermostat,
+                    warn: bodyTempWarn,
+                    accentColor: AppTheme.accentCoral,
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                          builder: (_) => const BodyTempHistoryScreen()),
+                    ),
+                  ),
+                  MetricCard(
+                    label: 'Ambient temp',
+                    value: resolvedAmbientTemp == null
+                        ? '--'
+                        : formatTemperatureC(resolvedAmbientTemp, unitSystem)
+                            .value
+                            .toStringAsFixed(1),
+                    unit: resolvedAmbientTemp == null
+                        ? ''
+                        : '${formatTemperatureC(resolvedAmbientTemp, unitSystem).unit}'
+                            '${ambientIsFromWearable ? '' : ' (online)'}',
+                    icon: Icons.wb_sunny_outlined,
+                    warn: ambientWarn,
+                    accentColor: AppTheme.accentCoral,
+                  ),
+                  MetricCard(
+                    label: 'Humidity',
+                    value: resolvedHumidity == null
+                        ? '--'
+                        : resolvedHumidity.toStringAsFixed(0),
+                    unit: resolvedHumidity == null
+                        ? ''
+                        : (ambientIsFromWearable ? '%' : '% (online)'),
+                    icon: Icons.water_drop_outlined,
+                    accentColor: AppTheme.accentTeal,
+                  ),
+                  MetricCard(
+                    label: 'Pressure',
+                    value: resolvedPressure == null
+                        ? '--'
+                        : resolvedPressure.toStringAsFixed(0),
+                    unit: resolvedPressure == null
+                        ? ''
+                        : (ambientIsFromWearable ? 'hPa' : 'hPa (online)'),
+                    icon: Icons.speed,
+                    accentColor: AppTheme.accentPurple,
+                  ),
+                ],
               ),
-              MetricCard(
-                label: 'Activity',
-                value: currentActivity == null
-                    ? '--'
-                    : _activityLabel(currentActivity),
-                unit: '',
-                icon: Icons.directions_walk,
-                accentColor: AppTheme.accentGreen,
+              const SizedBox(height: 16),
+              Text('Wellness overview',
+                  style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 8),
+              _CardRow(
+                cards: [
+                  MetricCard(
+                    label: 'Wellness',
+                    value:
+                        wellnessScore == null ? '--' : wellnessScore.toString(),
+                    unit: wellnessScore == null ? '' : '/100',
+                    icon: Icons.favorite_border,
+                    warn: wellnessScore != null && wellnessScore < 70,
+                    accentColor: AppTheme.accentPink,
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            WellnessDetailScreen(snapshot: wellnessSnapshot),
+                      ),
+                    ),
+                  ),
+                  MetricCard(
+                    label: 'Activity',
+                    value: currentActivity == null
+                        ? '--'
+                        : _activityLabel(currentActivity),
+                    unit: '',
+                    icon: Icons.directions_walk,
+                    accentColor: AppTheme.accentGreen,
+                  ),
+                  MetricCard(
+                    label: 'Baseline',
+                    value: baselineHeartRateMean == null
+                        ? '--'
+                        : baselineHeartRateMean.toStringAsFixed(0),
+                    unit: baselineHeartRateMean == null ? '' : 'bpm',
+                    icon: Icons.show_chart,
+                    accentColor: AppTheme.accentBlue,
+                  ),
+                ],
               ),
-              MetricCard(
-                label: 'Baseline',
-                value: baselineHeartRateMean == null
-                    ? '--'
-                    : baselineHeartRateMean.toStringAsFixed(0),
-                unit: baselineHeartRateMean == null ? '' : 'bpm',
-                icon: Icons.show_chart,
-                accentColor: AppTheme.accentBlue,
+              const SizedBox(height: 16),
+              Text('Body & activity',
+                  style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 8),
+              _PagedCardGrid(
+                cards: [
+                  const _StepsCard(),
+                  MetricCard(
+                    label: 'Weight',
+                    value: metrics.latestWeightKg == null
+                        ? '--'
+                        : formatWeightKg(metrics.latestWeightKg!, unitSystem)
+                            .value
+                            .toStringAsFixed(1),
+                    unit: metrics.latestWeightKg == null
+                        ? ''
+                        : formatWeightKg(metrics.latestWeightKg!, unitSystem)
+                            .unit,
+                    icon: Icons.monitor_weight_outlined,
+                    accentColor: AppTheme.accentCoral,
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                          builder: (_) => const WeightHistoryScreen()),
+                    ),
+                  ),
+                  MetricCard(
+                    label: 'Height',
+                    value: metrics.latestHeightCm == null
+                        ? '--'
+                        : formatHeightCm(metrics.latestHeightCm!, unitSystem)
+                            .value
+                            .toStringAsFixed(0),
+                    unit: metrics.latestHeightCm == null
+                        ? ''
+                        : formatHeightCm(metrics.latestHeightCm!, unitSystem)
+                            .unit,
+                    icon: Icons.height,
+                    accentColor: AppTheme.accentPurple,
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                          builder: (_) => const HeightHistoryScreen()),
+                    ),
+                  ),
+                  MetricCard(
+                    label: 'BMI',
+                    value: metrics.bmi?.toStringAsFixed(1) ?? '--',
+                    unit: '',
+                    icon: Icons.calculate_outlined,
+                    accentColor: AppTheme.accentBlue,
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                          builder: (_) => const BmiHistoryScreen()),
+                    ),
+                  ),
+                  MetricCard(
+                    label: 'Body fat',
+                    value: bodyFatPercent?.toStringAsFixed(1) ?? '--',
+                    unit: bodyFatPercent == null ? '' : '%',
+                    icon: Icons.percent,
+                    accentColor: AppTheme.accentTeal,
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                          builder: (_) => const BodyFatHistoryScreen()),
+                    ),
+                  ),
+                  MetricCard(
+                    label: 'Hydration',
+                    value: formatHydrationMl(
+                            metrics.todayHydrationMl.toDouble(), unitSystem)
+                        .value
+                        .toStringAsFixed(2),
+                    unit: formatHydrationMl(
+                            metrics.todayHydrationMl.toDouble(), unitSystem)
+                        .unit,
+                    icon: Icons.local_drink_outlined,
+                    accentColor: AppTheme.accentBlue,
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                          builder: (_) => const HydrationHistoryScreen()),
+                    ),
+                  ),
+                  MetricCard(
+                    label: 'Blood pressure',
+                    value: healthLog.latestBloodPressure == null
+                        ? '--'
+                        : '${healthLog.latestBloodPressure!.$1}/${healthLog.latestBloodPressure!.$2}',
+                    unit: healthLog.latestBloodPressure == null ? '' : 'mmHg',
+                    icon: Icons.favorite_border,
+                    accentColor: AppTheme.accentCoral,
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                          builder: (_) => const BloodPressureHistoryScreen()),
+                    ),
+                  ),
+                  MetricCard(
+                    label: 'Blood glucose',
+                    value: healthLog.latestGlucose?.toStringAsFixed(0) ?? '--',
+                    unit: healthLog.latestGlucose == null ? '' : 'mg/dL',
+                    icon: Icons.water_drop_outlined,
+                    accentColor: AppTheme.accentPurple,
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                          builder: (_) => const BloodGlucoseHistoryScreen()),
+                    ),
+                  ),
+                  MetricCard(
+                    label: 'Insulin',
+                    value:
+                        healthLog.latestInsulinDose?.toStringAsFixed(1) ?? '--',
+                    unit: healthLog.latestInsulinDose == null ? '' : 'units',
+                    icon: Icons.vaccines_outlined,
+                    accentColor: AppTheme.accentTeal,
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                          builder: (_) => const InsulinHistoryScreen()),
+                    ),
+                  ),
+                  MetricCard(
+                    label: 'Sleep',
+                    value:
+                        healthLog.latestSleepHours?.toStringAsFixed(1) ?? '--',
+                    unit: healthLog.latestSleepHours == null ? '' : 'hrs',
+                    icon: Icons.bedtime_outlined,
+                    accentColor: AppTheme.accentBlue,
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                          builder: (_) => const SleepHistoryScreen()),
+                    ),
+                  ),
+                  MetricCard(
+                    label: 'Medications',
+                    value: healthLog.medications.isEmpty
+                        ? '--'
+                        : healthLog.medications.length.toString(),
+                    unit: healthLog.medications.isEmpty ? '' : 'tracked',
+                    icon: Icons.medication_outlined,
+                    accentColor: AppTheme.accentGreen,
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                          builder: (_) => const MedicationsScreen()),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
-          const SizedBox(height: 16),
-          Text('Body & activity',
-              style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          _PagedCardGrid(
-            cards: [
-              const _StepsCard(),
-              MetricCard(
-                label: 'Weight',
-                value: metrics.latestWeightKg == null
-                    ? '--'
-                    : formatWeightKg(metrics.latestWeightKg!, unitSystem)
-                        .value
-                        .toStringAsFixed(1),
-                unit: metrics.latestWeightKg == null
-                    ? ''
-                    : formatWeightKg(metrics.latestWeightKg!, unitSystem).unit,
-                icon: Icons.monitor_weight_outlined,
-                accentColor: AppTheme.accentCoral,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                      builder: (_) => const WeightHistoryScreen()),
-                ),
-              ),
-              MetricCard(
-                label: 'Height',
-                value: metrics.latestHeightCm == null
-                    ? '--'
-                    : formatHeightCm(metrics.latestHeightCm!, unitSystem)
-                        .value
-                        .toStringAsFixed(0),
-                unit: metrics.latestHeightCm == null
-                    ? ''
-                    : formatHeightCm(metrics.latestHeightCm!, unitSystem).unit,
-                icon: Icons.height,
-                accentColor: AppTheme.accentPurple,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                      builder: (_) => const HeightHistoryScreen()),
-                ),
-              ),
-              MetricCard(
-                label: 'BMI',
-                value: metrics.bmi?.toStringAsFixed(1) ?? '--',
-                unit: '',
-                icon: Icons.calculate_outlined,
-                accentColor: AppTheme.accentBlue,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const BmiHistoryScreen()),
-                ),
-              ),
-              MetricCard(
-                label: 'Body fat',
-                value: bodyFatPercent?.toStringAsFixed(1) ?? '--',
-                unit: bodyFatPercent == null ? '' : '%',
-                icon: Icons.percent,
-                accentColor: AppTheme.accentTeal,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                      builder: (_) => const BodyFatHistoryScreen()),
-                ),
-              ),
-              MetricCard(
-                label: 'Hydration',
-                value: formatHydrationMl(
-                        metrics.todayHydrationMl.toDouble(), unitSystem)
-                    .value
-                    .toStringAsFixed(2),
-                unit: formatHydrationMl(
-                        metrics.todayHydrationMl.toDouble(), unitSystem)
-                    .unit,
-                icon: Icons.local_drink_outlined,
-                accentColor: AppTheme.accentBlue,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                      builder: (_) => const HydrationHistoryScreen()),
-                ),
-              ),
-              MetricCard(
-                label: 'Blood pressure',
-                value: healthLog.latestBloodPressure == null
-                    ? '--'
-                    : '${healthLog.latestBloodPressure!.$1}/${healthLog.latestBloodPressure!.$2}',
-                unit: healthLog.latestBloodPressure == null ? '' : 'mmHg',
-                icon: Icons.favorite_border,
-                accentColor: AppTheme.accentCoral,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                      builder: (_) => const BloodPressureHistoryScreen()),
-                ),
-              ),
-              MetricCard(
-                label: 'Blood glucose',
-                value: healthLog.latestGlucose?.toStringAsFixed(0) ?? '--',
-                unit: healthLog.latestGlucose == null ? '' : 'mg/dL',
-                icon: Icons.water_drop_outlined,
-                accentColor: AppTheme.accentPurple,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                      builder: (_) => const BloodGlucoseHistoryScreen()),
-                ),
-              ),
-              MetricCard(
-                label: 'Insulin',
-                value: healthLog.latestInsulinDose?.toStringAsFixed(1) ?? '--',
-                unit: healthLog.latestInsulinDose == null ? '' : 'units',
-                icon: Icons.vaccines_outlined,
-                accentColor: AppTheme.accentTeal,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                      builder: (_) => const InsulinHistoryScreen()),
-                ),
-              ),
-              MetricCard(
-                label: 'Sleep',
-                value: healthLog.latestSleepHours?.toStringAsFixed(1) ?? '--',
-                unit: healthLog.latestSleepHours == null ? '' : 'hrs',
-                icon: Icons.bedtime_outlined,
-                accentColor: AppTheme.accentBlue,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const SleepHistoryScreen()),
-                ),
-              ),
-              MetricCard(
-                label: 'Medications',
-                value: healthLog.medications.isEmpty
-                    ? '--'
-                    : healthLog.medications.length.toString(),
-                unit: healthLog.medications.isEmpty ? '' : 'tracked',
-                icon: Icons.medication_outlined,
-                accentColor: AppTheme.accentGreen,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const MedicationsScreen()),
-                ),
-              ),
-            ],
-          ),
+          const AiChatBubble(),
         ],
       ),
     );

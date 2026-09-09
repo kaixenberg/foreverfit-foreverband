@@ -1,4 +1,6 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
@@ -11,6 +13,11 @@
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_HEALTH" />
+    <!-- The on-device AI assistant's ~2.6GB model download runs as an
+         Android 14+ "data sync" foreground service (flutter_gemma's
+         `foreground: true` install option) so it isn't killed by
+         WorkManager's 9-minute background execution limit. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="true" />
@@ -53,6 +60,21 @@
             android:name="com.pravera.flutter_foreground_task.service.ForegroundService"
             android:foregroundServiceType="health"
             android:exported="false" />
+        <!-- Override WorkManager's shared foreground service to declare a
+             foregroundServiceType. background_downloader (used by
+             flutter_gemma for the AI assistant's model download) runs its
+             foreground-notification path through WorkManager's own
+             SystemForegroundService. On API 34+, startForeground() requires
+             BOTH a matching FOREGROUND_SERVICE_<type> permission (declared
+             above) AND a matching android:foregroundServiceType here —
+             otherwise it throws IllegalArgumentException: "foregroundServiceType
+             ... is not a subset of ... 0x00000000". tools:node="merge" merges
+             this attribute onto WorkManager's own <service> declaration
+             instead of replacing it. -->
+        <service
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:foregroundServiceType="dataSync"
+            tools:node="merge" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

@@ -1410,6 +1410,178 @@ over the new `6e400006-...` characteristic (BLE protocol table above).
   warnings or errors versus the pre-existing baseline (same four
   library-internal warnings noted elsewhere in this doc).
 
+## On-device AI assistant (implemented, opt-in "wow" feature)
+
+An explicitly marketing-flavored feature, framed as such to the user
+in-app: a fully offline chatbot running **Gemma 4 E2B** entirely on the
+phone, via Google's [flutter_gemma](https://pub.dev/packages/flutter_gemma)
+(1.7.x) + its `flutter_gemma_litertlm` engine (LiteRT-LM, `.litertlm`
+format). Deliberately **E2B, not E4B**: ~2.6GB vs ~3.65GB download, and
+noticeably lower peak RAM — for a demo/"wow" feature rather than a
+diagnostic tool, the smaller footprint matters more than the modest
+quality gap between the two sizes. Apache-2.0 and publicly downloadable
+(unlike Gemma3n/EmbeddingGemma on the same platform, no Hugging Face
+token is required).
+
+- **Opt-in, not automatic**: a new Settings → "AI Assistant" category
+  (`lib/screens/settings/ai_assistant_screen.dart`) shows an explicit
+  warning dialog (download size, "no data ever leaves this device",
+  removable any time) before anything downloads — this app's established
+  pattern for anything that costs the user meaningful storage/bandwidth
+  (see the background-monitoring toggle). Defaults to **Wi-Fi only**
+  (`AiChatSettingsStore.wifiOnlyDownload`, overridable), checked via
+  `connectivity_plus` before the download starts — flutter_gemma itself
+  has no such option, so `AiChatService.downloadModel()` enforces it
+  before calling into the plugin.
+- **`AiChatSettingsStore`** (`lib/storage/ai_chat_settings_store.dart`):
+  the usual single-Hive-document pattern, holding only the user's
+  opt-in flag and the Wi-Fi-only preference. Deliberately does NOT track
+  whether the model file itself is on disk — `FlutterGemma
+  .isModelInstalled(modelId)` already persists that, so duplicating it
+  here would just be a second source of truth that can drift.
+- **`AiChatService`** (`lib/ai_chat/ai_chat_service.dart`): owns the
+  plugin lifecycle — registers the `LiteRtLmEngine` once at app startup
+  (cheap, no download; safe to call unconditionally like every other
+  `*Service.init()` in this app), downloads with a live progress
+  callback (`installModel(...).fromNetwork(url, foreground: true)
+  .withProgress(...).install()` — `foreground: true` runs the ~2.6GB
+  transfer as an Android foreground service so it isn't killed by
+  WorkManager's 9-minute background execution limit), lazily creates the
+  model + chat session on first message, and streams the reply
+  token-by-token (`chat.generateChatResponseAsync()`, filtered to
+  `TextResponse`) into an in-memory transcript, persisted after every
+  completed turn (see "Chat history" below). A short system instruction
+  tells the model it is not a doctor and to defer specifics to the app's
+  real vitals/emergency features. `maxTokens: 4096` (up from an initial
+  2048) to leave real room for a PDF excerpt (see "Attachments" below)
+  alongside the system prompt, conversation history, and reply.
+- **CPU backend, not GPU — a real on-device crash, not a guess.** The
+  model session was originally created with `preferredBackend:
+  PreferredBackend.gpu`. On the first real test (a Snapdragon 8s Gen 4 /
+  Adreno device), sending any message crashed the whole app with a native
+  `SIGSEGV` inside `libLiteRtClGlAccelerator.so` during engine creation —
+  a native crash, not a catchable Dart exception, so no graceful
+  in-app fallback was possible once triggered. Root-caused from the real
+  crash log (`adb`-pulled tombstone), not guessed: the backtrace showed
+  the segfault inside the GPU/OpenCL accelerator's engine-creation path
+  (`EngineAdvancedImpl::Create` → `LiteRtClGlAccelerator`). Fixed by
+  switching to `PreferredBackend.cpu` — no vendor GPU-driver dependency,
+  and E2B (2B params) is small enough that CPU-only inference is still
+  reasonably fast for this "wow" feature.
+- **Chat history — `AiChatHistoryStore`**
+  (`lib/storage/ai_chat_history_store.dart`): each conversation is a
+  document (key = session id, a timestamp) in a Hive box, one-document-
+  per-session like `HistoryStore`'s time-series records rather than the
+  single-document-per-box pattern used by `AiChatSettingsStore` — this is
+  naturally a growing collection of independent records. Stores the
+  title (auto-generated from the first message's shown text, or the
+  attachment filename if that message was image/PDF-only), last-updated
+  timestamp, and the full message list (images inline as base64 — chat
+  sessions are short-lived and few, so this stays simpler than a separate
+  file store). `AiChatScreen`'s History sheet lists sessions newest-first
+  and can resume or delete one. **Resuming is lazy**: loading a session
+  just repopulates the in-memory transcript for display; the actual
+  model-context replay (`chat.addQueryChunk()` for every prior message)
+  only happens right before the *next* message is sent in that
+  conversation, so browsing old chats never pays real prefill cost.
+  Excluded from data export/import (`BackupService`), same reasoning as
+  `AiChatSettingsStore`: chat scratch, not tracked health data.
+- **Attachments — images and PDFs.** `createChat(..., supportImage:
+  true)` enables Gemma 4's native vision input (it's multimodal — text,
+  image, and audio — per flutter_gemma's model support table, so this
+  needed no different model or a second download). A message can carry
+  `List<Uint8List> images`, sent via `Message.withImages(...)` and shown
+  as an inline thumbnail in both the picker preview and the sent bubble.
+  **PDF is handled differently** — Gemma 4 has no native document input,
+  so `lib/ai_chat/pdf_text_extractor.dart` runs `syncfusion_flutter_pdf`'s
+  `PdfTextExtractor` (pure-Dart, on-device, no network call — consistent
+  with this feature's offline-first framing) over the picked file and
+  caps the result at `pdfExtractLengthCap` (3000 characters) given the
+  small token budget above. `AiChatMessage` carries both `text` (what's
+  sent to/replayed into the model — for a PDF, the caption plus the
+  extracted excerpt) and an optional `displayText` (what the bubble
+  actually renders — just the caption), so the raw extracted dump never
+  clutters the UI; an `attachmentLabel` chip shows the filename instead.
+  Images use gallery-only picking (`image_picker`, no `ImageSource
+  .camera`) — deliberately, to avoid a new `CAMERA` runtime permission
+  and the onboarding/Settings-Permissions-screen sync that would require,
+  the night before the demo; revisit if a camera-capture flow is wanted
+  later. Both `image_picker` (Android 13+ Photo Picker, backported by the
+  plugin) and `file_picker` (Storage Access Framework) need **no new
+  Android manifest permission** for picking.
+- **Floating chat bubble** (`lib/widgets/ai_chat_bubble.dart`): a
+  WhatsApp-style draggable circular button, shown only once
+  `AiChatSettingsStore.enabled && AiChatService.status == ready`. Per
+  explicit user request, mounted **only inside `DashboardScreen`'s own
+  `body` Stack**, not globally in `MaterialApp`'s `builder:` — pushing
+  `AiChatScreen` via a plain `Navigator.of(context)` now that it's a
+  regular descendant of the Navigator, rather than the shared
+  `rootNavigatorKey` the original global-overlay placement needed. This
+  means it's naturally covered whenever any other screen is pushed on
+  top (same as any other widget below the active route), so it's only
+  ever visible on the main screen — no separate route-tracking logic
+  needed. Initial position also nudged down along the y-axis (closer to
+  the bottom of the screen) per the same request. **In-app only** — this
+  is not a true system-wide overlay (no `SYSTEM_ALERT_WINDOW`), so it's
+  only visible while ForeverFit itself is in the foreground, consistent
+  with this project's existing preference for narrower, Play-sanctioned
+  mechanisms over broad overlay permissions (see the full-screen-intent
+  vs. `SYSTEM_ALERT_WINDOW` decision in "Background fall detection"
+  above).
+- **`AiChatScreen`** (`lib/screens/ai_chat_screen.dart`): a plain
+  message-list + text field chat UI with a persistent "fully offline"
+  banner — the strongest demo beat for this feature is toggling airplane
+  mode on stage and still getting a response, a concrete proof of this
+  app's offline-first thesis rather than a generic "look, a chatbot"
+  moment. AppBar carries History (opens the session list) and New Chat
+  actions; the input row carries an attach button (photo/PDF) alongside
+  send.
+- **Android build changes**: `flutter_gemma_litertlm`'s `.litertlm` FFI
+  inference requires **API 30+** and ships **arm64-v8a-only** native
+  libraries — `android/app/build.gradle.kts` now hardcodes `minSdk = 30`
+  (up from Flutter's own default) and restricts `ndk.abiFilters` to
+  `arm64-v8a`. This raises the app's minimum Android version for
+  everyone, not just this feature — accepted as a reasonable trade for a
+  hackathon demo target device running a recent Android version; revisit
+  if a lower API floor becomes a real requirement. `INTERNET` and
+  `FOREGROUND_SERVICE_DATA_SYNC` permissions were added explicitly (the
+  latter for the foreground-service download); no new *runtime*
+  permission was introduced, so `permissions_screen.dart` (which only
+  tracks `permission_handler`-mediated runtime permissions) needed no
+  change. **A second, real-crash-driven manifest fix**: the foreground
+  download itself (via `background_downloader`, which `flutter_gemma`
+  uses under `foreground: true`) crashed on first real device use with
+  `IllegalArgumentException: foregroundServiceType ... is not a subset
+  of ... 0x00000000` — WorkManager's own `SystemForegroundService` has no
+  `foregroundServiceType` declared by default, and Android 14+ requires
+  one that matches the `FOREGROUND_SERVICE_DATA_SYNC` permission actually
+  used. Root-caused against `flutter_gemma`'s own example app manifest
+  (which documents exactly this requirement) and fixed the same way:
+  `AndroidManifest.xml` now declares `xmlns:tools` and overrides that
+  service with `android:foregroundServiceType="dataSync"
+  tools:node="merge"`, merging the attribute onto WorkManager's
+  declaration instead of replacing it. Verified by re-running the Gradle
+  manifest-merge task directly (`:app:processDebugMainManifest`) and
+  confirming the merged manifest actually carries the attribute — the
+  same "verify the actual output, not just the input" standard as the
+  firmware's real `arduino-cli compile` elsewhere in this doc.
+- **Verification limits**: `flutter analyze` and the full test suite
+  pass with all dependencies resolved (this caught real API-surface
+  mistakes against the actual installed `flutter_gemma`/
+  `flutter_gemma_litertlm`/`image_picker`/`file_picker`/
+  `syncfusion_flutter_pdf` packages, the same role a real compile plays
+  for the firmware elsewhere in this doc), and the Android manifest merge
+  was independently verified per the fix above. `flutter_gemma_litertlm`
+  ships as a Dart native-assets/FFI "hook" package — its native build
+  step only runs at `flutter build`/`flutter run`, which this project's
+  standing practice leaves to the user rather than done here. Two real
+  on-device crashes (the GPU segfault, the foreground-service manifest
+  error) were found and fixed this way already — both from real crash
+  logs the user pulled and shared, not simulated — so this feature has
+  had genuine on-device exercise, but not a full pass of the newest
+  surface (history/attachments) yet; test with real headroom before a
+  live demo.
+
 ## Roadmap (not yet implemented)
 
 ### 1. Wearable-sensor disaster heuristics

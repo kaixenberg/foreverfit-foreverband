@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'profile_medical_screen.dart';
 import 'settings/about_screen.dart';
+import 'settings/ai_assistant_screen.dart';
 import 'settings/appearance_settings_screen.dart';
 import 'settings/background_permission_screen.dart';
 import 'settings/data_backup_screen.dart';
@@ -51,6 +52,12 @@ final _categories = [
     'Wearable',
     'Connect and manage devices',
     (_) => const WearableSettingsScreen(),
+  ),
+  _SettingsCategory(
+    Icons.smart_toy_outlined,
+    'AI Assistant',
+    'Optional, fully offline on-device chatbot',
+    (_) => const AiAssistantScreen(),
   ),
   _SettingsCategory(
     Icons.tune_outlined,
