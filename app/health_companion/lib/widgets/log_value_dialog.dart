@@ -1,13 +1,29 @@
 import 'package:flutter/material.dart';
 
+/// Formats a value for pre-filling an edit dialog's text field — fixed to
+/// 2 decimal places (enough precision for anything logged here) with
+/// trailing zeros/dot trimmed, so editing 72kg shows "72" not "72.00".
+String _trimZeros(double value) {
+  var text = value.toStringAsFixed(2);
+  if (text.contains('.')) {
+    text = text.replaceFirst(RegExp(r'0+$'), '');
+    text = text.replaceFirst(RegExp(r'\.$'), '');
+  }
+  return text;
+}
+
 /// A single-field numeric entry dialog, reused for weight/height/body-fat
-/// logging. Returns the entered value, or null if cancelled.
+/// logging, and for editing an existing entry when [initialValue] is
+/// given. Returns the entered value, or null if cancelled.
 Future<double?> showLogValueDialog({
   required BuildContext context,
   required String title,
   required String unit,
+  double? initialValue,
 }) {
-  final controller = TextEditingController();
+  final controller = TextEditingController(
+    text: initialValue == null ? '' : _trimZeros(initialValue),
+  );
   return showDialog<double>(
     context: context,
     builder: (context) => AlertDialog(
@@ -37,14 +53,23 @@ Future<double?> showLogValueDialog({
 
 /// A two-field entry dialog for blood pressure (systolic/diastolic
 /// arrive together as one reading, unlike every other logged metric
-/// here). Returns (systolic, diastolic), or null if cancelled.
-Future<(int, int)?> showBloodPressureDialog({required BuildContext context}) {
-  final systolicController = TextEditingController();
-  final diastolicController = TextEditingController();
+/// here), also reused for editing when [initialSystolic]/
+/// [initialDiastolic] are given. Returns (systolic, diastolic), or null
+/// if cancelled.
+Future<(int, int)?> showBloodPressureDialog({
+  required BuildContext context,
+  String title = 'Log blood pressure',
+  int? initialSystolic,
+  int? initialDiastolic,
+}) {
+  final systolicController =
+      TextEditingController(text: initialSystolic?.toString() ?? '');
+  final diastolicController =
+      TextEditingController(text: initialDiastolic?.toString() ?? '');
   return showDialog<(int, int)>(
     context: context,
     builder: (context) => AlertDialog(
-      title: const Text('Log blood pressure'),
+      title: Text(title),
       content: Row(
         children: [
           Expanded(
@@ -96,14 +121,22 @@ Future<(int, int)?> showBloodPressureDialog({required BuildContext context}) {
 /// only the dose becomes the loggable MetricPoint value.
 const insulinTypes = ['Rapid-acting', 'Long-acting', 'Intermediate', 'Mixed'];
 
-Future<(double, String)?> showInsulinDialog({required BuildContext context}) {
-  final doseController = TextEditingController();
-  var selectedType = insulinTypes.first;
+/// Also reused for editing when [initialDose]/[initialType] are given.
+Future<(double, String)?> showInsulinDialog({
+  required BuildContext context,
+  String title = 'Log insulin dose',
+  double? initialDose,
+  String? initialType,
+}) {
+  final doseController = TextEditingController(
+    text: initialDose == null ? '' : _trimZeros(initialDose),
+  );
+  var selectedType = initialType ?? insulinTypes.first;
   return showDialog<(double, String)>(
     context: context,
     builder: (context) => StatefulBuilder(
       builder: (context, setState) => AlertDialog(
-        title: const Text('Log insulin dose'),
+        title: Text(title),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [

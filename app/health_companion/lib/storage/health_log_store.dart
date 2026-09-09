@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
 import '../models/metric_point.dart';
+import '../models/stored_entry.dart';
 
 /// One tracked medication's schedule info — not time-series data, so it
 /// lives as a small list of records rather than timestamped entries.
@@ -105,6 +106,18 @@ class HealthLogStore extends ChangeNotifier {
             ),
       ]..sort((a, b) => a.at.compareTo(b.at));
 
+  List<StoredEntry> bloodPressureEntries() => _entriesOf(_bpBox);
+
+  Future<void> updateBloodPressureEntry(
+    dynamic key,
+    int systolic,
+    int diastolic,
+  ) =>
+      _updateEntry(_bpBox, key, {'systolic': systolic, 'diastolic': diastolic});
+
+  Future<void> deleteBloodPressureEntry(dynamic key) =>
+      _deleteEntry(_bpBox, key);
+
   (int, int)? get latestBloodPressure {
     Map? latest;
     DateTime? latestAt;
@@ -135,6 +148,14 @@ class HealthLogStore extends ChangeNotifier {
 
   double? get latestGlucose => _latestOf(_glucoseBox, 'value');
 
+  List<StoredEntry> glucoseEntries() => _entriesOf(_glucoseBox);
+
+  Future<void> updateGlucoseEntry(dynamic key, double value) =>
+      _updateEntry(_glucoseBox, key, {'value': value});
+
+  Future<void> deleteGlucoseEntry(dynamic key) =>
+      _deleteEntry(_glucoseBox, key);
+
   // --- Insulin ------------------------------------------------------------
 
   Future<void> addInsulin(double doseUnits, String type) async {
@@ -150,6 +171,14 @@ class HealthLogStore extends ChangeNotifier {
 
   double? get latestInsulinDose => _latestOf(_insulinBox, 'dose');
 
+  List<StoredEntry> insulinEntries() => _entriesOf(_insulinBox);
+
+  Future<void> updateInsulinEntry(dynamic key, double dose, String type) =>
+      _updateEntry(_insulinBox, key, {'dose': dose, 'type': type});
+
+  Future<void> deleteInsulinEntry(dynamic key) =>
+      _deleteEntry(_insulinBox, key);
+
   // --- Sleep ----------------------------------------------------------
 
   Future<void> addSleep(double hours) async {
@@ -161,6 +190,13 @@ class HealthLogStore extends ChangeNotifier {
   List<MetricPoint> sleepHistory() => _historyOf(_sleepBox, 'hours');
 
   double? get latestSleepHours => _latestOf(_sleepBox, 'hours');
+
+  List<StoredEntry> sleepEntries() => _entriesOf(_sleepBox);
+
+  Future<void> updateSleepEntry(dynamic key, double hours) =>
+      _updateEntry(_sleepBox, key, {'hours': hours});
+
+  Future<void> deleteSleepEntry(dynamic key) => _deleteEntry(_sleepBox, key);
 
   // --- Medications (a list, not time-series) + dose-taken log --------
 
@@ -271,5 +307,35 @@ class HealthLogStore extends ChangeNotifier {
       }
     }
     return (latest?[field] as num?)?.toDouble();
+  }
+
+  List<StoredEntry> _entriesOf(Box<Map> box) {
+    final result = <StoredEntry>[];
+    for (final key in box.keys) {
+      final entry = box.get(key);
+      if (entry == null) continue;
+      final at = DateTime.tryParse(entry['at'] as String? ?? '');
+      if (at == null) continue;
+      result.add(StoredEntry(
+          key: key, at: at, data: Map<String, dynamic>.from(entry)));
+    }
+    result.sort((a, b) => b.at.compareTo(a.at));
+    return result;
+  }
+
+  Future<void> _updateEntry(
+    Box<Map> box,
+    dynamic key,
+    Map<String, dynamic> patch,
+  ) async {
+    final existing = box.get(key);
+    if (existing == null) return;
+    await box.put(key, {...Map<String, dynamic>.from(existing), ...patch});
+    notifyListeners();
+  }
+
+  Future<void> _deleteEntry(Box<Map> box, dynamic key) async {
+    await box.delete(key);
+    notifyListeners();
   }
 }

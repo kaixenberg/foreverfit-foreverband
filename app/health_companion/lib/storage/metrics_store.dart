@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
 import '../models/metric_point.dart';
+import '../models/stored_entry.dart';
 
 /// Local, manually-logged body/hydration metrics — same offline-first,
 /// on-device-only storage pattern as HistoryStore, just for user-entered
@@ -110,6 +111,17 @@ class MetricsStore extends ChangeNotifier {
     return points;
   }
 
+  /// Editable entries for weight/height, newest first — backs
+  /// MetricHistoryScreen's edit/delete list.
+  List<StoredEntry> entriesOfType(String type) =>
+      _entriesOf(_bodyBox, where: (e) => e['type'] == type);
+
+  Future<void> updateBodyMetricEntry(dynamic key, double value) =>
+      _updateEntry(_bodyBox, key, {'value': value});
+
+  Future<void> deleteBodyMetricEntry(dynamic key) =>
+      _deleteEntry(_bodyBox, key);
+
   Future<void> addHydrationMl(int ml) async {
     await _hydrationBox.add({
       'ml': ml,
@@ -117,6 +129,14 @@ class MetricsStore extends ChangeNotifier {
     });
     notifyListeners();
   }
+
+  List<StoredEntry> hydrationEntries() => _entriesOf(_hydrationBox);
+
+  Future<void> updateHydrationEntry(dynamic key, int ml) =>
+      _updateEntry(_hydrationBox, key, {'ml': ml});
+
+  Future<void> deleteHydrationEntry(dynamic key) =>
+      _deleteEntry(_hydrationBox, key);
 
   /// Sum of everything logged since local midnight today.
   int get todayHydrationMl {
@@ -147,5 +167,41 @@ class MetricsStore extends ChangeNotifier {
       for (final day in days)
         MetricPoint(at: day, value: totalsByDay[day]! / 1000),
     ];
+  }
+
+  // --- Shared editable-entry helpers, reused by weight/height/hydration -
+
+  List<StoredEntry> _entriesOf(
+    Box<Map> box, {
+    bool Function(Map entry)? where,
+  }) {
+    final result = <StoredEntry>[];
+    for (final key in box.keys) {
+      final entry = box.get(key);
+      if (entry == null) continue;
+      if (where != null && !where(entry)) continue;
+      final at = DateTime.tryParse(entry['at'] as String? ?? '');
+      if (at == null) continue;
+      result.add(StoredEntry(
+          key: key, at: at, data: Map<String, dynamic>.from(entry)));
+    }
+    result.sort((a, b) => b.at.compareTo(a.at));
+    return result;
+  }
+
+  Future<void> _updateEntry(
+    Box<Map> box,
+    dynamic key,
+    Map<String, dynamic> patch,
+  ) async {
+    final existing = box.get(key);
+    if (existing == null) return;
+    await box.put(key, {...Map<String, dynamic>.from(existing), ...patch});
+    notifyListeners();
+  }
+
+  Future<void> _deleteEntry(Box<Map> box, dynamic key) async {
+    await box.delete(key);
+    notifyListeners();
   }
 }

@@ -38,6 +38,7 @@ class WeightHistoryScreen extends StatelessWidget {
     final unitSystem = resolveEffectiveUnitSystem(
         context.watch<AppSettingsStore>().unitSystem);
     final unit = formatWeightKg(0, unitSystem).unit;
+    final rawEntries = metrics.entriesOfType('weight');
     return MetricHistoryScreen(
       title: 'Weight',
       unit: unit,
@@ -55,6 +56,33 @@ class WeightHistoryScreen extends StatelessWidget {
           }
         },
       ),
+      entries: [
+        for (final e in rawEntries)
+          LoggedEntry(
+            key: e.key,
+            at: e.at,
+            display:
+                formatWeightKg((e.data['value'] as num).toDouble(), unitSystem)
+                    .toStringAsFixed(1),
+          ),
+      ],
+      onEditEntry: (entry) async {
+        final currentKg = (rawEntries
+                .firstWhere((e) => e.key == entry.key)
+                .data['value'] as num)
+            .toDouble();
+        final value = await showLogValueDialog(
+          context: context,
+          title: 'Edit weight',
+          unit: unit,
+          initialValue: formatWeightKg(currentKg, unitSystem).value,
+        );
+        if (value != null) {
+          await metrics.updateBodyMetricEntry(
+              entry.key, parseWeightToKg(value, unitSystem));
+        }
+      },
+      onDeleteEntry: (entry) => metrics.deleteBodyMetricEntry(entry.key),
     );
   }
 }
@@ -68,6 +96,7 @@ class HeightHistoryScreen extends StatelessWidget {
     final unitSystem = resolveEffectiveUnitSystem(
         context.watch<AppSettingsStore>().unitSystem);
     final unit = formatHeightCm(0, unitSystem).unit;
+    final rawEntries = metrics.entriesOfType('height');
     return MetricHistoryScreen(
       title: 'Height',
       unit: unit,
@@ -85,6 +114,33 @@ class HeightHistoryScreen extends StatelessWidget {
           }
         },
       ),
+      entries: [
+        for (final e in rawEntries)
+          LoggedEntry(
+            key: e.key,
+            at: e.at,
+            display:
+                formatHeightCm((e.data['value'] as num).toDouble(), unitSystem)
+                    .toStringAsFixed(1),
+          ),
+      ],
+      onEditEntry: (entry) async {
+        final currentCm = (rawEntries
+                .firstWhere((e) => e.key == entry.key)
+                .data['value'] as num)
+            .toDouble();
+        final value = await showLogValueDialog(
+          context: context,
+          title: 'Edit height',
+          unit: unit,
+          initialValue: formatHeightCm(currentCm, unitSystem).value,
+        );
+        if (value != null) {
+          await metrics.updateBodyMetricEntry(
+              entry.key, parseHeightToCm(value, unitSystem));
+        }
+      },
+      onDeleteEntry: (entry) => metrics.deleteBodyMetricEntry(entry.key),
     );
   }
 }
@@ -151,6 +207,7 @@ class HydrationHistoryScreen extends StatelessWidget {
     // hydrationDailyTotals() already returns liters (mL / 1000) — convert
     // back to mL first so formatHydrationMl (which expects mL) is correct.
     final unit = formatHydrationMl(0, unitSystem).unit;
+    final rawEntries = metrics.hydrationEntries();
     return MetricHistoryScreen(
       title: 'Hydration',
       unit: unit,
@@ -167,6 +224,33 @@ class HydrationHistoryScreen extends StatelessWidget {
             ),
         ],
       ),
+      // Always shown/edited in raw mL, not the display unit — each entry
+      // here is one individual log (a quick-add tap), unlike the chart
+      // above which plots daily totals; matches the quick-add chips,
+      // which are also fixed mL amounts regardless of unit system.
+      entries: [
+        for (final e in rawEntries)
+          LoggedEntry(
+            key: e.key,
+            at: e.at,
+            display: '${e.data['ml']} ml',
+          ),
+      ],
+      onEditEntry: (entry) async {
+        final currentMl =
+            (rawEntries.firstWhere((e) => e.key == entry.key).data['ml'] as num)
+                .toInt();
+        final value = await showLogValueDialog(
+          context: context,
+          title: 'Edit hydration entry',
+          unit: 'ml',
+          initialValue: currentMl.toDouble(),
+        );
+        if (value != null) {
+          await metrics.updateHydrationEntry(entry.key, value.round());
+        }
+      },
+      onDeleteEntry: (entry) => metrics.deleteHydrationEntry(entry.key),
     );
   }
 }
@@ -211,6 +295,7 @@ class BloodPressureHistoryScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final log = context.watch<HealthLogStore>();
+    final rawEntries = log.bloodPressureEntries();
     return MetricHistoryScreen(
       title: 'Blood pressure',
       unit: 'mmHg',
@@ -227,6 +312,27 @@ class BloodPressureHistoryScreen extends StatelessWidget {
           if (result != null) log.addBloodPressure(result.$1, result.$2);
         },
       ),
+      entries: [
+        for (final e in rawEntries)
+          LoggedEntry(
+            key: e.key,
+            at: e.at,
+            display: '${e.data['systolic']}/${e.data['diastolic']} mmHg',
+          ),
+      ],
+      onEditEntry: (entry) async {
+        final current = rawEntries.firstWhere((e) => e.key == entry.key).data;
+        final result = await showBloodPressureDialog(
+          context: context,
+          title: 'Edit blood pressure',
+          initialSystolic: (current['systolic'] as num).toInt(),
+          initialDiastolic: (current['diastolic'] as num).toInt(),
+        );
+        if (result != null) {
+          await log.updateBloodPressureEntry(entry.key, result.$1, result.$2);
+        }
+      },
+      onDeleteEntry: (entry) => log.deleteBloodPressureEntry(entry.key),
     );
   }
 }
@@ -237,6 +343,7 @@ class BloodGlucoseHistoryScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final log = context.watch<HealthLogStore>();
+    final rawEntries = log.glucoseEntries();
     return MetricHistoryScreen(
       title: 'Blood glucose',
       unit: 'mg/dL',
@@ -251,6 +358,28 @@ class BloodGlucoseHistoryScreen extends StatelessWidget {
           if (value != null) log.addGlucose(value);
         },
       ),
+      entries: [
+        for (final e in rawEntries)
+          LoggedEntry(
+            key: e.key,
+            at: e.at,
+            display: '${(e.data['value'] as num).toStringAsFixed(1)} mg/dL',
+          ),
+      ],
+      onEditEntry: (entry) async {
+        final current = (rawEntries
+                .firstWhere((e) => e.key == entry.key)
+                .data['value'] as num)
+            .toDouble();
+        final value = await showLogValueDialog(
+          context: context,
+          title: 'Edit blood glucose',
+          unit: 'mg/dL',
+          initialValue: current,
+        );
+        if (value != null) await log.updateGlucoseEntry(entry.key, value);
+      },
+      onDeleteEntry: (entry) => log.deleteGlucoseEntry(entry.key),
     );
   }
 }
@@ -261,6 +390,7 @@ class InsulinHistoryScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final log = context.watch<HealthLogStore>();
+    final rawEntries = log.insulinEntries();
     return MetricHistoryScreen(
       title: 'Insulin',
       unit: 'units',
@@ -274,6 +404,28 @@ class InsulinHistoryScreen extends StatelessWidget {
           if (result != null) log.addInsulin(result.$1, result.$2);
         },
       ),
+      entries: [
+        for (final e in rawEntries)
+          LoggedEntry(
+            key: e.key,
+            at: e.at,
+            display: '${(e.data['dose'] as num).toStringAsFixed(1)} units '
+                '(${e.data['type']})',
+          ),
+      ],
+      onEditEntry: (entry) async {
+        final current = rawEntries.firstWhere((e) => e.key == entry.key).data;
+        final result = await showInsulinDialog(
+          context: context,
+          title: 'Edit insulin dose',
+          initialDose: (current['dose'] as num).toDouble(),
+          initialType: current['type'] as String?,
+        );
+        if (result != null) {
+          await log.updateInsulinEntry(entry.key, result.$1, result.$2);
+        }
+      },
+      onDeleteEntry: (entry) => log.deleteInsulinEntry(entry.key),
     );
   }
 }
@@ -284,6 +436,7 @@ class SleepHistoryScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final log = context.watch<HealthLogStore>();
+    final rawEntries = log.sleepEntries();
     return MetricHistoryScreen(
       title: 'Sleep',
       unit: 'hrs',
@@ -298,6 +451,28 @@ class SleepHistoryScreen extends StatelessWidget {
           if (value != null) log.addSleep(value);
         },
       ),
+      entries: [
+        for (final e in rawEntries)
+          LoggedEntry(
+            key: e.key,
+            at: e.at,
+            display: '${(e.data['hours'] as num).toStringAsFixed(1)} hrs',
+          ),
+      ],
+      onEditEntry: (entry) async {
+        final current = (rawEntries
+                .firstWhere((e) => e.key == entry.key)
+                .data['hours'] as num)
+            .toDouble();
+        final value = await showLogValueDialog(
+          context: context,
+          title: 'Edit sleep duration',
+          unit: 'hrs',
+          initialValue: current,
+        );
+        if (value != null) await log.updateSleepEntry(entry.key, value);
+      },
+      onDeleteEntry: (entry) => log.deleteSleepEntry(entry.key),
     );
   }
 }

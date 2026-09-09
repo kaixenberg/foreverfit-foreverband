@@ -187,6 +187,11 @@ tiles + a static state-level hazard baseline) and prefers live data
       Replaces the old always-on-screen "Heart rate — recent" sparkline,
       which was the one metric getting special-cased dashboard space —
       see ARCHITECTURE.md
+- [x] Edit/delete for every manually-logged metric (weight, height,
+      hydration, blood pressure, blood glucose, insulin, sleep): each
+      history screen now shows a per-entry list below the chart with
+      edit/delete actions, reusing the same log dialogs (pre-filled) for
+      editing rather than a separate edit UI — see ARCHITECTURE.md
 - [x] Dashboard performance pass: `context.select` scoped rebuilds
       instead of one `context.watch` per provider, plus isolating the
       Steps card into its own widget — fixes visible lag found in live
@@ -249,6 +254,11 @@ tiles + a static state-level hazard baseline) and prefers live data
       Background permission, Developer/demo) — see ARCHITECTURE.md for
       what's deliberately simplified (unencrypted/manual-only backup, no
       Material You, single-case sensor precedence)
+- [x] Loading screen on every launch after the first: re-checks/
+      re-requests any permission that's no longer granted (e.g. revoked
+      in system Settings), showing the app's actual launcher icon — read
+      live from the OS, not a bundled duplicate, so changing the app icon
+      changes the loading screen automatically — see ARCHITECTURE.md
 - [x] Background fall detection + full-screen escalation: a foreground
       service (`flutter_foreground_task`) keeps the same TFLite model
       running even while the app is backgrounded/screen off (confirmed

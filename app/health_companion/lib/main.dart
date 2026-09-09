@@ -16,6 +16,7 @@ import 'domain/onboarding_gate.dart';
 import 'ml/activity_classifier_service.dart';
 import 'ml/fall_detector_service.dart';
 import 'screens/dashboard_screen.dart';
+import 'screens/loading_screen.dart';
 import 'sensors/phone_motion_service.dart';
 import 'services/baseline_service.dart';
 import 'services/battery_optimization_service.dart';
@@ -195,10 +196,12 @@ class _App extends StatelessWidget {
       theme: AppTheme.light,
       darkTheme: darkTheme,
       themeMode: settings.themeMode,
-      home: const BackgroundEscalationGate(
-        child: OnboardingGate(
-          child: ImminentWarningGate(
-            child: EmergencyCallGate(child: DashboardScreen()),
+      home: const LoadingScreen(
+        child: BackgroundEscalationGate(
+          child: OnboardingGate(
+            child: ImminentWarningGate(
+              child: EmergencyCallGate(child: DashboardScreen()),
+            ),
           ),
         ),
       ),

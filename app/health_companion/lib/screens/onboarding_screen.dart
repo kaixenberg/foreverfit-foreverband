@@ -2,19 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 
+import '../domain/app_permissions.dart';
 import '../domain/units.dart';
 import '../storage/app_settings_store.dart';
 import 'profile_medical_screen.dart';
-
-const _corePermissions = [
-  Permission.locationWhenInUse,
-  Permission.bluetoothScan,
-  Permission.bluetoothConnect,
-  Permission.activityRecognition,
-  Permission.phone,
-  Permission.sms,
-  Permission.notification,
-];
 
 final _permissionRationale = {
   Permission.locationWhenInUse: (
@@ -81,14 +72,14 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   }
 
   Future<void> _refreshStatuses() async {
-    for (final p in _corePermissions) {
+    for (final p in requestablePermissions) {
       _statuses[p] = await p.status;
     }
     if (mounted) setState(() {});
   }
 
   Future<void> _requestAll() async {
-    await _corePermissions.request();
+    await requestablePermissions.request();
     await _refreshStatuses();
   }
 

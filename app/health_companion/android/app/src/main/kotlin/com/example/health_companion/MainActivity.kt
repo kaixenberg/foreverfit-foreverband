@@ -2,6 +2,9 @@ package com.example.health_companion
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.drawable.BitmapDrawable
 import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
@@ -18,6 +21,7 @@ import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
+import java.io.ByteArrayOutputStream
 
 /// Bridges to Android's alarm audio stream (STREAM_ALARM) so the
 /// imminent-disaster warning can be heard even when the phone's ringer is
@@ -29,6 +33,7 @@ class MainActivity : FlutterActivity() {
     private val telephonyEventsChannelName = "com.example.health_companion/telephony_events"
     private val batteryOptimizationChannelName = "com.example.health_companion/battery_optimization"
     private val escalationChannelName = "com.example.health_companion/escalation"
+    private val appIconChannelName = "com.example.health_companion/app_icon"
 
     // Only one of these is ever non-null, depending on API level — see
     // startCallStateWatch(). Kept as fields so stopCallStateWatch() can
@@ -185,6 +190,25 @@ class MainActivity : FlutterActivity() {
         escalationChannel =
             MethodChannel(flutterEngine.dartExecutor.binaryMessenger, escalationChannelName)
         forwardEscalationRoute(intent)
+
+        // Backs the loading screen's splash icon (lib/screens/loading_screen.dart)
+        // — reads the real, currently-installed launcher icon straight from
+        // the OS instead of bundling a second copy as a Flutter asset, so
+        // changing the app icon (adaptive icon XML/mipmaps) automatically
+        // changes the splash too, with nothing to keep in sync.
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, appIconChannelName)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "getIconPng" -> {
+                        try {
+                            result.success(getAppIconPng())
+                        } catch (e: Exception) {
+                            result.error("ICON_FAILED", e.message, null)
+                        }
+                    }
+                    else -> result.notImplemented()
+                }
+            }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -236,6 +260,27 @@ class MainActivity : FlutterActivity() {
                     WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,
             )
         }
+    }
+
+    /// Renders whatever `packageManager.getApplicationIcon()` returns
+    /// (already the fully-composited adaptive icon on API 26+, a plain
+    /// bitmap on older devices) to a PNG byte array. Most launcher icon
+    /// drawables are already a BitmapDrawable; the draw-to-canvas path is
+    /// only a fallback for the rarer drawable types that aren't.
+    private fun getAppIconPng(): ByteArray {
+        val drawable = packageManager.getApplicationIcon(packageName)
+        val bitmap = (drawable as? BitmapDrawable)?.bitmap ?: run {
+            val width = drawable.intrinsicWidth.coerceAtLeast(1)
+            val height = drawable.intrinsicHeight.coerceAtLeast(1)
+            val bmp = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bmp)
+            drawable.setBounds(0, 0, canvas.width, canvas.height)
+            drawable.draw(canvas)
+            bmp
+        }
+        val stream = ByteArrayOutputStream()
+        bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
+        return stream.toByteArray()
     }
 
     /// API 29+ can ask the platform for the device's actual regional

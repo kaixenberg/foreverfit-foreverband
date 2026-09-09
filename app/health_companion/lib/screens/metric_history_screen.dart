@@ -6,6 +6,19 @@ import '../models/metric_point.dart';
 
 enum _Period { week, month, threeMonths, all, custom }
 
+/// One entry ready to show in the editable "Recent entries" list — [key]
+/// identifies it back to the store (an opaque Hive box key) for the
+/// edit/delete callbacks, [display] is the already-unit-formatted string
+/// (e.g. "72.4 kg", "120/80 mmHg").
+class LoggedEntry {
+  const LoggedEntry(
+      {required this.key, required this.at, required this.display});
+
+  final dynamic key;
+  final DateTime at;
+  final String display;
+}
+
 /// Generic timestamped-metric chart + stats screen — one shared
 /// implementation reused for every metric (weight, height, body fat,
 /// hydration, steps, heart rate) rather than a bespoke screen per
@@ -25,6 +38,9 @@ class MetricHistoryScreen extends StatefulWidget {
     this.secondaryPoints,
     this.secondaryLabel,
     this.secondaryColor,
+    this.entries,
+    this.onEditEntry,
+    this.onDeleteEntry,
   });
 
   final String title;
@@ -49,6 +65,21 @@ class MetricHistoryScreen extends StatefulWidget {
   final List<MetricPoint>? secondaryPoints;
   final String? secondaryLabel;
   final Color? secondaryColor;
+
+  /// Individually editable/deletable entries, newest first — null for
+  /// metrics that don't support user input at all (steps, heart rate,
+  /// BMI, body fat), which show the chart/stats only, same as before.
+  final List<LoggedEntry>? entries;
+
+  /// Opens whatever edit UI the caller wants (typically the same dialog
+  /// used to log a new entry, pre-filled) and applies the change to the
+  /// store. Required whenever [entries] is given.
+  final Future<void> Function(LoggedEntry entry)? onEditEntry;
+
+  /// Deletes the entry from the store. The confirmation prompt itself is
+  /// handled here, not by callers, so every metric gets the same "are you
+  /// sure" behavior for free. Required whenever [entries] is given.
+  final Future<void> Function(LoggedEntry entry)? onDeleteEntry;
 
   @override
   State<MetricHistoryScreen> createState() => _MetricHistoryScreenState();
@@ -103,6 +134,33 @@ class _MetricHistoryScreenState extends State<MetricHistoryScreen> {
     }
   }
 
+  Future<void> _confirmDelete(LoggedEntry entry) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete entry?'),
+        content: Text('This removes the ${widget.title.toLowerCase()} entry '
+            'from ${DateFormat.yMMMd().add_jm().format(entry.at)}. '
+            'This can\'t be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+              foregroundColor: Theme.of(context).colorScheme.onError,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) await widget.onDeleteEntry!(entry);
+  }
+
   @override
   Widget build(BuildContext context) {
     final filtered = widget.points
@@ -110,6 +168,9 @@ class _MetricHistoryScreenState extends State<MetricHistoryScreen> {
         .toList();
     final secondaryFiltered = widget.secondaryPoints
         ?.where((p) => !p.at.isBefore(_rangeStart) && p.at.isBefore(_rangeEnd))
+        .toList();
+    final filteredEntries = widget.entries
+        ?.where((e) => !e.at.isBefore(_rangeStart) && e.at.isBefore(_rangeEnd))
         .toList();
     final accent = widget.accentColor ?? Theme.of(context).colorScheme.primary;
     final secondaryAccent = widget.secondaryColor ?? Colors.blueGrey;
@@ -185,7 +246,74 @@ class _MetricHistoryScreenState extends State<MetricHistoryScreen> {
             const SizedBox(height: 16),
             _StatisticsCard(points: filtered, unit: widget.unit),
           ],
+          if (filteredEntries != null && filteredEntries.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            _EntriesCard(
+              entries: filteredEntries,
+              onEdit: widget.onEditEntry!,
+              onDelete: _confirmDelete,
+            ),
+          ],
         ],
+      ),
+    );
+  }
+}
+
+class _EntriesCard extends StatelessWidget {
+  const _EntriesCard({
+    required this.entries,
+    required this.onEdit,
+    required this.onDelete,
+  });
+
+  final List<LoggedEntry> entries;
+  final Future<void> Function(LoggedEntry entry) onEdit;
+  final Future<void> Function(LoggedEntry entry) onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 8, 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.list_alt,
+                    size: 18, color: Theme.of(context).colorScheme.primary),
+                const SizedBox(width: 8),
+                Text('Entries',
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleMedium
+                        ?.copyWith(fontWeight: FontWeight.w800)),
+              ],
+            ),
+            for (final entry in entries)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(entry.display),
+                subtitle: Text(DateFormat.yMMMd().add_jm().format(entry.at)),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.edit_outlined),
+                      tooltip: 'Edit',
+                      onPressed: () => onEdit(entry),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.delete_outline),
+                      tooltip: 'Delete',
+                      onPressed: () => onDelete(entry),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }

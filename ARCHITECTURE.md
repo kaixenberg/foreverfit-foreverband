@@ -466,13 +466,36 @@ Health Connect:
     for visual continuity between the card and its chart.
   - **Statistics card**: Average / Total Entries / Minimum / Maximum as a
     2x2 icon+label+value grid.
-  `lib/screens/metric_detail_screens.dart` has the six thin per-metric
+  - **Entries card (edit/delete)**: every metric that supports manual
+    input — weight, height, hydration, blood pressure, blood glucose,
+    insulin, sleep — also gets a per-entry list below the chart, newest
+    first, each row with an edit (pencil) and delete (trash) action.
+    BMI/body fat/steps/heart rate have no such list — they're derived or
+    sensor-read, never entered directly, so there's nothing to edit.
+    Needed exposing entry *identity*, not just chart-ready `(at, value)`
+    pairs: `MetricsStore`/`HealthLogStore` already wrote every log via
+    Hive's `Box.add()`, which silently assigns a stable auto-incrementing
+    key per entry (never reused, even across deletes) — so no storage
+    migration was needed, just new read/update/delete methods
+    (`entriesOfType`/`hydrationEntries`/`bloodPressureEntries`/etc.,
+    returning `StoredEntry` — key + timestamp + raw field map — from
+    `lib/models/stored_entry.dart`) built on two small shared private
+    helpers (`_entriesOf`/`_updateEntry`/`_deleteEntry`) added to each
+    store. Edit re-opens the exact same dialog used to log a new entry
+    (`lib/widgets/log_value_dialog.dart`, now accepting an optional
+    `initialValue`/`initialSystolic`+`initialDiastolic`/`initialDose`+
+    `initialType` to pre-fill it), not a duplicate edit UI. Delete asks
+    for confirmation once, generically, inside `MetricHistoryScreen`
+    itself (`_confirmDelete`) rather than per metric.
+  `lib/screens/metric_detail_screens.dart` has the thin per-metric
   wrappers that each just supply data + accent color + an optional "log a
-  new value" action (a shared dialog for weight/height/body-fat via
-  `lib/widgets/log_value_dialog.dart`, quick-add chips for hydration,
-  nothing for steps/heart rate since neither is manually logged). Tapping
-  a Dashboard card now opens its history screen rather than a log dialog
-  directly, so logging and trend-viewing share one entry point.
+  new value" action (a shared dialog for weight/height/body-fat/blood
+  pressure/glucose/insulin/sleep via `lib/widgets/log_value_dialog.dart`,
+  quick-add chips for hydration, nothing for steps/heart rate since
+  neither is manually logged) + entries/edit/delete wiring for the
+  metrics that support it. Tapping a Dashboard card now opens its history
+  screen rather than a log dialog directly, so logging, editing, and
+  trend-viewing all share one entry point.
 - **Dashboard card layout**: Wellness overview (3 cards) is a
   horizontally scrollable row of fixed-width rectangular cards (`_CardRow`
   in `dashboard_screen.dart`) — 3-per-row `GridView`s were truncating
@@ -854,6 +877,51 @@ ever-growing flat list.
   background-execution work (`workmanager`, with well-known Doze/OEM
   reliability caveats) and a key-derivation/encryption library
   (`cryptography`), out of scope for this pass.
+
+## Loading screen + permission re-check (implemented)
+
+`LoadingScreen` (`lib/screens/loading_screen.dart`) is now the outermost
+widget in `main.dart`'s `home:`, wrapping `BackgroundEscalationGate` (and
+therefore everything else) — nothing else in the app builds until it's
+done.
+
+- **Permission re-check, skipped on a genuine first launch.** Onboarding
+  already has its own dedicated permission page with per-permission
+  rationale (see above); asking again here *first*, with no explanation,
+  before the user has even reached that page, would just be a second,
+  unexplained round of system dialogs. So this only runs its check when
+  `UserProfileStore.onboardingCompleted` is already true — i.e. every
+  launch *after* the first. For those, it walks `requestablePermissions`
+  (see below) and calls `.request()` on anything not currently granted —
+  this is what notices a permission got revoked in system Settings (or by
+  the OS) and asks again, without the user needing to go find it
+  themselves.
+- **`lib/domain/app_permissions.dart` (new)**: the `requestablePermissions`
+  list — the single source of truth for *which* permissions this app
+  ever requests, now shared by three places that each used to hold their
+  own private copy of the same 7-permission list: this loading screen,
+  `OnboardingScreen`'s `_corePermissions` (now just imports it), and
+  `PermissionsScreen`'s `_trackedPermissions` map (whose keys were always
+  the identical set, just not sourced from one place). Per-permission
+  rationale/title text stays screen-local (onboarding's explanatory copy
+  and Settings' status-row copy legitimately read differently) — only
+  the enum list itself was worth unifying. Extends the standing rule from
+  "Onboarding + categorized Settings" above: a new `Permission.x` now
+  means adding it to this one list first, then its rationale in
+  `onboarding_screen.dart` and its status row in `permissions_screen.dart`.
+- **The icon is read from the OS at runtime, not bundled as a second
+  Flutter asset.** A new `app_icon` Kotlin `MethodChannel`
+  (`MainActivity.kt`, same convention as every other hand-rolled channel
+  here) calls `packageManager.getApplicationIcon(packageName)` — already
+  the fully-composited adaptive icon on API 26+ — draws it to a bitmap if
+  it isn't already one, and returns PNG bytes over the channel;
+  `lib/services/app_icon_service.dart` wraps the Dart side, and
+  `LoadingScreen` renders it via `Image.memory`. This means changing the
+  app icon (the adaptive-icon XML, the mipmap PNGs) automatically changes
+  the loading screen's icon too, with nothing to keep in sync — there's
+  only one icon, not a launcher copy and a Flutter-asset copy that could
+  drift apart. Falls back to a plain `Icons.favorite` glyph if the
+  channel call fails (e.g. a non-Android platform, or mid-fetch).
 
 ## Background fall detection + full-screen escalation (implemented)
 
