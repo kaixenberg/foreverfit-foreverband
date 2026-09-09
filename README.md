@@ -226,7 +226,11 @@ tiles + a static state-level hazard baseline) and prefers live data
       transparent NOAA/Rothfusz formula was built instead — see
       `ml/README.md`
 - [x] Settings' emergency contact form (now real and wired — see the
-      AI-assisted emergency call and onboarding/Settings items below)
+      AI-assisted emergency call and onboarding/Settings items below), with
+      an optional "Pick from contacts" button (address-book search,
+      read-only, gated behind the same permission system as everything
+      else the app requests) instead of typing the name/number by hand —
+      see ARCHITECTURE.md
 - [x] Air quality: US AQI + PM2.5/PM10 from Open-Meteo's air-quality API
       (free, no key, verified live) on the Map screen, live-or-cached
       only (no static baseline — AQI swings too fast hour to hour for a

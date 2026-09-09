@@ -825,13 +825,31 @@ around this exact API surface:
   for a normal app to end a call it didn't place through its own in-call
   UI). `SettingsScreen`'s emergency-contact form is now really persisted
   (`EmergencyContactStore`, same Hive pattern as `HealthLogStore`).
+- **Pick from contacts** (`MedicalEmergencyScreen`): an optional
+  "Pick from contacts" button next to the name/phone fields opens
+  `ContactPickerScreen` (search + tap-to-fill), backed by
+  [`flutter_contacts`](https://pub.dev/packages/flutter_contacts) —
+  verified as the actively-maintained current version before adding
+  (2.3.1, published within the last two months). Gated behind
+  `Permission.contacts` like every other permission this app requests
+  (added to the shared `requestablePermissions` list in
+  `app_permissions.dart`, with rationale text explaining it's optional —
+  see "Onboarding + categorized Settings" above), not a separate,
+  ungoverned permission path. Contacts with no phone number at all are
+  filtered out of the picker (nothing useful to fill in from them);
+  picking a contact fills the name/phone fields but doesn't save them —
+  "Save contact" still does that, so the user can review/edit first.
+  Read-only: only `READ_CONTACTS` is requested, nothing is ever written
+  back to the address book.
 
 **Privacy**: health data leaves the device only through the three
 channels the workflow itself drives (the emergency call, the contact
 call, the SMS) — nothing is uploaded, no cloud speech/LLM is used to
 generate the announcement (all three scripts are built from local
 string templates), and the operational log shown in `EmergencyCallScreen`
-never contains raw vitals or the generated text, only step names.
+never contains raw vitals or the generated text, only step names. The
+same holds for contacts access above: reading the address book to fill
+a form is entirely on-device, nothing from it is transmitted anywhere.
 
 **Deferred (MVP scope, given the demo deadline)** — noted here rather
 than silently dropped:

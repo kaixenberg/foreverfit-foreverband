@@ -24,6 +24,10 @@ final _trackedPermissions = <Permission, (String, String)>{
     'Notifications',
     'Health/hazard alerts and reminders.'
   ),
+  Permission.contacts: (
+    'Contacts',
+    'Optional — picking an emergency contact from your address book.'
+  ),
 };
 
 /// Read-only status of every permission this app uses — never calls

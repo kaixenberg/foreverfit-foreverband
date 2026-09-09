@@ -36,6 +36,11 @@ final _permissionRationale = {
     'Notifications',
     'For health/hazard alerts and reminders.'
   ),
+  Permission.contacts: (
+    'Contacts',
+    'Optional — only used if you choose "Pick from contacts" when setting '
+        'an emergency contact, instead of typing the name/number yourself.'
+  ),
 };
 
 const _pageCount = 3;

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 
 import '../../storage/emergency_contact_store.dart';
+import '../contact_picker_screen.dart';
 
 /// Emergency contact + local emergency hotline number — migrated as-is
 /// from the old flat Settings screen (test mode and previews now live in
@@ -36,6 +38,49 @@ class _MedicalEmergencyScreenState extends State<MedicalEmergencyScreen> {
     _emergencyNumberController.text = store.customEmergencyNumber;
   }
 
+  Future<void> _pickFromContacts() async {
+    var status = await Permission.contacts.status;
+    if (status.isPermanentlyDenied) {
+      if (!mounted) return;
+      final openSettings = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Contacts permission needed'),
+          content:
+              const Text('Allow contacts access in system Settings to pick an '
+                  'emergency contact from your address book, or just type it '
+                  'in below instead.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Open settings'),
+            ),
+          ],
+        ),
+      );
+      if (openSettings == true) await openAppSettings();
+      return;
+    }
+
+    if (!status.isGranted) {
+      status = await Permission.contacts.request();
+    }
+    if (!status.isGranted) return;
+
+    if (!mounted) return;
+    final picked = await Navigator.of(context).push<(String, String)>(
+      MaterialPageRoute(builder: (_) => const ContactPickerScreen()),
+    );
+    if (picked != null) {
+      _nameController.text = picked.$1;
+      _phoneController.text = picked.$2;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final contactStore = context.watch<EmergencyContactStore>();
@@ -54,6 +99,12 @@ class _MedicalEmergencyScreenState extends State<MedicalEmergencyScreen> {
             'manual SOS, following the emergency-services call. See '
             'ARCHITECTURE.md for how this works and its platform limits.',
             style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            icon: const Icon(Icons.contacts_outlined),
+            label: const Text('Pick from contacts'),
+            onPressed: _pickFromContacts,
           ),
           const SizedBox(height: 12),
           TextField(
