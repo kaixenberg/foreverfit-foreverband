@@ -272,6 +272,10 @@ falling back to cached-then-static data when not — see
     corrected for, so a real altitude change during the 3h window could
     read as a false pressure-drop signal. Documented, not hidden, per
     this project's existing pattern for platform-integration caveats.
+    Feeds the Map/Dashboard warning banner and a notification — **not**
+    the full-screen imminent-disaster tier (see that section below for
+    why a weather condition, however live, is a different category from
+    an incoming disaster).
 - **Static offline baseline** (`lib/disaster/india_hazard_data.dart`): a
   hardcoded state-level table of seismic zone (BIS IS 1893:2016,
   approximate — a state's predominant zone, not district-level), cyclone
@@ -334,20 +338,26 @@ falling back to cached-then-static data when not — see
 A harder-to-miss tier above the Map screen's dismissible banner, for when
 a hazard crosses a much stricter threshold — `DisasterRisk.imminentHazards`
 in `lib/disaster/disaster_service.dart` requires a nearby M5.5+ quake (vs.
-the banner's M4.5+), >60 km/h wind in a cyclone-prone state (vs.
->40 km/h), or a rapid barometric pressure fall (≥3 hPa in 3h — see the
-disaster risk map section above) — deliberately much rarer than the
-banner so it doesn't cause alert fatigue.
+the banner's M4.5+) or >60 km/h wind in a cyclone-prone state (vs.
+>40 km/h) — deliberately much rarer than the banner so it doesn't cause
+alert fatigue.
 
-Deliberately restricted to genuine *live/detected* signals only — a
-nearby quake that already happened, wind currently being observed,
-pressure currently falling — rather than a forecast probability paired
-with a static "this area is prone to X" flag. Earlier this fired on
-">85% rain probability forecast for today, in a flood-prone state," but
-that combination is a coarse statistical approximation, not evidence a
-flood is actually imminent right now, so it was moved back down to the
-low-key Map banner tier (`hasWarning`/`warningMessage`, unconditional on
-flood-proneness) instead of the full-screen warning.
+Scoped to genuine **incoming disasters** only — earthquake, cyclone —
+not weather *conditions*, no matter how "live" the underlying signal is.
+Two things used to also trigger this full-screen tier and were both
+moved down to the low-key Map/Dashboard banner instead
+(`hasWarning`/`warningMessage`) plus a notification
+(`lib/domain/insight_engine.dart`'s matching `hazard.*` entries):
+- **>85% rain probability forecast in a flood-prone state** — a coarse
+  statistical approximation, not evidence a flood is actually imminent
+  right now.
+- **A rapid barometric pressure fall (≥3 hPa in 3h)** — genuinely live,
+  but real user feedback made the actual distinction clear: "sudden
+  weather change" isn't something you evacuate or take shelter for the
+  way an earthquake or cyclone is, so it doesn't belong on the same
+  full-screen, alarm-and-blocked-back-button tier. It's still a real
+  signal worth surfacing — a notification plus the Dashboard banner is
+  the right weight for it, not a siren.
 
 - **`ImminentWarningGate`** (`lib/disaster/imminent_warning_gate.dart`)
   wraps the whole app (`main.dart`), watches `DisasterService`, and pushes
@@ -358,13 +368,12 @@ flood-proneness) instead of the full-screen warning.
   blocks the back gesture (`PopScope(canPop: false)`) — the only way out
   is the explicit "I understand" button — and shows static, bundled
   per-hazard guidance (`lib/disaster/hazard_type.dart`): Drop/Cover/Hold
-  On for earthquakes, stay indoors for cyclones, move indoors/secure
-  loose objects for an approaching storm (rapid pressure fall), hydration/
-  heat-exhaustion signs for heat waves (heat wave has guidance text ready
-  but no live trigger yet — `DisasterService` doesn't track a heat-index
-  threshold as a hazard, only as a Dashboard warning). Flood guidance
-  still exists (`HazardType.flood`) for the manual preview list below,
-  even though nothing currently triggers it live.
+  On for earthquakes, stay indoors for cyclones. Flood, storm-approaching,
+  and heat-wave guidance text all still exist for the manual preview list
+  below, even though none of the three currently trigger this full-screen
+  tier live — flood and pressure-fall deliberately (see above), heat wave
+  because `DisasterService` doesn't track a heat-index threshold as a
+  hazard at all, only as a Dashboard warning.
 - **Siren audio**: loops through Android's `STREAM_ALARM` (not the
   ringer/media stream), via `lib/services/alarm_sound_service.dart`
   (`audioplayers` with `AndroidUsageType.alarm`) plus a small native

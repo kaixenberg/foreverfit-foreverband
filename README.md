@@ -299,17 +299,19 @@ tiles + a static state-level hazard baseline) and prefers live data
       activity card without one); body fat is computed from BMI + age +
       sex (Deurenberg formula) instead of manually logged — see
       ARCHITECTURE.md
-- [x] Wearable-sensor disaster heuristics: the full-screen imminent
-      warning now includes a live "storm approaching" signal from a rapid
-      barometric pressure fall (≥3 hPa in 3h, a real marine/aviation
-      early-warning threshold), fed by the wearable's BME280 in
-      conjunction with online weather data (same precedence/fallback
-      setting as the Dashboard's ambient cards) — replacing the previous
-      "high rain forecast in a flood-prone state" trigger, which was a
-      coarse statistical approximation rather than a live detection, and
-      which now stays at the low-key Map banner tier instead. See
-      ARCHITECTURE.md for the full reasoning and the known altitude-
-      sensitivity limitation
+- [x] Wearable-sensor disaster heuristics: a rapid barometric pressure
+      fall (≥3 hPa in 3h, a real marine/aviation early-warning threshold),
+      fed by the wearable's BME280 in conjunction with online weather
+      data (same precedence/fallback setting as the Dashboard's ambient
+      cards), now feeds a "sudden weather change" notification + the
+      Map/Dashboard banner. **Not** the full-screen imminent-disaster
+      alarm — that tier is reserved for genuine incoming disasters
+      (earthquake, cyclone) only, per direct user feedback after getting
+      a full-screen alarm for a weather change; the previous "high rain
+      forecast in a flood-prone state" full-screen trigger was removed
+      the same way earlier for the same reason (a forecast + static flag
+      isn't evidence of an imminent disaster either). See ARCHITECTURE.md
+      for the full reasoning and the known altitude-sensitivity limitation
 - [x] Rebranded to **ForeverFit** (app) / **ForeverBand** (wearable) —
       user-facing branding only, not the internal Dart package name.
       New hand-drawn logo (generated via SVG + `flutter_launcher_icons`,

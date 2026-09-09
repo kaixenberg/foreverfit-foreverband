@@ -94,7 +94,8 @@ class DisasterRisk {
       (precipitationProbabilityPercent ?? 0) > 70 ||
       (nearbyMaxQuakeMagnitude ?? 0) >= 4.5 ||
       (hazardProfile.cycloneProne && (windSpeedKmh ?? 0) > 40) ||
-      (usAqi ?? 0) > 150;
+      (usAqi ?? 0) > 150 ||
+      (pressureDropHPa3h ?? 0) >= rapidPressureFallHPa;
 
   String? get warningMessage {
     final reasons = <String>[];
@@ -113,21 +114,27 @@ class DisasterRisk {
     if ((usAqi ?? 0) > 150) {
       reasons.add('$aqiCategory air quality (AQI ${usAqi!.round()})');
     }
+    if ((pressureDropHPa3h ?? 0) >= rapidPressureFallHPa) {
+      reasons.add('barometric pressure fell '
+          '${pressureDropHPa3h!.toStringAsFixed(1)} hPa in the last 3 '
+          'hours — conditions consistent with a sudden weather change');
+    }
     if (reasons.isEmpty) return null;
     return 'Elevated risk: ${reasons.join(', ')}.';
   }
 
   /// Stricter tier than [hasWarning] — reserved for the full-screen,
-  /// explicit-acknowledgment warning. Deliberately much higher bars than
-  /// the low-key Map banner so it doesn't fire at the same rate and cause
-  /// alert fatigue, AND deliberately restricted to genuine *live/detected*
-  /// signals (a nearby quake that already happened, wind currently being
-  /// observed, pressure currently falling) rather than a forecast
-  /// probability paired with a static "this state is prone to X" flag —
-  /// a >85% forecast chance of rain in a flood-prone state isn't actually
-  /// evidence a flood is imminent right now, so that combination stays at
-  /// the low-key Map banner tier ([hasWarning]) instead of triggering this
-  /// full-screen warning.
+  /// explicit-acknowledgment warning. Scoped to genuine **incoming
+  /// disasters** only (earthquake, cyclone) — weather *conditions*
+  /// (heavy rain, poor air quality, a rapid pressure fall) stay at the
+  /// low-key Map/Dashboard banner tier plus a notification
+  /// ([hasWarning]/[warningMessage], and the matching entries in
+  /// `insight_engine.dart`) no matter how "live" the signal is. This
+  /// used to also fire full-screen for a rapid pressure fall — real user
+  /// feedback ("I just received a big red alarm for 'sudden weather
+  /// change'") made clear the full-screen tier should be reserved for
+  /// things you'd actually evacuate or take shelter for, not a weather
+  /// change you'd just want to be aware of.
   List<HazardType> get imminentHazards {
     final hazards = <HazardType>[];
     if ((nearbyMaxQuakeMagnitude ?? 0) >= 5.5) {
@@ -135,9 +142,6 @@ class DisasterRisk {
     }
     if (hazardProfile.cycloneProne && (windSpeedKmh ?? 0) > 60) {
       hazards.add(HazardType.cyclone);
-    }
-    if ((pressureDropHPa3h ?? 0) >= rapidPressureFallHPa) {
-      hazards.add(HazardType.stormApproaching);
     }
     return hazards;
   }
@@ -150,16 +154,6 @@ class DisasterRisk {
     }
     if (imminentHazards.contains(HazardType.cyclone)) {
       parts.add('${windSpeedKmh!.round()} km/h winds in a cyclone-prone area');
-    }
-    if (imminentHazards.contains(HazardType.stormApproaching)) {
-      final source =
-          pressureTrendFromWearable ? 'your wearable' : 'online weather data';
-      final humidityPart = humidityPercent != null
-          ? ', humidity at ${humidityPercent!.round()}%'
-          : '';
-      parts.add('barometric pressure ($source) fell '
-          '${pressureDropHPa3h!.toStringAsFixed(1)} hPa in the last 3 hours'
-          '$humidityPart — conditions consistent with an approaching storm');
     }
     if (parts.isEmpty) return null;
     return parts.join('; ');

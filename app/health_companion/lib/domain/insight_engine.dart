@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../ble/ble_service.dart';
 import '../disaster/disaster_service.dart';
+import '../disaster/pressure_trend.dart';
 import '../ml/activity_classifier_service.dart';
 import '../models/insight.dart';
 import '../services/baseline_service.dart';
@@ -203,6 +204,23 @@ List<Insight> computeInsights({
         severity: InsightSeverity.info,
         category: InsightCategory.hazard,
         icon: Icons.public,
+      ));
+    }
+
+    // A rapid pressure fall is a live weather-*condition* signal, not an
+    // incoming disaster — it gets a notification + this Insights-card
+    // entry, not the full-screen alarm (see DisasterRisk.imminentHazards
+    // for why that distinction exists).
+    if ((risk.pressureDropHPa3h ?? 0) >= rapidPressureFallHPa) {
+      insights.add(Insight(
+        id: 'hazard.pressure.rapidFall',
+        title: 'Sudden weather change likely',
+        message: 'Barometric pressure fell '
+            '${risk.pressureDropHPa3h!.toStringAsFixed(1)} hPa in the last '
+            '3 hours — conditions consistent with a storm moving in.',
+        severity: InsightSeverity.warning,
+        category: InsightCategory.hazard,
+        icon: Icons.thunderstorm,
       ));
     }
   }
