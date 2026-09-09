@@ -1,9 +1,16 @@
 import '../ble/ble_service.dart';
+import '../models/metric_point.dart';
 import '../services/baseline_service.dart';
 import '../services/step_counter_service.dart';
 import '../storage/health_log_store.dart';
+import '../storage/history_store.dart';
 import '../storage/metrics_store.dart';
 import '../storage/user_profile_store.dart';
+
+/// How far back the vitals-trend line (heart rate/SpO2/body temp) looks.
+/// A demo-session-length window, not "all history" — this is a summary
+/// sentence for the model, not a data export.
+const healthContextTrendWindow = Duration(hours: 6);
 
 /// Builds a compact, natural-language snapshot of the user's own data —
 /// live wearable vitals, environment, body metrics, activity, and health
@@ -19,6 +26,7 @@ import '../storage/user_profile_store.dart';
 /// loud summarizing their own stats, not a spreadsheet.
 String buildHealthContext({
   required BleService ble,
+  required HistoryStore historyStore,
   required MetricsStore metrics,
   required HealthLogStore healthLog,
   required BaselineService baseline,
@@ -56,6 +64,26 @@ String buildHealthContext({
     );
   } else {
     lines.add('No wearable connected right now — no live vitals reading.');
+  }
+
+  // Always emitted, even when empty — an explicit "no readings recorded"
+  // line lets the model give an accurate, grounded answer ("I don't see
+  // any heart-rate history in your data") instead of a vague, generic
+  // non-answer that sounds the same whether the database is empty or the
+  // model just isn't looking at it.
+  final hours = healthContextTrendWindow.inHours;
+  final trendParts = [
+    _trend('heart rate', historyStore.heartRateHistory(limit: 50000), 'bpm'),
+    _trend('SpO2', historyStore.spo2History(limit: 50000), '%'),
+    _trend('body temperature', historyStore.bodyTempHistory(limit: 50000), '°C',
+        decimals: 1),
+  ];
+  if (trendParts.every((p) => p == null)) {
+    lines.add('Vitals history: no wearable readings recorded in this '
+        "app's database at all yet.");
+  } else {
+    lines.add('Vitals history (last ${hours}h from the wearable database): '
+        '${trendParts.map((p) => p ?? 'no recent reading').join('; ')}.');
   }
 
   final env = ble.latestEnv;
@@ -113,6 +141,26 @@ String buildHealthContext({
   if (logParts.isNotEmpty) lines.add('Health log: ${logParts.join('; ')}.');
 
   return lines.join('\n');
+}
+
+/// Summarizes [points] within [healthContextTrendWindow] as one clause —
+/// null if there's nothing in that window (e.g. the wearable was rarely
+/// connected). [points] are already finger-present-only, real readings:
+/// BleService only persists a vitals sample to HistoryStore when the
+/// sensor actually has skin contact, so there's no zero/no-reading noise
+/// to filter out here.
+String? _trend(String label, List<MetricPoint> points, String unit,
+    {int decimals = 0}) {
+  final cutoff = DateTime.now().subtract(healthContextTrendWindow);
+  final recent = points.where((p) => p.at.isAfter(cutoff)).toList();
+  if (recent.isEmpty) return null;
+  final values = recent.map((p) => p.value).toList();
+  final avg = values.reduce((a, b) => a + b) / values.length;
+  final min = values.reduce((a, b) => a < b ? a : b);
+  final max = values.reduce((a, b) => a > b ? a : b);
+  return '$label avg ${avg.toStringAsFixed(decimals)}$unit '
+      '(range ${min.toStringAsFixed(decimals)}-${max.toStringAsFixed(decimals)}$unit, '
+      '${values.length} readings)';
 }
 
 int _ageFrom(DateTime dateOfBirth) {

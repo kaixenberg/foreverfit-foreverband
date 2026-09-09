@@ -36,9 +36,11 @@ class _AiChatScreenState extends State<AiChatScreen> {
 
   /// Index of the user message currently being edited (see
   /// AiChatService.editAndResend), or null when composing a normal new
-  /// message. Editing is text-only — starting one clears any pending
-  /// attachment and, on send, discards the original message's own
-  /// image/PDF attachment along with everything after it.
+  /// message. Only the prompt/caption is ever editable — starting one
+  /// loads the original message's own image/PDF attachment (if any) back
+  /// into `_pendingImage`/`_pendingPdfName`/`_pendingPdfText` so it's
+  /// reused, not dropped; the attach button stays disabled the whole
+  /// time so there's no way to swap or remove it mid-edit.
   int? _editingIndex;
 
   /// Index of the assistant message currently being read aloud (see
@@ -58,13 +60,14 @@ class _AiChatScreenState extends State<AiChatScreen> {
     super.dispose();
   }
 
-  void _startEditing(int index, String text) {
+  void _startEditing(int index, AiChatMessage message) {
     setState(() {
       _editingIndex = index;
-      _pendingImage = null;
-      _pendingPdfName = null;
-      _pendingPdfText = null;
-      _controller.text = text;
+      _pendingImage = message.images.isNotEmpty ? message.images.first : null;
+      _pendingPdfName =
+          message.attachedText != null ? message.attachmentLabel : null;
+      _pendingPdfText = message.attachedText;
+      _controller.text = message.shownText;
     });
     _inputFocusNode.requestFocus();
   }
@@ -72,6 +75,9 @@ class _AiChatScreenState extends State<AiChatScreen> {
   void _cancelEditing() {
     setState(() {
       _editingIndex = null;
+      _pendingImage = null;
+      _pendingPdfName = null;
+      _pendingPdfText = null;
       _controller.clear();
     });
   }
@@ -264,9 +270,29 @@ class _AiChatScreenState extends State<AiChatScreen> {
     final editingIndex = _editingIndex;
     if (editingIndex != null) {
       if (typed.isEmpty) return;
+      final editImage = _pendingImage;
+      final editPdfName = _pendingPdfName;
+      final editPdfText = _pendingPdfText;
       _controller.clear();
-      setState(() => _editingIndex = null);
-      chat.editAndResend(editingIndex, typed);
+      setState(() {
+        _editingIndex = null;
+        _pendingImage = null;
+        _pendingPdfName = null;
+        _pendingPdfText = null;
+      });
+      if (editPdfText != null) {
+        chat.editAndResend(
+          editingIndex,
+          '$typed\n\n[Attached PDF: $editPdfName]\n$editPdfText',
+          displayText: typed,
+          attachmentLabel: editPdfName,
+          attachedText: editPdfText,
+        );
+      } else if (editImage != null) {
+        chat.editAndResend(editingIndex, typed, images: [editImage]);
+      } else {
+        chat.editAndResend(editingIndex, typed);
+      }
       _scrollToBottom();
       return;
     }
@@ -281,6 +307,7 @@ class _AiChatScreenState extends State<AiChatScreen> {
         '$caption\n\n[Attached PDF: $_pendingPdfName]\n$_pendingPdfText',
         displayText: caption,
         attachmentLabel: _pendingPdfName,
+        attachedText: _pendingPdfText,
       );
     } else if (hasImage) {
       final caption = typed.isEmpty ? "What's in this image?" : typed;
@@ -407,22 +434,14 @@ class _AiChatScreenState extends State<AiChatScreen> {
                     itemCount: chat.messages.length,
                     itemBuilder: (context, i) {
                       final message = chat.messages[i];
-                      // Editing is text-only — a message with an image or
-                      // PDF attachment can't be re-edited without also
-                      // deciding what happens to that attachment, so the
-                      // affordance is limited to plain text messages.
-                      final canEdit = message.isUser &&
-                          !chat.isGenerating &&
-                          message.images.isEmpty &&
-                          message.attachmentLabel == null;
+                      final canEdit = message.isUser && !chat.isGenerating;
                       final canSpeak = !message.isUser &&
                           !message.isError &&
                           message.shownText.isNotEmpty;
                       return _MessageBubble(
                         message: message,
-                        onEdit: canEdit
-                            ? () => _startEditing(i, message.shownText)
-                            : null,
+                        onEdit:
+                            canEdit ? () => _startEditing(i, message) : null,
                         onSpeak: canSpeak
                             ? () => _toggleSpeak(i, message.shownText)
                             : null,
@@ -446,8 +465,7 @@ class _AiChatScreenState extends State<AiChatScreen> {
                 ),
               ),
             ),
-          if (_editingIndex == null &&
-              (_pendingImage != null || _pendingPdfName != null))
+          if (_pendingImage != null || _pendingPdfName != null)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12),
               child: Align(
@@ -463,7 +481,10 @@ class _AiChatScreenState extends State<AiChatScreen> {
                   label: Text(_pendingImage != null
                       ? 'Photo attached'
                       : _pendingPdfName!),
-                  onDeleted: _clearPendingAttachment,
+                  // Reusing an edited message's own attachment — not
+                  // removable, only the prompt/caption is up for editing.
+                  onDeleted:
+                      _editingIndex == null ? _clearPendingAttachment : null,
                 ),
               ),
             ),

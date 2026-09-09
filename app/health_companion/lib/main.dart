@@ -181,6 +181,7 @@ class HealthCompanionApp extends StatelessWidget {
             context.read<AiChatSettingsStore>(),
             context.read<AiChatHistoryStore>(),
             ble: context.read<BleService>(),
+            historyStore: context.read<HistoryStore>(),
             metrics: context.read<MetricsStore>(),
             healthLog: context.read<HealthLogStore>(),
             baseline: context.read<BaselineService>(),

@@ -86,6 +86,7 @@ class AiChatHistoryStore {
         'displayText': m.displayText,
         'attachmentLabel': m.attachmentLabel,
         'images': m.images.map(base64Encode).toList(),
+        'attachedText': m.attachedText,
       };
 
   AiChatMessage _messageFromMap(Map raw) => AiChatMessage(
@@ -97,5 +98,6 @@ class AiChatHistoryStore {
         images: (raw['images'] as List? ?? const [])
             .map<Uint8List>((e) => base64Decode(e as String))
             .toList(),
+        attachedText: raw['attachedText'] as String?,
       );
 }

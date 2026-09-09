@@ -16,6 +16,7 @@ class AiChatMessage {
     this.displayText,
     this.attachmentLabel,
     this.images = const [],
+    this.attachedText,
   });
 
   String text;
@@ -24,6 +25,13 @@ class AiChatMessage {
   final String? displayText;
   final String? attachmentLabel;
   final List<Uint8List> images;
+
+  /// The raw extracted content behind a PDF attachment (kept separate
+  /// from [text], which already has it merged in with the caption) —
+  /// lets editing rebuild [text] from a new caption plus this same
+  /// content, so "edit and rerun" can reuse the attachment instead of
+  /// losing it. Null for messages with no PDF attachment.
+  final String? attachedText;
 
   /// What the chat bubble should render.
   String get shownText => displayText ?? text;

@@ -11,6 +11,7 @@ import '../services/step_counter_service.dart';
 import '../storage/ai_chat_history_store.dart';
 import '../storage/ai_chat_settings_store.dart';
 import '../storage/health_log_store.dart';
+import '../storage/history_store.dart';
 import '../storage/metrics_store.dart';
 import '../storage/user_profile_store.dart';
 import 'ai_chat_message.dart';
@@ -75,12 +76,14 @@ class AiChatService extends ChangeNotifier {
     this._settings,
     this._history, {
     required BleService ble,
+    required HistoryStore historyStore,
     required MetricsStore metrics,
     required HealthLogStore healthLog,
     required BaselineService baseline,
     required UserProfileStore userProfile,
     required StepCounterService stepCounter,
   })  : _ble = ble,
+        _historyStore = historyStore,
         _metrics = metrics,
         _healthLog = healthLog,
         _baseline = baseline,
@@ -95,6 +98,7 @@ class AiChatService extends ChangeNotifier {
   // as plain fields (not watched/listened to) since this is a one-time
   // snapshot taken at send() time, not a live-updating UI.
   final BleService _ble;
+  final HistoryStore _historyStore;
   final MetricsStore _metrics;
   final HealthLogStore _healthLog;
   final BaselineService _baseline;
@@ -176,6 +180,7 @@ class AiChatService extends ChangeNotifier {
 
   String _buildHealthContext() => buildHealthContext(
         ble: _ble,
+        historyStore: _historyStore,
         metrics: _metrics,
         healthLog: _healthLog,
         baseline: _baseline,
@@ -241,6 +246,9 @@ class AiChatService extends ChangeNotifier {
   /// only show the user's short caption/question. [images] are shown as
   /// thumbnails and sent to the model alongside [text]. [attachmentLabel]
   /// renders as a small chip on the message (e.g. a filename).
+  /// [attachedText], for a PDF message, is that same extracted content
+  /// kept separately from [text] — lets [editAndResend] rebuild [text]
+  /// from a new caption without losing the attachment.
   ///
   /// The first message of a fresh conversation additionally gets a
   /// "Context:" block of the user's own live vitals/health data (see
@@ -253,6 +261,7 @@ class AiChatService extends ChangeNotifier {
     String? displayText,
     String? attachmentLabel,
     List<Uint8List> images = const [],
+    String? attachedText,
   }) async {
     if ((text.trim().isEmpty && images.isEmpty) || isGenerating) return;
     final isFirstTurn = messages.isEmpty;
@@ -267,6 +276,7 @@ class AiChatService extends ChangeNotifier {
       displayText: displayText ?? text,
       attachmentLabel: attachmentLabel,
       images: images,
+      attachedText: attachedText,
     ));
     final reply = AiChatMessage(text: '', isUser: false);
     messages.add(reply);
@@ -346,11 +356,24 @@ class AiChatService extends ChangeNotifier {
   /// discarded, then [newText] is sent as a fresh turn. [index] must
   /// point at a user message; a no-op otherwise (or while generating).
   ///
+  /// Editing only ever changes the *prompt*: [images]/[attachmentLabel]/
+  /// [attachedText] let a caller reuse the original message's own
+  /// attachment (image bytes, or a PDF's extracted text) instead of
+  /// losing it — the attachment itself was never up for editing, only
+  /// the caption/question that went with it.
+  ///
   /// The live model session is closed and recreated the same lazy way
   /// [loadSession] does: the messages kept *before* [index] are queued
   /// as a replay, so the fresh session still has that earlier context
   /// once the next [send] runs.
-  Future<void> editAndResend(int index, String newText) async {
+  Future<void> editAndResend(
+    int index,
+    String newText, {
+    String? displayText,
+    String? attachmentLabel,
+    List<Uint8List> images = const [],
+    String? attachedText,
+  }) async {
     if (isGenerating) return;
     if (index < 0 || index >= messages.length || !messages[index].isUser) {
       return;
@@ -360,7 +383,13 @@ class AiChatService extends ChangeNotifier {
     _chat = null;
     _pendingReplay = messages.isEmpty ? null : List.of(messages);
     notifyListeners();
-    await send(newText);
+    await send(
+      newText,
+      displayText: displayText,
+      attachmentLabel: attachmentLabel,
+      images: images,
+      attachedText: attachedText,
+    );
   }
 
   Future<void> deleteSession(String id) async {

@@ -1599,17 +1599,30 @@ token is required).
   send.
   - **Edit and rerun** (`AiChatService.editAndResend()`), matching
     Claude's own chat UI: a pencil icon appears next to any of the
-    user's own plain-text messages (not while a reply is streaming, and
-    not on a message with an image/PDF attachment — editing is
-    text-only, so an attached file has no obvious "keep or drop" answer
-    to give it a UI for tonight). Tapping it loads that message back
-    into the input field; sending discards it and everything after it
-    (the AI's old reply included) and generates a fresh turn from the
-    edited text — same "close the session, queue the kept prefix as a
-    replay" mechanism `loadSession` already uses, so the model still has
-    the right earlier context once the next message actually runs.
-    Editing the very first message re-triggers the health-context
-    injection above, same as any other fresh first turn.
+    user's own messages (not while a reply is streaming). Tapping it
+    loads the message's caption back into the input field; sending
+    discards that message and everything after it (the AI's old reply
+    included) and generates a fresh turn — same "close the session,
+    queue the kept prefix as a replay" mechanism `loadSession` already
+    uses, so the model still has the right earlier context once the
+    next message actually runs. Editing the very first message
+    re-triggers the health-context injection above, same as any other
+    fresh first turn.
+    - **Only the prompt is ever editable, not the attachment.** A
+      message with an image or PDF keeps that attachment across the
+      edit — `AiChatMessage` gained an `attachedText` field (the raw
+      PDF-extracted content, kept separate from `text`, which already
+      has it merged in with the caption) purely so editing can rebuild
+      `text` from a *new* caption plus the *same* content instead of
+      losing the attachment. `AiChatScreen._startEditing()` reloads the
+      original message's image bytes / PDF name+text into the same
+      `_pendingImage`/`_pendingPdfName`/`_pendingPdfText` fields the
+      normal attach flow uses, so the existing attachment-preview chip
+      just works — except its delete (×) is hidden while editing
+      (`onDeleted: null`), since removing the attachment was never part
+      of what "edit" means here. The attach button itself stays
+      disabled throughout editing for the same reason, so there's no
+      path to swap it for a different file either.
   - **Voice input (dictation, not a live voice session)**: a mic button
     in the input row uses `speech_to_text` for on-device speech
     recognition — tap to start, live partial results fill the text
@@ -1655,23 +1668,48 @@ token is required).
   to what's actually sent to the model (never shown in the bubble —
   same `text`/`displayText` split used for PDF attachments) — live
   wearable vitals (with the personal baseline mean from
-  `BaselineService`), environment, body metrics, today's steps, and
-  health-log highlights (blood pressure, glucose, sleep, medications,
-  Medical ID). Deliberately a *pure read* of stores this app already
-  has (`BleService`, `MetricsStore`, `HealthLogStore`, `BaselineService`,
+  `BaselineService`), a bounded vitals *trend* (see below), environment,
+  body metrics, today's steps, and health-log highlights (blood
+  pressure, glucose, sleep, medications, Medical ID). Deliberately a
+  *pure read* of stores this app already has (`BleService`,
+  `HistoryStore`, `MetricsStore`, `HealthLogStore`, `BaselineService`,
   `UserProfileStore`, `StepCounterService`) — same "reuse, don't
-  re-derive" approach as `emergency_summary_builder.dart` — and
-  deliberately a **snapshot, not a history dump**: it reports current
-  values, not a log, to stay small against the model's already-limited
-  4096-token context budget. Injected once per conversation (not every
-  message) for the same budget reason; `AiChatService` takes these six
-  dependencies via constructor injection like every other multi-store
-  service in this app (`EmergencyWorkflowService`,
-  `InsightWatcherService`), which meant moving its own provider
-  registration in `main.dart` to *after* `BaselineService`/
-  `StepCounterService` are registered, since `context.read()` inside a
-  `create:` callback can only see providers already built earlier in
-  the list.
+  re-derive" approach as `emergency_summary_builder.dart`. Injected once
+  per conversation (not every message) to control token cost;
+  `AiChatService` takes these seven dependencies via constructor
+  injection like every other multi-store service in this app
+  (`EmergencyWorkflowService`, `InsightWatcherService`), which meant
+  moving its own provider registration in `main.dart` to *after*
+  `BaselineService`/`StepCounterService` are registered, since
+  `context.read()` inside a `create:` callback can only see providers
+  already built earlier in the list.
+  - **Vitals trend, added after a direct exchange with the model
+    exposed the gap.** The initial version was a pure current-moment
+    snapshot — asked "check my HR history," the model correctly
+    answered it had no such access (a good sign: it wasn't hallucinating
+    a capability it didn't have), which the user then asked to actually
+    add. `_trend()` pulls `HistoryStore.heartRateHistory()`/
+    `spo2History()`/`bodyTempHistory()` (already finger-present-only
+    real readings — `BleService` never persists a no-contact zero to
+    history in the first place, so there's no noise to filter here),
+    filters to `healthContextTrendWindow` (6 hours — a demo-session
+    length, not "all history"), and reports one avg/range/count clause
+    per metric. Still a bounded *summary*, not a dump: three short
+    clauses added to the context block regardless of how many thousand
+    raw samples back them, so the token budget stays predictable no
+    matter how long the wearable's been connected.
+    - **The line is now always emitted, even when every metric comes
+      back empty.** The first cut only added the "Vitals history" line
+      when there was at least one real trend clause — on a device with
+      no recent wearable data, that meant the *entire* line vanished, so
+      the context looked identical to before this feature existed, and
+      the model (accurately, but unhelpfully) fell back to a generic "I
+      don't have that view" answer instead of a grounded "no readings
+      recorded" one. Fixed by always adding the line — an explicit
+      "no wearable readings recorded in this app's database at all yet"
+      when every metric is null, so an empty database and a populated
+      one both get a real, honest answer instead of the model having to
+      guess which case it's in from nothing at all.
 - **Android build changes**: `flutter_gemma_litertlm`'s `.litertlm` FFI
   inference requires **API 30+** and ships **arm64-v8a-only** native
   libraries — `android/app/build.gradle.kts` now hardcodes `minSdk = 30`
