@@ -41,6 +41,16 @@ final _permissionRationale = {
     'Optional — only used if you choose "Pick from contacts" when setting '
         'an emergency contact, instead of typing the name/number yourself.'
   ),
+  Permission.microphone: (
+    'Microphone',
+    'Optional — only used if you dictate a message to the on-device AI '
+        'assistant by voice instead of typing.'
+  ),
+  Permission.camera: (
+    'Camera',
+    'Optional — only used if you take a photo to send the on-device AI '
+        'assistant instead of picking one from your gallery.'
+  ),
 };
 
 const _pageCount = 3;

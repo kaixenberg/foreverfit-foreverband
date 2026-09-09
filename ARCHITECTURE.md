@@ -1597,6 +1597,81 @@ token is required).
   moment. AppBar carries History (opens the session list) and New Chat
   actions; the input row carries an attach button (photo/PDF) alongside
   send.
+  - **Edit and rerun** (`AiChatService.editAndResend()`), matching
+    Claude's own chat UI: a pencil icon appears next to any of the
+    user's own plain-text messages (not while a reply is streaming, and
+    not on a message with an image/PDF attachment — editing is
+    text-only, so an attached file has no obvious "keep or drop" answer
+    to give it a UI for tonight). Tapping it loads that message back
+    into the input field; sending discards it and everything after it
+    (the AI's old reply included) and generates a fresh turn from the
+    edited text — same "close the session, queue the kept prefix as a
+    replay" mechanism `loadSession` already uses, so the model still has
+    the right earlier context once the next message actually runs.
+    Editing the very first message re-triggers the health-context
+    injection above, same as any other fresh first turn.
+  - **Voice input (dictation, not a live voice session)**: a mic button
+    in the input row uses `speech_to_text` for on-device speech
+    recognition — tap to start, live partial results fill the text
+    field as you talk, tap again (or the recognizer's own "done"/
+    "notListening" status) to stop. Deliberately not a continuous
+    conversational voice mode: the transcript lands in the input field
+    for the user to review/edit like anything typed, and they still tap
+    send themselves.
+  - **Read aloud + copy on replies**: every non-empty, non-error
+    assistant message gets a speaker and copy icon below the bubble
+    (Claude's own placement, not inside the colored bubble). Speaker
+    reuses the existing `TtsService` (the same on-device
+    `flutter_tts` wrapper the emergency-call workflow already speaks
+    announcements with — no new TTS engine) and toggles play/stop;
+    starting one stops whatever was already playing, so only one
+    message ever speaks at a time, and the screen's `dispose()` stops
+    playback too so leaving mid-sentence doesn't leave audio running.
+    Copy uses `Clipboard.setData` with a brief confirmation snackbar.
+  - **Camera capture, not just the gallery picker**: the attach sheet's
+    photo option is now two — "Take a photo" (`ImageSource.camera`) and
+    "Photo from gallery" (`ImageSource.gallery`, as before) — both via
+    `image_picker`, same as the existing gallery path.
+  - **New runtime permissions — `RECORD_AUDIO` and `CAMERA`.** Unlike
+    the gallery-only picker (Android Photo Picker, needs no permission)
+    and the SAF-based PDF picker, both voice input and camera capture
+    are genuine new dangerous permissions — added to
+    `domain/app_permissions.dart` (the single source of truth this
+    project's standing rule requires updating first), with rationale
+    text in `onboarding_screen.dart` and status rows in
+    `permissions_screen.dart`, matching the pattern documented right in
+    that source file. `AndroidManifest.xml` gained the two
+    `<uses-permission>` entries, an optional (`required="false"`)
+    `android.hardware.camera` `<uses-feature>` (a device without a
+    camera shouldn't be blocked from installing the app), and a
+    `<queries>` entry for `android.speech.RecognitionService` — required
+    on Android 11+'s package-visibility rules for `speech_to_text` to
+    even find the on-device recognizer. Verified by re-running the
+    Gradle manifest-merge task directly, same standard this project
+    already holds itself to for every prior manifest change.
+- **Grounded in the user's own data — `buildHealthContext()`**
+  (`lib/ai_chat/health_context_builder.dart`): the first message of a
+  fresh conversation gets a compact "Context:" block silently prepended
+  to what's actually sent to the model (never shown in the bubble —
+  same `text`/`displayText` split used for PDF attachments) — live
+  wearable vitals (with the personal baseline mean from
+  `BaselineService`), environment, body metrics, today's steps, and
+  health-log highlights (blood pressure, glucose, sleep, medications,
+  Medical ID). Deliberately a *pure read* of stores this app already
+  has (`BleService`, `MetricsStore`, `HealthLogStore`, `BaselineService`,
+  `UserProfileStore`, `StepCounterService`) — same "reuse, don't
+  re-derive" approach as `emergency_summary_builder.dart` — and
+  deliberately a **snapshot, not a history dump**: it reports current
+  values, not a log, to stay small against the model's already-limited
+  4096-token context budget. Injected once per conversation (not every
+  message) for the same budget reason; `AiChatService` takes these six
+  dependencies via constructor injection like every other multi-store
+  service in this app (`EmergencyWorkflowService`,
+  `InsightWatcherService`), which meant moving its own provider
+  registration in `main.dart` to *after* `BaselineService`/
+  `StepCounterService` are registered, since `context.read()` inside a
+  `create:` callback can only see providers already built earlier in
+  the list.
 - **Android build changes**: `flutter_gemma_litertlm`'s `.litertlm` FFI
   inference requires **API 30+** and ships **arm64-v8a-only** native
   libraries — `android/app/build.gradle.kts` now hardcodes `minSdk = 30`

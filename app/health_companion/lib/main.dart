@@ -111,12 +111,6 @@ class HealthCompanionApp extends StatelessWidget {
         ),
         ChangeNotifierProvider.value(value: aiChatSettingsStore),
         Provider<AiChatHistoryStore>.value(value: aiChatHistoryStore),
-        ChangeNotifierProvider(
-          create: (context) => AiChatService(
-            context.read<AiChatSettingsStore>(),
-            context.read<AiChatHistoryStore>(),
-          )..init(),
-        ),
         ChangeNotifierProvider(create: (_) => PhoneMotionService()..start()),
         ChangeNotifierProvider.value(value: healthLogStore),
         ChangeNotifierProvider.value(value: metricsStore),
@@ -178,6 +172,22 @@ class HealthCompanionApp extends StatelessWidget {
           )..init(),
         ),
         ChangeNotifierProvider(create: (_) => StepCounterService()..start()),
+        // Needs BleService/HealthLogStore/MetricsStore/UserProfileStore/
+        // BaselineService/StepCounterService already registered above (it
+        // reads a snapshot of the user's own data for the AI assistant's
+        // first message each conversation — see health_context_builder.dart).
+        ChangeNotifierProvider(
+          create: (context) => AiChatService(
+            context.read<AiChatSettingsStore>(),
+            context.read<AiChatHistoryStore>(),
+            ble: context.read<BleService>(),
+            metrics: context.read<MetricsStore>(),
+            healthLog: context.read<HealthLogStore>(),
+            baseline: context.read<BaselineService>(),
+            userProfile: context.read<UserProfileStore>(),
+            stepCounter: context.read<StepCounterService>(),
+          )..init(),
+        ),
         Provider<NotificationService>(create: (_) => NotificationService()),
         ChangeNotifierProvider(
           create: (context) => InsightWatcherService(

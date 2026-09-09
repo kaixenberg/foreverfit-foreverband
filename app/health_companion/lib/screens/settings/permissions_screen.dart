@@ -28,6 +28,14 @@ final _trackedPermissions = <Permission, (String, String)>{
     'Contacts',
     'Optional — picking an emergency contact from your address book.'
   ),
+  Permission.microphone: (
+    'Microphone',
+    'Optional — voice input for the on-device AI assistant.'
+  ),
+  Permission.camera: (
+    'Camera',
+    'Optional — taking a photo to send the on-device AI assistant.'
+  ),
 };
 
 /// Read-only status of every permission this app uses — never calls

@@ -20,4 +20,6 @@ const requestablePermissions = [
   Permission.sms,
   Permission.notification,
   Permission.contacts,
+  Permission.microphone,
+  Permission.camera,
 ];

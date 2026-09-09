@@ -377,3 +377,11 @@ tiles + a static state-level hazard baseline) and prefers live data
       on-device (`syncfusion_flutter_pdf`, capped to fit the model's
       context budget) since the model has no native document input. See
       ARCHITECTURE.md
+- [x] AI assistant: grounded in the user's own live vitals/health-log
+      data on the first message of each chat, edit-and-rerun on any of
+      your own messages (matching Claude's chat UI), voice input
+      (on-device dictation, not a live voice session), read-aloud +
+      copy on every reply, and camera capture as a second way to attach
+      a photo alongside the gallery picker. Two new runtime permissions
+      (microphone, camera), added following this project's standing
+      permission-sync rule — see ARCHITECTURE.md

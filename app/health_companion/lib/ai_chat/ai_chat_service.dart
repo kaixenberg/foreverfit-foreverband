@@ -5,9 +5,16 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_gemma/flutter_gemma.dart';
 import 'package:flutter_gemma_litertlm/flutter_gemma_litertlm.dart';
 
+import '../ble/ble_service.dart';
+import '../services/baseline_service.dart';
+import '../services/step_counter_service.dart';
 import '../storage/ai_chat_history_store.dart';
 import '../storage/ai_chat_settings_store.dart';
+import '../storage/health_log_store.dart';
+import '../storage/metrics_store.dart';
+import '../storage/user_profile_store.dart';
 import 'ai_chat_message.dart';
+import 'health_context_builder.dart';
 
 enum AiChatModelStatus {
   /// Not downloaded yet (or the user hasn't opted in).
@@ -33,10 +40,20 @@ const _modelId = 'gemma-4-E2B-it.litertlm';
 const _systemInstruction =
     'You are a friendly, general-purpose on-device assistant embedded in '
     'the ForeverFit health app. You run fully offline on the phone, with '
-    'no internet connection. You are NOT a doctor: for any medical '
-    "question, give general, non-diagnostic information and suggest the "
-    "user use the app's real vitals/emergency features or consult a "
-    'real clinician for anything specific to them. Keep answers short.';
+    'no internet connection. Answer directly and helpfully, including for '
+    'general health/medical questions (common causes, general '
+    "self-care advice, when something usually warrants a doctor) — you're "
+    "not a doctor and can't diagnose, but that's not a reason to refuse or "
+    'hedge excessively; give the useful general answer a knowledgeable '
+    "friend would. Only add a brief note to see a real clinician when it's "
+    'actually warranted (something specific/serious to the user, not '
+    'every message), and never repeat it more than once per reply. Keep '
+    'answers short. The very first user message of a conversation may '
+    'start with a short "Context:" block of the user\'s own live vitals '
+    "and logged health data, pulled straight from this app — use it "
+    "naturally when relevant (e.g. to answer 'is my heart rate normal "
+    "right now?' with their actual reading), without just repeating it "
+    'back verbatim.';
 
 /// Owns the on-device Gemma 4 E2B model + chat session lifecycle:
 /// opt-in download (with progress), lazy model/session creation, sending
@@ -54,10 +71,35 @@ const _systemInstruction =
 /// message is sent in that conversation, so just browsing history stays
 /// cheap.
 class AiChatService extends ChangeNotifier {
-  AiChatService(this._settings, this._history);
+  AiChatService(
+    this._settings,
+    this._history, {
+    required BleService ble,
+    required MetricsStore metrics,
+    required HealthLogStore healthLog,
+    required BaselineService baseline,
+    required UserProfileStore userProfile,
+    required StepCounterService stepCounter,
+  })  : _ble = ble,
+        _metrics = metrics,
+        _healthLog = healthLog,
+        _baseline = baseline,
+        _userProfile = userProfile,
+        _stepCounter = stepCounter;
 
   final AiChatSettingsStore _settings;
   final AiChatHistoryStore _history;
+
+  // Read-only sources for buildHealthContext() — the first message of a
+  // fresh conversation is grounded in the user's own data this way. Kept
+  // as plain fields (not watched/listened to) since this is a one-time
+  // snapshot taken at send() time, not a live-updating UI.
+  final BleService _ble;
+  final MetricsStore _metrics;
+  final HealthLogStore _healthLog;
+  final BaselineService _baseline;
+  final UserProfileStore _userProfile;
+  final StepCounterService _stepCounter;
 
   static bool _engineInitialized = false;
 
@@ -132,6 +174,15 @@ class AiChatService extends ChangeNotifier {
     }
   }
 
+  String _buildHealthContext() => buildHealthContext(
+        ble: _ble,
+        metrics: _metrics,
+        healthLog: _healthLog,
+        baseline: _baseline,
+        userProfile: _userProfile,
+        stepCounter: _stepCounter,
+      );
+
   Future<InferenceChat> _ensureChat() async {
     final existing = _chat;
     if (existing != null) return existing;
@@ -190,6 +241,13 @@ class AiChatService extends ChangeNotifier {
   /// only show the user's short caption/question. [images] are shown as
   /// thumbnails and sent to the model alongside [text]. [attachmentLabel]
   /// renders as a small chip on the message (e.g. a filename).
+  ///
+  /// The first message of a fresh conversation additionally gets a
+  /// "Context:" block of the user's own live vitals/health data (see
+  /// buildHealthContext) silently prepended to what's sent to the model —
+  /// the bubble still only shows [displayText] (or the original [text]),
+  /// never the injected block, same displayText/text split as the PDF
+  /// case above.
   Future<void> send(
     String text, {
     String? displayText,
@@ -197,12 +255,16 @@ class AiChatService extends ChangeNotifier {
     List<Uint8List> images = const [],
   }) async {
     if ((text.trim().isEmpty && images.isEmpty) || isGenerating) return;
+    final isFirstTurn = messages.isEmpty;
     _currentSessionId ??= DateTime.now().microsecondsSinceEpoch.toString();
 
+    final outgoingText =
+        isFirstTurn ? 'Context: ${_buildHealthContext()}\n\n$text' : text;
+
     messages.add(AiChatMessage(
-      text: text,
+      text: outgoingText,
       isUser: true,
-      displayText: displayText,
+      displayText: displayText ?? text,
       attachmentLabel: attachmentLabel,
       images: images,
     ));
@@ -214,8 +276,9 @@ class AiChatService extends ChangeNotifier {
     try {
       final chat = await _ensureChat();
       final message = images.isEmpty
-          ? Message.text(text: text, isUser: true)
-          : Message.withImages(text: text, imageBytes: images, isUser: true);
+          ? Message.text(text: outgoingText, isUser: true)
+          : Message.withImages(
+              text: outgoingText, imageBytes: images, isUser: true);
       await chat.addQueryChunk(message);
       await for (final response in chat.generateChatResponseAsync()) {
         if (response is TextResponse) {
@@ -275,6 +338,29 @@ class AiChatService extends ChangeNotifier {
       ..clear()
       ..addAll(loaded);
     notifyListeners();
+  }
+
+  /// Edits a previously-sent user message at [index] and regenerates the
+  /// conversation from that point, like Claude's "edit and rerun" — that
+  /// message and everything after it (including the AI's old reply) is
+  /// discarded, then [newText] is sent as a fresh turn. [index] must
+  /// point at a user message; a no-op otherwise (or while generating).
+  ///
+  /// The live model session is closed and recreated the same lazy way
+  /// [loadSession] does: the messages kept *before* [index] are queued
+  /// as a replay, so the fresh session still has that earlier context
+  /// once the next [send] runs.
+  Future<void> editAndResend(int index, String newText) async {
+    if (isGenerating) return;
+    if (index < 0 || index >= messages.length || !messages[index].isUser) {
+      return;
+    }
+    messages.removeRange(index, messages.length);
+    await _chat?.close();
+    _chat = null;
+    _pendingReplay = messages.isEmpty ? null : List.of(messages);
+    notifyListeners();
+    await send(newText);
   }
 
   Future<void> deleteSession(String id) async {
