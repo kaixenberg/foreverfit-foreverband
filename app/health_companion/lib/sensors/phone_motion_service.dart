@@ -36,6 +36,7 @@ class PhoneMotionService extends ChangeNotifier {
   double _ax = 0, _ay = 0, _az = 0;
   double _gx = 0, _gy = 0, _gz = 0;
   bool _hasAccel = false, _hasGyro = false;
+  DateTime? _lastEmit;
 
   PhoneMotionSample? latest;
   String? lastError;
@@ -67,8 +68,24 @@ class PhoneMotionService extends ChangeNotifier {
 
   void _emitIfReady() {
     if (!_hasAccel || !_hasGyro) return;
+    // `samplingPeriod` above is only a hint to the OS, not a guarantee —
+    // confirmed on real hardware (a HyperOS/MIUI phone) delivering
+    // accelerometer/gyroscope events well above the requested ~20Hz.
+    // Without this throttle, two independently-firing streams meant
+    // notifyListeners() ran far more than 20 times/sec (real evidence:
+    // ActivityClassifierService's own windowSpanMs debug log showed a
+    // 60-sample window spanning ~400ms of wall-clock time, not the
+    // expected ~3000ms) — wasted CPU competing with frame rendering on
+    // every single tick, on top of quietly shrinking FallDetectorService/
+    // ActivityClassifierService's windows to a fraction of the real-world
+    // time span their models were actually trained on.
+    final now = DateTime.now();
+    if (_lastEmit != null && now.difference(_lastEmit!) < _samplingPeriod) {
+      return;
+    }
+    _lastEmit = now;
     latest = PhoneMotionSample(
-      timestamp: DateTime.now(),
+      timestamp: now,
       ax: _ax,
       ay: _ay,
       az: _az,

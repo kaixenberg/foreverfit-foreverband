@@ -392,3 +392,21 @@ tiles + a static state-level hazard baseline) and prefers live data
       a photo alongside the gallery picker. Two new runtime permissions
       (microphone, camera), added following this project's standing
       permission-sync rule — see ARCHITECTURE.md
+- [x] Performance pass, unrelated to the AI assistant (the lag predated
+      it): the app was stuck at 60Hz even on 120Hz-capable screens —
+      confirmed on-device that the standard fix (`flutter_displaymode`
+      requesting the display's highest refresh rate at startup) alone
+      wasn't enough on this project's own Xiaomi/HyperOS test phone, a
+      live, currently-unresolved Flutter/Android issue on several
+      Xiaomi/POCO models specifically, not something app code can fully
+      guarantee — `DisplayModeService` now also retries on every app
+      resume and logs the actual active mode for debugging; the
+      remaining lever is the device's own Settings > Display > Refresh
+      rate. Separately, `PhoneMotionService` was calling
+      `notifyListeners()` on the main UI isolate well over 100 times a
+      second on real hardware — `sensors_plus`'s requested ~20Hz is
+      only a hint to the OS, not a guarantee — confirmed via a debug
+      log already captured this session showing a 60-sample fall-
+      detection window spanning ~400ms of real time instead of the
+      trained ~3000ms. Throttled to the intended rate. See
+      ARCHITECTURE.md

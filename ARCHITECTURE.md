@@ -1818,6 +1818,121 @@ token is required).
   surface (history/attachments) yet; test with real headroom before a
   live demo.
 
+## Performance pass: 120Hz refresh rate + sensor over-sampling fix (implemented)
+
+Two general "the app feels laggy" fixes, both unrelated to the on-device
+AI assistant (confirmed by the user — the lag predates it) and found
+from concrete evidence already sitting in this session rather than
+guessed.
+
+- **120Hz stuck at 60Hz — a real, currently-unresolved Flutter/Android
+  limitation on some devices, not something app code can fully
+  guarantee.** Android doesn't automatically render new frames at a
+  display's highest supported refresh rate — Flutter's engine happily
+  draws faster, but nothing requests a higher display mode without
+  asking. First fix: `flutter_displaymode`'s
+  `FlutterDisplayMode.setHighRefreshRate()`, called once at startup.
+  That alone didn't switch the refresh rate on this project's own test
+  phone (a Xiaomi POCO, HyperOS). Researched rather than guessed
+  further: this is a live, currently-open issue
+  (github.com/flutter/flutter/issues/160952) affecting several
+  Xiaomi/POCO models by name (the Poco F5 among them) — some Android
+  OEM skins run their own refresh-rate governor on top of the standard
+  API this plugin wraps, and can silently keep an app at 60Hz
+  regardless of what it requests, a behavior other, much larger Flutter
+  apps hit the same wall on. Two follow-ups, both real but neither a
+  guaranteed fix for every device: **`DisplayModeService`**
+  (`lib/services/display_mode_service.dart`) re-requests the high
+  refresh rate on every app *resume*, not just once at cold start
+  (`WidgetsBindingObserver.didChangeAppLifecycleState`, the same
+  "retry on resume" shape already used for BLE auto-connect), since
+  some OEM skins reset the preferred mode across Activity lifecycle
+  transitions; and it `debugPrint`s the actual active display mode
+  after each request, so a real logcat capture can show mode-by-mode
+  whether the request succeeded or the OS silently overrode it. If it's
+  still capped after this, the one thing confirmed to work in other
+  reports of this same issue is checking the device's own **Settings >
+  Display > Refresh rate** — several HyperOS/MIUI builds only apply
+  their own adaptive-rate heuristic (which doesn't always promote
+  regular, non-allowlisted apps) while that's left on "Default"/"Auto",
+  and switching it to a fixed 120Hz/"Custom" setting is device
+  configuration, not something this app's code can reach into and set
+  on the user's behalf.
+  - **Real on-device evidence narrowed it further.** The device's own
+    Settings > Display > "High refresh rate" screen showed ForeverFit
+    listed under "Based on app settings" — i.e. HyperOS confirmed it's
+    *deferring* to this app's own request, not silently overriding it
+    with its own governor as first suspected. A pulled logcat backed
+    that up: `FlutterDisplayMode.active` consistently reported the
+    window's negotiated mode as `120Hz`, correctly, across multiple
+    checks. So the Android *window* mode negotiation (the part
+    `flutter_displaymode` controls) is genuinely succeeding — yet the
+    on-screen refresh-rate counter never rose above 60, including
+    during active scrolling. That points one level deeper: the
+    **Flutter engine's own frame-pacing**, not the window/OS
+    negotiation, isn't actually producing frames faster, regardless of
+    what mode the window is capable of — a distinct, known-harder class
+    of bug than a missing API call.
+  - **Two more real, reversible experiments, since the standard fix
+    alone wasn't enough.** (1) `DisplayModeService` now also
+    re-requests the high refresh rate via
+    `WidgetsBinding.instance.addPostFrameCallback` right after the
+    first frame is drawn, not just before `runApp()` — on some devices
+    the window's surface isn't fully established yet at the point
+    `main()` first calls it. (2) Confirmed via this app's own logcat
+    (captured earlier this session: `Using the Impeller rendering
+    backend (Vulkan)`) that Impeller is the active renderer — Impeller
+    and the older Skia backend have entirely separate frame-pacing/
+    vsync implementations, and this exact "window mode says high
+    refresh, observed frames stay at 60" symptom is reported elsewhere
+    specifically on Impeller. `AndroidManifest.xml`'s `<activity>` now
+    carries `io.flutter.embedding.android.EnableImpeller` set to
+    `false`, forcing Skia, as a genuine experiment — **not a confirmed
+    fix**, and worth reverting (delete that one `<meta-data>` block) if
+    it doesn't help, rather than leaving a permanent workaround for a
+    problem it didn't solve. A manifest-level flag needs a real
+    reinstall to take effect, not a hot reload/restart.
+- **Phone motion was over-sampled, likely the real cause of periodic
+  jank/laggy scrolling.** `PhoneMotionService` reads the phone's own
+  accelerometer + gyroscope via `sensors_plus` at a requested ~20Hz
+  (`samplingPeriod: Duration(milliseconds: 50)`) and calls
+  `notifyListeners()` from `_emitIfReady()` on *every* accelerometer OR
+  gyroscope event once both streams have delivered at least one. The
+  bug: `samplingPeriod` is only a *hint* to the OS, not a guarantee —
+  and real evidence already captured earlier this session (via
+  `ActivityClassifierService`'s own `windowSpanMs` debug log) showed a
+  60-sample window spanning only ~400ms of wall-clock time, not the
+  ~3000ms (60 samples @ 20Hz) both `FallDetectorService` and
+  `ActivityClassifierService` are trained around — meaning this
+  device's actual combined accel+gyro event rate was running well
+  above 100Hz, not ~20Hz. Every one of those events fired a full
+  `ChangeNotifier.notifyListeners()` dispatch on the **main UI
+  isolate**, directly competing with frame rendering for CPU time —
+  and, independently of the jank, was quietly shrinking both ML
+  models' input windows to a fraction of the real-world time span they
+  were actually trained on (a live-accuracy concern, not just a
+  performance one). Fixed by throttling `_emitIfReady()` to only
+  actually build a sample and call `notifyListeners()` once per
+  `_samplingPeriod`, regardless of how fast the underlying OS delivers
+  raw sensor events — the two TFLite `Timer.periodic` inference loops
+  (`FallDetectorService` @ 500ms, `ActivityClassifierService` @ 1s)
+  were untouched; they were always calling `Interpreter.run()`
+  synchronously on the main isolate at the *intended* cadence, so
+  fixing the sample-feed rate first, which had concrete evidence behind
+  it, was the safer starting point for a safety-critical fall-detection
+  path than restructuring where inference itself runs. If jank persists
+  after this fix, moving those two `Interpreter.run()` calls onto a
+  background isolate (the same isolate-hosted execution
+  `fall_detection_task_handler.dart` already uses when the app is
+  backgrounded) is the next thing to try — deliberately not done
+  speculatively here without on-device confirmation the first fix
+  wasn't enough.
+- **`android/app/build.gradle.kts` restricted to `arm64-v8a` only** —
+  already true (added earlier for `flutter_gemma_litertlm`'s
+  arm64-v8a-only native libraries) and reconfirmed as a standing
+  instruction during this pass: never widen `ndk.abiFilters` back to
+  include other ABIs without being asked.
+
 ## Roadmap (not yet implemented)
 
 ### 1. Wearable-sensor disaster heuristics

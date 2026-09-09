@@ -21,6 +21,7 @@ import 'screens/loading_screen.dart';
 import 'sensors/phone_motion_service.dart';
 import 'services/baseline_service.dart';
 import 'services/battery_optimization_service.dart';
+import 'services/display_mode_service.dart';
 import 'services/notification_service.dart';
 import 'services/step_counter_service.dart';
 import 'services/telephony_service.dart';
@@ -41,8 +42,24 @@ import 'theme/app_theme.dart';
 /// notification tap).
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
 
+/// A top-level, not a main()-local — it registers itself as a
+/// WidgetsBindingObserver in its own constructor, and needs to live for
+/// the whole app lifetime to keep retrying on every resume.
+final _displayMode = DisplayModeService();
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Android only defaults new frames to the display's *default* refresh
+  // mode (60Hz on most phones) unless an app explicitly asks for a
+  // higher one — Flutter's engine happily renders faster, but nothing
+  // requests it without this call, so scrolling/animations look capped
+  // at 60Hz even on a high-refresh-rate screen. See DisplayModeService's
+  // own doc comment for why this doesn't always succeed on every device
+  // (a known, currently-unresolved issue on some Xiaomi/HyperOS phones
+  // specifically) — kept alive as `_displayMode` (not a local that goes
+  // out of scope) since it's also a WidgetsBindingObserver that retries
+  // this on every app resume, not just once here at startup.
+  await _displayMode.apply();
   final historyStore = HistoryStore();
   await historyStore.init();
   final metricsStore = MetricsStore();
