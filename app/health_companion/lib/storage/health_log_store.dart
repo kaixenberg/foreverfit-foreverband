@@ -58,6 +58,7 @@ class HealthLogStore extends ChangeNotifier {
   static const _medicationsBoxName = 'medications';
   static const _medicationDosesBoxName = 'medication_doses_log';
   static const _medicalIdBoxName = 'medical_id';
+  static const _cycleBoxName = 'menstrual_cycle_log';
 
   late Box<Map> _bpBox;
   late Box<Map> _glucoseBox;
@@ -66,6 +67,7 @@ class HealthLogStore extends ChangeNotifier {
   late Box<Map> _medicationsBox;
   late Box<Map> _medicationDosesBox;
   late Box<Map> _medicalIdBox;
+  late Box<Map> _cycleBox;
 
   Future<void> init() async {
     _bpBox = await Hive.openBox<Map>(_bpBoxName);
@@ -75,6 +77,7 @@ class HealthLogStore extends ChangeNotifier {
     _medicationsBox = await Hive.openBox<Map>(_medicationsBoxName);
     _medicationDosesBox = await Hive.openBox<Map>(_medicationDosesBoxName);
     _medicalIdBox = await Hive.openBox<Map>(_medicalIdBoxName);
+    _cycleBox = await Hive.openBox<Map>(_cycleBoxName);
   }
 
   // --- Blood pressure (two values per entry) --------------------------
@@ -282,6 +285,118 @@ class HealthLogStore extends ChangeNotifier {
       'notes': profile.notes,
     });
     notifyListeners();
+  }
+
+  // --- Menstrual cycle (period start/end, flow, notes) ------------------
+  //
+  // Unlike every other metric above, the meaningful date is when the
+  // period *started* — often logged a day or more after the fact — not
+  // "now". So 'at' is set to startDate itself rather than
+  // DateTime.now(), which keeps this a drop-in fit for the same
+  // _entriesOf/_updateEntry/_deleteEntry helpers everything else here
+  // uses (they all key off 'at'). Cycle length and period length aren't
+  // stored fields — they're derived from consecutive entries, computed
+  // in cycleLengthHistory()/periodLengthHistory() below rather than kept
+  // in sync by hand on every write.
+
+  Future<void> addCycleEntry({
+    required DateTime startDate,
+    DateTime? endDate,
+    String? flow,
+    String? notes,
+  }) async {
+    await _cycleBox.add({
+      'startDate': startDate.toIso8601String(),
+      'endDate': endDate?.toIso8601String(),
+      'flow': flow,
+      'notes': notes,
+      'at': startDate.toIso8601String(),
+    });
+    notifyListeners();
+  }
+
+  Future<void> updateCycleEntry(
+    dynamic key, {
+    required DateTime startDate,
+    DateTime? endDate,
+    String? flow,
+    String? notes,
+  }) =>
+      _updateEntry(_cycleBox, key, {
+        'startDate': startDate.toIso8601String(),
+        'endDate': endDate?.toIso8601String(),
+        'flow': flow,
+        'notes': notes,
+        'at': startDate.toIso8601String(),
+      });
+
+  Future<void> deleteCycleEntry(dynamic key) => _deleteEntry(_cycleBox, key);
+
+  List<StoredEntry> cycleEntries() => _entriesOf(_cycleBox);
+
+  /// Days between each logged period start and the one before it —
+  /// there's no cycle length for the very first logged period (nothing
+  /// to measure from), so this always has one fewer point than there are
+  /// entries.
+  List<MetricPoint> cycleLengthHistory() {
+    final starts = <DateTime>[
+      for (final e in _cycleBox.values)
+        if (DateTime.tryParse(e['startDate'] as String? ?? '') != null)
+          DateTime.parse(e['startDate'] as String),
+    ]..sort();
+    return [
+      for (var i = 1; i < starts.length; i++)
+        MetricPoint(
+          at: starts[i],
+          value: starts[i].difference(starts[i - 1]).inDays.toDouble(),
+        ),
+    ];
+  }
+
+  /// Length of each logged period itself (start to end, inclusive) —
+  /// only for entries where an end date was actually given.
+  List<MetricPoint> periodLengthHistory() => [
+        for (final e in _cycleBox.values)
+          if (DateTime.tryParse(e['startDate'] as String? ?? '') != null &&
+              DateTime.tryParse(e['endDate'] as String? ?? '') != null)
+            MetricPoint(
+              at: DateTime.parse(e['startDate'] as String),
+              value: DateTime.parse(e['endDate'] as String)
+                      .difference(DateTime.parse(e['startDate'] as String))
+                      .inDays
+                      .toDouble() +
+                  1,
+            ),
+      ]..sort((a, b) => a.at.compareTo(b.at));
+
+  DateTime? get latestCycleStart {
+    DateTime? latest;
+    for (final e in _cycleBox.values) {
+      final d = DateTime.tryParse(e['startDate'] as String? ?? '');
+      if (d == null) continue;
+      if (latest == null || d.isAfter(latest)) latest = d;
+    }
+    return latest;
+  }
+
+  /// Average of up to the last 6 computed cycle lengths — enough to
+  /// smooth out one irregular cycle without old data dominating it.
+  double? get averageCycleLengthDays {
+    final points = cycleLengthHistory();
+    if (points.isEmpty) return null;
+    final recent =
+        points.length > 6 ? points.sublist(points.length - 6) : points;
+    return recent.map((p) => p.value).reduce((a, b) => a + b) / recent.length;
+  }
+
+  /// Best-effort predicted next period start — the last logged start
+  /// plus the average cycle length. Null until there are at least two
+  /// logged starts to derive a cycle length from at all.
+  DateTime? get predictedNextPeriod {
+    final start = latestCycleStart;
+    final avg = averageCycleLengthDays;
+    if (start == null || avg == null) return null;
+    return start.add(Duration(days: avg.round()));
   }
 
   // --- Shared helpers ---------------------------------------------------

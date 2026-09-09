@@ -142,6 +142,8 @@ class DashboardScreen extends StatelessWidget {
     final healthLog = context.watch<HealthLogStore>();
     final appSettings = context.watch<AppSettingsStore>();
     final userProfile = context.watch<UserProfileStore>();
+    final isMaleProfile = userProfile.sex == 'Male';
+    final cycleStart = healthLog.latestCycleStart;
     final unitSystem = resolveEffectiveUnitSystem(appSettings.unitSystem);
     final bodyFatPercent = computeBodyFatPercent(
       bmi: metrics.bmi,
@@ -559,6 +561,39 @@ class DashboardScreen extends StatelessWidget {
                       MaterialPageRoute(
                           builder: (_) => const MedicationsScreen()),
                     ),
+                  ),
+                  MetricCard(
+                    label: 'Cycle',
+                    // Shown to everyone (not hidden), only greyed out for
+                    // a profile explicitly set to "Male" — an unset,
+                    // "Other", or "Prefer not to say" profile still gets
+                    // the real tile, since a sex field alone isn't a
+                    // reliable signal that cycle tracking doesn't apply.
+                    value: isMaleProfile || cycleStart == null
+                        ? '--'
+                        : '${DateTime.now().difference(cycleStart).inDays}',
+                    unit: isMaleProfile || cycleStart == null ? '' : 'days ago',
+                    icon: Icons.water_drop_outlined,
+                    accentColor: AppTheme.accentPink,
+                    disabled: isMaleProfile,
+                    onTap: () {
+                      if (isMaleProfile) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content:
+                                Text('Menstrual cycle tracking is hidden for a '
+                                    'profile set to "Male" — change it in '
+                                    'Settings > Profile if this is incorrect.'),
+                          ),
+                        );
+                        return;
+                      }
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                            builder: (_) =>
+                                const MenstrualCycleHistoryScreen()),
+                      );
+                    },
                   ),
                 ],
               ),

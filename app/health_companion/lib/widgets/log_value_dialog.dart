@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 /// Formats a value for pre-filling an edit dialog's text field — fixed to
 /// 2 decimal places (enough precision for anything logged here) with
@@ -175,6 +176,127 @@ Future<(double, String)?> showInsulinDialog({
               }
               Navigator.of(context).pop((dose, selectedType));
             },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+/// Flow intensity options for menstrual cycle logging — a category, not
+/// something to chart, same reasoning as [insulinTypes].
+const cycleFlowLevels = ['Light', 'Medium', 'Heavy'];
+
+/// Period start date (required — the one thing cycle length/prediction
+/// is computed from), optional end date, optional flow intensity, and
+/// free-text notes. Unlike every other dialog above, the date it refers
+/// to usually isn't "now" (periods are often logged a day or more after
+/// they start), so this is the one dialog in this file with a date
+/// picker at all. Also reused for editing when the initial* params are
+/// given. Returns null if cancelled.
+Future<({DateTime startDate, DateTime? endDate, String? flow, String? notes})?>
+    showCycleEntryDialog({
+  required BuildContext context,
+  String title = 'Log period',
+  DateTime? initialStartDate,
+  DateTime? initialEndDate,
+  String? initialFlow,
+  String? initialNotes,
+}) {
+  var startDate = initialStartDate ?? DateTime.now();
+  var endDate = initialEndDate;
+  var flow = initialFlow;
+  final notesController = TextEditingController(text: initialNotes ?? '');
+  return showDialog(
+    context: context,
+    builder: (context) => StatefulBuilder(
+      builder: (context, setState) => AlertDialog(
+        title: Text(title),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Start date'),
+                subtitle: Text(DateFormat.yMMMd().format(startDate)),
+                trailing: const Icon(Icons.calendar_today_outlined, size: 18),
+                onTap: () async {
+                  final picked = await showDatePicker(
+                    context: context,
+                    initialDate: startDate,
+                    firstDate: DateTime(2000),
+                    lastDate: DateTime.now(),
+                  );
+                  if (picked != null) setState(() => startDate = picked);
+                },
+              ),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('End date'),
+                subtitle: Text(endDate == null
+                    ? 'Not set — still ongoing or unknown'
+                    : DateFormat.yMMMd().format(endDate!)),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (endDate != null)
+                      IconButton(
+                        icon: const Icon(Icons.clear, size: 18),
+                        tooltip: 'Clear end date',
+                        onPressed: () => setState(() => endDate = null),
+                      ),
+                    const Icon(Icons.calendar_today_outlined, size: 18),
+                  ],
+                ),
+                onTap: () async {
+                  final picked = await showDatePicker(
+                    context: context,
+                    initialDate: endDate ?? startDate,
+                    firstDate: startDate,
+                    lastDate: DateTime.now().add(const Duration(days: 14)),
+                  );
+                  if (picked != null) setState(() => endDate = picked);
+                },
+              ),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String?>(
+                initialValue: flow,
+                decoration: const InputDecoration(labelText: 'Flow (optional)'),
+                items: [
+                  const DropdownMenuItem(value: null, child: Text('Not set')),
+                  for (final level in cycleFlowLevels)
+                    DropdownMenuItem(value: level, child: Text(level)),
+                ],
+                onChanged: (value) => setState(() => flow = value),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: notesController,
+                minLines: 1,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                    labelText: 'Notes / symptoms (optional)'),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop((
+              startDate: startDate,
+              endDate: endDate,
+              flow: flow,
+              notes: notesController.text.trim().isEmpty
+                  ? null
+                  : notesController.text.trim(),
+            )),
             child: const Text('Save'),
           ),
         ],

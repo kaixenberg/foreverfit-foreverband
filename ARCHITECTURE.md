@@ -682,6 +682,68 @@ pattern at all:
   Settings entry are both gone; there's nothing left for an intermediate
   "more tracking" list to point to.
 
+## Menstrual cycle tracking (implemented)
+
+A seventh `health_log_store.dart` entry type, added after the six
+above — period start/end date, flow intensity, and free-text notes,
+plus a chart and a "Cycle" Dashboard card that stays visible for every
+profile rather than being conditionally hidden.
+
+- **The meaningful date is the period's own start date, not "now."**
+  Every other entry type in this store stamps `'at': DateTime.now()`
+  at write time because it's always logged in the moment (sleep last
+  night, a BP reading just taken); a period is often logged a day or
+  more after it actually started. `addCycleEntry()`/
+  `updateCycleEntry()` set `'at'` to the *given* `startDate` instead —
+  a one-line difference that keeps this a drop-in fit for the same
+  `_entriesOf`/`_updateEntry`/`_deleteEntry` helpers every other metric
+  here already uses, rather than needing its own bespoke storage path.
+- **Cycle length and period length aren't stored fields — they're
+  derived.** `cycleLengthHistory()` computes the day-gap between each
+  logged start and the one before it (so there's always one fewer
+  point than there are entries — nothing to measure the very first
+  logged period against); `periodLengthHistory()` computes start-to-end
+  day counts for entries that got an end date. Kept as derived reads
+  rather than fields written alongside each entry, so there's no risk
+  of a stored length silently drifting out of sync with the dates it
+  was computed from.
+- **Chart reuses the existing two-series `MetricHistoryScreen` layout**
+  (`MenstrualCycleHistoryScreen` in `metric_detail_screens.dart`) —
+  cycle length as the primary series, period length as the secondary
+  one, the same `secondaryPoints`/`secondaryLabel`/`secondaryColor`
+  mechanism blood pressure already uses above. No new chart code
+  needed at all.
+- **`averageCycleLengthDays`/`predictedNextPeriod`**: a simple average
+  of up to the last 6 computed cycle lengths (enough to smooth out one
+  irregular cycle without old data dominating it), and the latest
+  logged start plus that average — both null until there are at least
+  two logged starts to derive a cycle length from. Surfaced as a small
+  info card above the "Log period" button rather than added to
+  `MetricHistoryScreen` itself, which has no slot for this kind of
+  metric-specific summary today.
+- **`showCycleEntryDialog()`** (`lib/widgets/log_value_dialog.dart`) is
+  the one dialog in that file with a date picker at all, for the reason
+  above — start date (required, `firstDate: DateTime(2000)`, capped at
+  today), an optional end date (capped to 14 days past today, to allow
+  a same-day-or-next-day log), a flow dropdown (Light/Medium/Heavy,
+  optional), and a free-text notes field — same `StatefulBuilder`
+  pattern `showInsulinDialog()` already established for a dialog with
+  more than one input.
+- **The "Cycle" card is shown to everyone, not conditionally hidden —
+  a new pattern for this Dashboard grid.** Every other card in
+  `_PagedCardGrid` renders unconditionally; this is the first one that
+  needed a "not really applicable to you" state instead of just
+  showing or omitting itself. Rather than invent a special case,
+  `MetricCard` gained a generic `disabled` flag (dims the whole card via
+  `Opacity`, independent of the existing `warn`/error-red state) that
+  any future card could reuse. Gated on `userProfile.sex == 'Male'`
+  specifically — an unset, "Other", or "Prefer not to say" profile
+  still gets the real, tappable card, since a sex field alone isn't a
+  reliable enough signal that cycle tracking doesn't apply. Tapping the
+  disabled card doesn't silently do nothing — `onTap` still fires and
+  shows a `SnackBar` explaining why, with a pointer to where to change
+  it if the profile is wrong, rather than leaving a dead-looking tap.
+
 ## AI-based insights & notifications (implemented)
 
 A rule-based suggestion/warning layer across all three categories the

@@ -217,10 +217,17 @@ tiles + a static state-level hazard baseline) and prefers live data
       mark-dose-taken and its own doses-per-day adherence chart), and
       Medical ID (a saved blood-type/allergies/conditions profile — no
       chart, since there's no such thing as an "average blood type").
-      12 Body & activity cards total now, across 2 swipe pages.
       `HealthLogScreen` and its Settings entry are both gone — nothing
       left for an intermediate stub list to point to — see
       ARCHITECTURE.md
+- [x] Menstrual cycle tracking: period start/end date, flow intensity,
+      and notes, with a chart (cycle length as the primary series,
+      period length as a secondary one — the same two-series
+      MetricHistoryScreen layout blood pressure uses) plus an average
+      cycle length and predicted next period. New "Cycle" card under
+      Body & activity — shown to everyone, but greyed out (not hidden)
+      when the profile's sex is set to "Male", tapping it explains why
+      instead of doing nothing. See ARCHITECTURE.md
 - [x] Heat-index formula (`lib/utils/heat_index.dart`) — the on-device
       heat-stress CNN originally planned was dropped after its dataset
       (WESAD) turned out to be a dead end on direct verification (dead

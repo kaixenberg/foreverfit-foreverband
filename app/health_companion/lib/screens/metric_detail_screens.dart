@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../ble/ble_service.dart';
@@ -512,6 +513,112 @@ class SleepHistoryScreen extends StatelessWidget {
         if (value != null) await log.updateSleepEntry(entry.key, value);
       },
       onDeleteEntry: (entry) => log.deleteSleepEntry(entry.key),
+    );
+  }
+}
+
+class MenstrualCycleHistoryScreen extends StatelessWidget {
+  const MenstrualCycleHistoryScreen({super.key});
+
+  String _formatEntry(Map data) {
+    final start = DateTime.parse(data['startDate'] as String);
+    final endStr = data['endDate'] as String?;
+    final flow = data['flow'] as String?;
+    final parts = <String>[DateFormat.yMMMd().format(start)];
+    if (endStr != null) {
+      final end = DateTime.parse(endStr);
+      final days = end.difference(start).inDays + 1;
+      parts.add('– ${DateFormat.yMMMd().format(end)} ($days d)');
+    }
+    if (flow != null) parts.add('· $flow');
+    return parts.join(' ');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final log = context.watch<HealthLogStore>();
+    final rawEntries = log.cycleEntries();
+    final avg = log.averageCycleLengthDays;
+    final predicted = log.predictedNextPeriod;
+
+    return MetricHistoryScreen(
+      title: 'Menstrual cycle',
+      unit: 'days',
+      // Primary series is cycle length (days between consecutive period
+      // starts) rather than the entries themselves — that's the actual
+      // trend worth charting; period length rides along as the secondary
+      // series, same two-series pattern blood pressure uses.
+      points: log.cycleLengthHistory(),
+      secondaryPoints: log.periodLengthHistory(),
+      secondaryLabel: 'Period length',
+      accentColor: AppTheme.accentPink,
+      secondaryColor: AppTheme.accentPurple,
+      logAction: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (avg != null || predicted != null)
+            Card(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (avg != null)
+                      Text(
+                          'Average cycle length: ${avg.toStringAsFixed(0)} days'),
+                    if (predicted != null)
+                      Text('Predicted next period: '
+                          '${DateFormat.yMMMd().format(predicted)}'),
+                  ],
+                ),
+              ),
+            ),
+          const SizedBox(height: 8),
+          FilledButton.icon(
+            icon: const Icon(Icons.add),
+            label: const Text('Log period'),
+            onPressed: () async {
+              final result = await showCycleEntryDialog(context: context);
+              if (result != null) {
+                log.addCycleEntry(
+                  startDate: result.startDate,
+                  endDate: result.endDate,
+                  flow: result.flow,
+                  notes: result.notes,
+                );
+              }
+            },
+          ),
+        ],
+      ),
+      entries: [
+        for (final e in rawEntries)
+          LoggedEntry(key: e.key, at: e.at, display: _formatEntry(e.data)),
+      ],
+      onEditEntry: (entry) async {
+        final current = rawEntries.firstWhere((e) => e.key == entry.key).data;
+        final result = await showCycleEntryDialog(
+          context: context,
+          title: 'Edit period',
+          initialStartDate: DateTime.parse(current['startDate'] as String),
+          initialEndDate: current['endDate'] != null
+              ? DateTime.parse(current['endDate'] as String)
+              : null,
+          initialFlow: current['flow'] as String?,
+          initialNotes: current['notes'] as String?,
+        );
+        if (result != null) {
+          await log.updateCycleEntry(
+            entry.key,
+            startDate: result.startDate,
+            endDate: result.endDate,
+            flow: result.flow,
+            notes: result.notes,
+          );
+        }
+      },
+      onDeleteEntry: (entry) => log.deleteCycleEntry(entry.key),
     );
   }
 }
