@@ -176,17 +176,21 @@ tiles + a static state-level hazard baseline) and prefers live data
       dot-page indicator; weight/height/hydration log to Hive via
       `MetricsStore`, steps via the hardware step counter (`pedometer`)
       with a growing daily-history archive — see ARCHITECTURE.md
-- [x] Per-metric history: tapping any Body & activity card (heart rate
-      included, from either the vitals grid or this section) opens a
-      shared chart+stats+period-selector screen — preset chips (7/30/90
-      days/all time) plus a custom date-range picker, an avg/range/change
-      summary, an interactive `fl_chart` graph (grid, axis labels, shaded
-      area, dashed linear trend line, tap-for-value tooltips) colored to
-      match the card's own accent, and an average/total-entries/min/max
-      statistics grid — one generic screen reused for all six metrics.
-      Replaces the old always-on-screen "Heart rate — recent" sparkline,
-      which was the one metric getting special-cased dashboard space —
-      see ARCHITECTURE.md
+- [x] Per-metric history: tapping any Body & activity or top-vitals-grid
+      card opens a shared chart+stats+period-selector screen — preset
+      chips (7/30/90 days/all time) plus a custom date-range picker, an
+      avg/range/change summary, an interactive `fl_chart` graph (grid,
+      axis labels, shaded area, dashed linear trend line, tap-for-value
+      tooltips) colored to match the card's own accent, and an
+      average/total-entries/min/max statistics grid — one generic screen
+      reused for every metric. Replaces the old always-on-screen "Heart
+      rate — recent" sparkline, which was the one metric getting
+      special-cased dashboard space — see ARCHITECTURE.md
+- [x] SpO2 and Body temp are now tappable too (they were the only two
+      top-vitals-grid cards with no history view); Heart rate's card was
+      removed from Body & activity since it's no longer a genuine second
+      entry point, just a duplicate of the top vitals grid's — see
+      ARCHITECTURE.md
 - [x] Edit/delete for every manually-logged metric (weight, height,
       hydration, blood pressure, blood glucose, insulin, sleep): each
       history screen now shows a per-entry list below the chart with
@@ -205,7 +209,7 @@ tiles + a static state-level hazard baseline) and prefers live data
       mark-dose-taken and its own doses-per-day adherence chart), and
       Medical ID (a saved blood-type/allergies/conditions profile — no
       chart, since there's no such thing as an "average blood type").
-      13 Body & activity cards total now, across 3 swipe pages.
+      12 Body & activity cards total now, across 2 swipe pages.
       `HealthLogScreen` and its Settings entry are both gone — nothing
       left for an intermediate stub list to point to — see
       ARCHITECTURE.md

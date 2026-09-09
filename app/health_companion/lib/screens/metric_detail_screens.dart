@@ -289,6 +289,45 @@ class HeartRateHistoryScreen extends StatelessWidget {
   }
 }
 
+class SpO2HistoryScreen extends StatelessWidget {
+  const SpO2HistoryScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    // Watching BleService (not HistoryStore, which isn't itself
+    // observable) so this screen keeps updating live while a new vitals
+    // reading comes in — same pattern as HeartRateHistoryScreen.
+    context.watch<BleService>();
+    final history = context.read<HistoryStore>();
+    return MetricHistoryScreen(
+      title: 'SpO2',
+      unit: '%',
+      points: history.spo2History(),
+      accentColor: AppTheme.accentBlue,
+    );
+  }
+}
+
+class BodyTempHistoryScreen extends StatelessWidget {
+  const BodyTempHistoryScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    context.watch<BleService>();
+    final history = context.read<HistoryStore>();
+    final unitSystem = resolveEffectiveUnitSystem(
+        context.watch<AppSettingsStore>().unitSystem);
+    final unit = formatTemperatureC(0, unitSystem).unit;
+    return MetricHistoryScreen(
+      title: 'Body temp',
+      unit: unit,
+      points: _convert(
+          history.bodyTempHistory(), (v) => formatTemperatureC(v, unitSystem)),
+      accentColor: AppTheme.accentCoral,
+    );
+  }
+}
+
 class BloodPressureHistoryScreen extends StatelessWidget {
   const BloodPressureHistoryScreen({super.key});
 

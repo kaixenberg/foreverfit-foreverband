@@ -285,6 +285,9 @@ class DashboardScreen extends StatelessWidget {
                 icon: Icons.bloodtype,
                 warn: spo2Warn,
                 accentColor: AppTheme.accentBlue,
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const SpO2HistoryScreen()),
+                ),
               ),
               MetricCard(
                 label: 'Body temp',
@@ -297,6 +300,10 @@ class DashboardScreen extends StatelessWidget {
                 icon: Icons.thermostat,
                 warn: bodyTempWarn,
                 accentColor: AppTheme.accentCoral,
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                      builder: (_) => const BodyTempHistoryScreen()),
+                ),
               ),
               MetricCard(
                 label: 'Ambient temp',
@@ -384,18 +391,6 @@ class DashboardScreen extends StatelessWidget {
           _PagedCardGrid(
             cards: [
               const _StepsCard(),
-              MetricCard(
-                label: 'Heart rate',
-                value: hasFingerReading ? heartRate.toStringAsFixed(0) : '--',
-                unit: vitals != null && !hasFingerReading ? 'no finger' : 'bpm',
-                icon: Icons.favorite,
-                warn: heartRateWarn,
-                accentColor: AppTheme.accentPink,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                      builder: (_) => const HeartRateHistoryScreen()),
-                ),
-              ),
               MetricCard(
                 label: 'Weight',
                 value: metrics.latestWeightKg == null

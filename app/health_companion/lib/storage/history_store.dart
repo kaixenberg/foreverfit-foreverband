@@ -39,6 +39,26 @@ class HistoryStore {
             ),
       ];
 
+  /// Same shape as [heartRateHistory] — backs SpO2HistoryScreen's chart.
+  List<MetricPoint> spo2History({int limit = 200}) => [
+        for (final entry in recentVitals(limit: limit))
+          if (DateTime.tryParse(entry['receivedAt'] as String? ?? '') != null)
+            MetricPoint(
+              at: DateTime.parse(entry['receivedAt'] as String),
+              value: (entry['spo2'] as num).toDouble(),
+            ),
+      ];
+
+  /// Same shape as [heartRateHistory] — backs BodyTempHistoryScreen's chart.
+  List<MetricPoint> bodyTempHistory({int limit = 200}) => [
+        for (final entry in recentVitals(limit: limit))
+          if (DateTime.tryParse(entry['receivedAt'] as String? ?? '') != null)
+            MetricPoint(
+              at: DateTime.parse(entry['receivedAt'] as String),
+              value: (entry['bodyTempC'] as num).toDouble(),
+            ),
+      ];
+
   List<Map> _recent(Box<Map> box, int limit) {
     final values = box.values.toList();
     if (values.length <= limit) return values;

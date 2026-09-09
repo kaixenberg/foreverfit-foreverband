@@ -499,23 +499,34 @@ Health Connect:
 - **Dashboard card layout**: Wellness overview (3 cards) is a
   horizontally scrollable row of fixed-width rectangular cards (`_CardRow`
   in `dashboard_screen.dart`) — 3-per-row `GridView`s were truncating
-  labels ("Well…", "Basel…"). Body & activity (7 cards: steps, heart
-  rate, weight, height, BMI, body fat, hydration) outgrew a single row,
-  so it's a swipeable, paged 2-column x 3-row grid with a dot-page
-  indicator instead (`_PagedCardGrid`) — the OpenVitals
-  dashboard-carousel pattern, reimplemented from scratch (AGPL, no code
-  copied). Heart rate appears both here and in the top vitals grid
-  (deliberate duplication, not an oversight: the vitals grid is the
-  always-visible, no-swipe-needed safety-critical one; this one is the
-  "all your stats, one consistent tap-through interaction" one) — every
-  card in both places, heart rate included, opens the same generic
-  `MetricHistoryScreen` (`HeartRateHistoryScreen` in
-  `metric_detail_screens.dart`, reading `HistoryStore.heartRateHistory()`)
-  rather than a bespoke inline chart. There used to be a standalone
-  "Heart rate — recent" sparkline permanently on the dashboard; it's
-  gone now that every metric, heart rate included, follows the same
-  tap-a-card-to-see-its-trend pattern instead of one metric getting
-  special-cased screen space.
+  labels ("Well…", "Basel…"). Body & activity (weight, height, BMI, body
+  fat, hydration, blood pressure, blood glucose, insulin, sleep,
+  medications, plus steps) outgrew a single row, so it's a swipeable,
+  paged 2-column x 3-row grid with a dot-page indicator instead
+  (`_PagedCardGrid`) — the OpenVitals dashboard-carousel pattern,
+  reimplemented from scratch (AGPL, no code copied). Every card here
+  opens the same generic `MetricHistoryScreen` rather than a bespoke
+  inline chart.
+  - **Heart rate is no longer duplicated between here and the top vitals
+    grid.** It used to appear in both — deliberately, at the time (the
+    vitals grid as the always-visible safety-critical one, this grid as
+    the "all your stats, one consistent tap-through interaction" one) —
+    but that reasoning didn't hold up once every top-vitals-grid card
+    became tappable too (see below), so it was just a genuine duplicate.
+    Removed from Body & activity; the top vitals grid's Heart rate card
+    is now the only entry point to `HeartRateHistoryScreen`.
+  - **SpO2 and Body temp are now tappable too**, each opening a new
+    `MetricHistoryScreen` the same way every other vitals-grid card
+    already did — `SpO2HistoryScreen`/`BodyTempHistoryScreen`
+    (`metric_detail_screens.dart`), reading two new `HistoryStore`
+    methods (`spo2History()`/`bodyTempHistory()`, same shape as the
+    existing `heartRateHistory()` — no separate log action, since
+    neither is manually entered). Before this, SpO2/Body temp were the
+    only two top-vitals-grid cards with no history view at all. There
+    used to be a standalone "Heart rate — recent" sparkline permanently
+    on the dashboard; it's long gone now that every vitals metric
+    follows the same tap-a-card-to-see-its-trend pattern instead of one
+    metric getting special-cased screen space.
 - **`HealthLogScreen` is gone** — every metric it used to stub out is a
   real Dashboard card now (blood pressure, glucose, insulin, sleep, and
   Medical ID landed alongside weight/height/body fat/hydration in the
