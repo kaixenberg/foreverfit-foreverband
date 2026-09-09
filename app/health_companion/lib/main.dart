@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:provider/provider.dart';
 
 import 'background/background_monitoring_service.dart';
@@ -174,10 +173,15 @@ class _App extends StatelessWidget {
     // toggle to turn it back off). start() is itself a no-op once
     // already running, so calling it on every build here is safe — same
     // "cheap to re-check, guarded internally" pattern the gates below use.
+    //
+    // Deliberately does NOT set the app to show over the lock screen as a
+    // standing, app-wide setting — MainActivity.kt applies that only for
+    // the one Activity launch that follows a genuine escalation (an
+    // unanswered fall alert, an imminent disaster, or the developer/demo
+    // preview), never for ordinary use of the app.
     if (userProfile.onboardingCompleted) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         context.read<BackgroundMonitoringService>().start();
-        FlutterForegroundTask.setOnLockScreenVisibility(true);
       });
     }
 

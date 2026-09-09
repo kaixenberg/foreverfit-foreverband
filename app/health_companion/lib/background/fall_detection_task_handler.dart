@@ -1,11 +1,13 @@
 import 'dart:async';
 
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
 import '../disaster/disaster_service.dart';
 import '../ml/fall_inference.dart';
 import '../sensors/phone_motion_service.dart';
+import '../services/notification_service.dart';
 
 /// Must always be a top-level function — this is the entry point the
 /// foreground service spins up as a separate background isolate/engine.
@@ -20,35 +22,56 @@ void fallDetectionTaskCallback() {
 /// to backgrounded apps on API 28+). Reuses `PhoneMotionService` and
 /// `FallInference` completely unchanged (both are plain classes with no
 /// Provider/BuildContext dependency) — the only new logic here is what
-/// happens after a fall is detected, since that has to go through a
-/// notification instead of the in-app countdown UI.
+/// happens after a fall is detected: a high-priority actionable
+/// notification (vibration + alarm-stream sound) starts a 10s response
+/// window, and only an unanswered window wakes the screen and brings the
+/// app forward (over the lock screen, for that one launch only — see
+/// `MainActivity.kt`) into the existing emergency-call workflow. Never
+/// shows anything over the lock screen at the moment a fall is detected —
+/// only after that window elapses unanswered.
 ///
 /// See ARCHITECTURE.md's background fall-detection section for the full
 /// design and its documented limitations (mandatory persistent
-/// notification, Hive multi-isolate coordination for the disaster
-/// check, the Android 14 full-screen-intent grant).
+/// monitoring notification, Hive multi-isolate coordination for the
+/// disaster check).
 class FallDetectionTaskHandler extends TaskHandler {
   static const _consecutiveTriggersToAlert = 2;
   static const _alertCountdownSeconds = 10;
   static const _disasterCheckInterval = Duration(minutes: 15);
-  static const _monitoringTitle = 'Monitoring for falls';
-  static const _monitoringText =
-      'Health Companion is watching for falls in the background.';
+
+  /// A fixed id (distinct from the foreground service's own persistent
+  /// notification id in `background_monitoring_service.dart`) so the
+  /// alert can be updated/cancelled by id rather than tracked separately.
+  static const _alertNotificationId = 5001;
 
   final _phoneMotion = PhoneMotionService();
   final _inference = FallInference();
 
+  /// A separate plugin instance/channel registration from the main
+  /// isolate's `NotificationService` (see main.dart) — this isolate has
+  /// its own Flutter engine, so it needs its own `init()` call.
+  final _notifications = NotificationService();
+
   int _consecutiveTriggers = 0;
   bool _alertActive = false;
   Timer? _countdownTimer;
-  int? _secondsRemaining;
   DateTime? _lastDisasterCheck;
 
   @override
   Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
     await _inference.load();
+    await _notifications.init(onNotificationResponse: _onNotificationResponse);
     _phoneMotion.addListener(_onPhoneUpdate);
     _phoneMotion.start();
+  }
+
+  /// Fires when the user taps the alert notification's body or its
+  /// "I'm OK" action — either counts as acknowledging it, so both cancel
+  /// the escalation the same way.
+  void _onNotificationResponse(NotificationResponse response) {
+    if (response.id == _alertNotificationId && _alertActive) {
+      unawaited(_resetAlert());
+    }
   }
 
   void _onPhoneUpdate() {
@@ -81,61 +104,50 @@ class FallDetectionTaskHandler extends TaskHandler {
     }
   }
 
-  /// Updates the service's own persistent notification to show the
-  /// fall alert + "I'm OK" button — reusing the one mandatory
-  /// foreground-service notification rather than showing a second,
-  /// separate one (a normal, common pattern for foreground services
-  /// that need to surface a transient status change).
+  /// Shows the actionable emergency notification (vibration + alarm-stream
+  /// sound + an "I'm OK" action — see
+  /// `NotificationService.showEmergencyAlert`) and starts the 10-second
+  /// response window. Deliberately does NOT wake the screen or bring the
+  /// app forward yet — only an unanswered timeout does that (`_escalate`),
+  /// so a detected fall never shows anything over the lock screen before
+  /// the user has had a chance to respond right from the notification.
   Future<void> _startAlert() async {
     _alertActive = true;
-    _secondsRemaining = _alertCountdownSeconds;
-    await FlutterForegroundTask.updateService(
-      notificationTitle: 'Possible fall detected',
-      notificationText: "Tap \"I'm OK\" if you're fine — otherwise help is "
-          'on the way in ${_alertCountdownSeconds}s',
-      notificationButtons: const [
-        NotificationButton(id: 'im_ok', text: "I'm OK")
+    await _notifications.showEmergencyAlert(
+      id: _alertNotificationId,
+      title: 'Possible fall detected',
+      body: "Tap \"I'm OK\" if you're fine — otherwise help is on the way "
+          'in ${_alertCountdownSeconds}s.',
+      actions: const [
+        AndroidNotificationAction('im_ok', "I'm OK", showsUserInterface: false),
       ],
     );
     _countdownTimer?.cancel();
-    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      _secondsRemaining = (_secondsRemaining ?? 1) - 1;
-      if (_secondsRemaining! <= 0) {
-        timer.cancel();
-        unawaited(_escalate());
-      }
+    _countdownTimer =
+        Timer(const Duration(seconds: _alertCountdownSeconds), () {
+      unawaited(_escalate());
     });
   }
 
-  /// Unaddressed for the full countdown — brings the app to the
-  /// foreground (waking the screen, over the lock screen if the Activity
-  /// requested that visibility) with a route marker `BackgroundEscalationGate`
-  /// reads to immediately run the existing emergency-call workflow,
-  /// skipping the in-app countdown since it already elapsed here.
+  /// Unanswered for the full 10s window — wakes the screen and brings the
+  /// app forward with a route marker `BackgroundEscalationGate` reads to
+  /// immediately run the existing emergency-call workflow, skipping the
+  /// in-app countdown since it already elapsed here. `MainActivity.kt`
+  /// shows the launched Activity over the lock screen for exactly this
+  /// launch (see its `applyLockScreenVisibility`), not as a standing
+  /// app-wide setting.
   Future<void> _escalate() async {
     FlutterForegroundTask.wakeUpScreen();
     FlutterForegroundTask.launchApp('escalate_fall');
     await _resetAlert();
   }
 
-  @override
-  void onNotificationButtonPressed(String id) {
-    if (id == 'im_ok' && _alertActive) {
-      unawaited(_resetAlert());
-    }
-  }
-
   Future<void> _resetAlert() async {
     _countdownTimer?.cancel();
     _countdownTimer = null;
     _alertActive = false;
-    _secondsRemaining = null;
     _consecutiveTriggers = 0;
-    await FlutterForegroundTask.updateService(
-      notificationTitle: _monitoringTitle,
-      notificationText: _monitoringText,
-      notificationButtons: const [],
-    );
+    await _notifications.cancelNotification(_alertNotificationId);
   }
 
   /// Reuses `DisasterService` completely unchanged for the periodic
@@ -177,5 +189,6 @@ class FallDetectionTaskHandler extends TaskHandler {
     _phoneMotion.removeListener(_onPhoneUpdate);
     _phoneMotion.dispose();
     _inference.close();
+    await _notifications.cancelNotification(_alertNotificationId);
   }
 }

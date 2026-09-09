@@ -834,51 +834,74 @@ delivery (accelerometer/gyroscope) to backgrounded apps on API 28+ —
 there is no way to keep detecting falls in the background without a
 **foreground service**.
 
-**Full-screen alert while backgrounded uses a real Activity launch, not
-`SYSTEM_ALERT_WINDOW`/"draw over other apps"** — a deliberate choice.
-Research confirmed a raw overlay window needs a *second* Flutter engine
-just to render existing UI inside it (heavy, fragile lifecycle), doesn't
-reliably draw over the lock screen, and draws heavier Play Store
-scrutiny. The mechanism actually used — bringing the app's own real
-`MainActivity`/Flutter route to the foreground via `Activity.
-setShowWhenLocked()` + a normal Activity launch — is the same class of
-solution alarm/calling apps use, reuses the existing screens completely
-unmodified, and needs no extra "special access" permission grant.
+**A fall never shows anything over the lock screen at the moment it's
+detected.** It shows a high-priority *notification* first (vibration +
+alarm-stream sound + an "I'm OK" action) and only escalates to bringing
+the app forward — over the lock screen, if the phone is locked — after
+that notification goes unanswered for 10 seconds. The app is never bound
+or shown over the lock screen as a standing, app-wide setting; that
+visibility is granted natively, scoped to the one Activity launch that
+follows a genuine escalation, and revoked immediately after (see
+`MainActivity.kt` below) — an earlier version of this feature set it
+once at app startup and left it set, which meant the app could appear
+over the lock screen on an ordinary relaunch with nothing wrong. The
+escalation launch itself is a real Activity launch, not
+`SYSTEM_ALERT_WINDOW`/"draw over other apps" — the same class of
+solution alarm/calling apps use, reusing the existing screens completely
+unmodified, and needing no extra "special access" permission grant.
 
-- **`lib/ml/fall_inference.dart`** (new): the TFLite windowing/inference
+- **`lib/ml/fall_inference.dart`**: the TFLite windowing/inference
   extracted out of `FallDetectorService` (unchanged model/threshold/
   channel order) into a small class with no `ChangeNotifier`/Provider
   dependency — used by *both* the foreground `FallDetectorService`
-  (behavior unchanged) and the new background task handler, so only the
+  (behavior unchanged) and the background task handler, so only the
   "what happens after a fall is detected" glue differs between them, not
   the model logic itself.
 - **`flutter_foreground_task`** runs a persistent Android foreground
   service (`foregroundServiceType="health"`, the type Android 14 added
   specifically for continuous fitness/health sensor monitoring — this
   app's existing `ACTIVITY_RECOGNITION` permission is sufficient to
-  start it, no new runtime permission needed). New manifest permissions:
-  `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_HEALTH`, `WAKE_LOCK`, plus
-  the package's own `<service>` declaration.
-- **`lib/background/fall_detection_task_handler.dart`** (new): a
-  `TaskHandler` running in the service's own background isolate. Owns a
-  *second* `PhoneMotionService` + `FallInference` instance (both plain
-  classes, reused completely unchanged — no BuildContext/Provider
-  dependency to work around). On a detected fall:
-  1. Updates the service's own mandatory persistent notification to show
-     the alert + an `AndroidNotificationAction`-style "I'm OK" button
-     (`NotificationButton`) — reusing the one notification Android
-     already requires, rather than showing a second one.
-  2. Starts its own 10-second `Timer` — the app's own decision window,
-     not a native notification-countdown widget (Android has no built-in
-     delay-then-escalate primitive on a single notification).
-  3. "I'm OK" within 10s (`onNotificationButtonPressed`) → cancels the
-     timer, reverts the notification to "Monitoring for falls".
-  4. Unaddressed after 10s → `FlutterForegroundTask.wakeUpScreen()` +
+  start it, no new runtime permission needed). Manifest permissions:
+  `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_HEALTH`, `WAKE_LOCK`,
+  `VIBRATE`, plus the package's own `<service>` declaration.
+- **`lib/services/notification_service.dart`**: the app's one existing
+  `flutter_local_notifications` wrapper (previously used only for
+  `InsightWatcherService`'s vitals/tracking notifications) gained
+  `showEmergencyAlert()` on a dedicated `health_companion_emergency`
+  channel, reused rather than duplicated — max importance/priority,
+  `AndroidNotificationCategory.alarm` + `AudioAttributesUsage.alarm` (so
+  the sound plays through the alarm audio stream, the same mechanism
+  `AlarmSoundService` uses for the in-app disaster warning, rather than
+  the notification stream), a custom vibration pattern, and the siren
+  asset also bundled as an Android raw resource
+  (`android/app/src/main/res/raw/alarm_siren.wav`, required for a custom
+  notification sound — a Flutter asset alone isn't reachable from native
+  notification code). This is the most a normal app is allowed to do to
+  get through silent/Do Not Disturb — it deliberately does not request
+  `channelBypassDnd`/notification-policy access, which would actually
+  bypass DND rather than just use the alarm stream. `init()` now also
+  accepts an optional `onNotificationResponse` callback, since the
+  background isolate needs its own plugin instance and its own way to
+  hear "I'm OK" taps (see below).
+- **`lib/background/fall_detection_task_handler.dart`**: a `TaskHandler`
+  running in the service's own background isolate. Owns a *second*
+  `PhoneMotionService` + `FallInference` instance (both plain classes,
+  reused completely unchanged) and its own `NotificationService`
+  instance. On a detected fall:
+  1. Calls `NotificationService.showEmergencyAlert()` — vibration +
+     alarm-stream sound + an "I'm OK" action
+     (`showsUserInterface: false`, so tapping it doesn't open the app).
+     Does **not** wake the screen or launch anything yet.
+  2. Starts a single 10-second `Timer` for the response window.
+  3. Acknowledged within 10s (tapping either the action or the
+     notification body — both fire the same `onDidReceiveNotification
+     Response` callback) → cancels the timer and the notification.
+  4. Unanswered after 10s → `FlutterForegroundTask.wakeUpScreen()` +
      `FlutterForegroundTask.launchApp('escalate_fall')`, which launches
-     `MainActivity` (a plain `Intent.FLAG_ACTIVITY_NEW_TASK` launch, the
-     same mechanism `getLaunchIntentForPackage` uses — confirmed by
-     reading the package's own native source, not assumed) carrying a
-     `route` extra.
+     `MainActivity` (a plain `Intent.FLAG_ACTIVITY_NEW_TASK` launch —
+     confirmed by reading the package's own native source, not assumed;
+     neither this nor `wakeUpScreen()` depend on the foreground service
+     actually being running) carrying a `route` extra.
   5. Also periodically (every 15 min, matching `InsightWatcherService`'s
      existing cadence) constructs a plain `DisasterService()..init()` —
      reusing 100% of its existing fetch/cache logic, zero new
@@ -892,29 +915,54 @@ unmodified, and needs no extra "special access" permission grant.
 - **`MainActivity.kt`**: a new `escalation` channel. `onNewIntent`
   (covers a warm relaunch — `android:launchMode="singleTop"` was already
   set) and `configureFlutterEngine` (cold start) both read the launched
-  intent's `route` extra and forward it to Dart — this is Flutter's own
-  "initial route" extra convention (the same one `FlutterForegroundTask.
-  launchApp`/`PluginUtils.launchApp` sets), read directly here rather
-  than relying on implicit Dart-side initial-route plumbing, since it
-  needs to behave identically whether the engine was already alive or
-  not.
-- **`lib/domain/background_escalation_gate.dart`** (new): listens on
-  that channel. `route == 'escalate_fall'` calls
-  `FallDetectorService.triggerBackgroundEscalatedCall()` — a new method
-  with the same tail as the existing in-app `_triggerEmergencyCall()`
-  (starts `EmergencyWorkflowService`, which then runs through
-  `EmergencyCallGate`/`EmergencyCallScreen` completely unchanged), just
-  skipping the 10-second in-app countdown since it already elapsed in
-  the background. `route == 'escalate_disaster'` needs no special
-  handling — `ImminentWarningGate` gained a `WidgetsBindingObserver` that
-  calls `DisasterService.refresh()` on `AppLifecycleState.resumed`, so it
-  sees the fresh risk data and shows `ImminentWarningScreen` itself, the
-  same way it already does for a live in-app detection.
-- **`lib/background/background_monitoring_service.dart`** (new): starts/
-  stops the service. Started automatically once onboarding completes
-  (fall detection is a safety feature, not an opt-in extra) — Settings →
-  Background permission gained an explicit toggle to turn it back off,
+  intent's `route` extra via one shared `forwardEscalationRoute()` — this
+  is Flutter's own "initial route" extra convention (the same one
+  `FlutterForegroundTask.launchApp`/`PluginUtils.launchApp` sets), read
+  directly here rather than relying on implicit Dart-side initial-route
+  plumbing. That same function also calls `applyLockScreenVisibility()`
+  — `setShowWhenLocked()`/`setTurnScreenOn()` on API 27+, the legacy
+  `FLAG_SHOW_WHEN_LOCKED`/`FLAG_TURN_SCREEN_ON` window flags below that —
+  passing `true` only when the intent actually carries an `escalate_*`
+  route and `false` otherwise, on *every* launch (not just escalation
+  ones), so the flag never lingers from a previous escalation into a
+  later ordinary relaunch of the same (`singleTop`) Activity instance.
+  The device stays locked underneath; this only draws the app's own UI
+  on top of the keyguard for that one launch, the same way an incoming-
+  call screen does, and dismisses nothing.
+- **`lib/domain/background_escalation_gate.dart`**: listens on that
+  channel. `route == 'escalate_fall'` calls `FallDetectorService.
+  triggerBackgroundEscalatedCall()` — the same tail as the existing
+  in-app `_triggerEmergencyCall()` (starts `EmergencyWorkflowService`,
+  which then runs through `EmergencyCallGate`/`EmergencyCallScreen`
+  completely unchanged), just skipping the 10-second in-app countdown
+  since it already elapsed in the background. `route ==
+  'escalate_disaster'` needs no special handling —
+  `ImminentWarningGate` has a `WidgetsBindingObserver` that calls
+  `DisasterService.refresh()` on `AppLifecycleState.resumed`, so it sees
+  the fresh risk data and shows `ImminentWarningScreen` itself, the same
+  way it already does for a live in-app detection. `route ==
+  'escalate_demo'` calls `EmergencyWorkflowService.start(forceMock:
+  true)` directly — see the demo trigger below.
+- **`lib/background/background_monitoring_service.dart`**: starts/stops
+  the service. Started automatically once onboarding completes (fall
+  detection is a safety feature, not an opt-in extra) — Settings →
+  Background permission has an explicit toggle to turn it back off,
   alongside the existing battery-optimization section.
+
+**Developer/demo: lock-screen SOS escalation preview.** Settings →
+Developer/demo has a "Trigger lock-screen SOS escalation" button
+(`lib/domain/demo_escalation_trigger.dart`) for verifying the lock-screen
+behavior on a real device without waiting for a real fall: it waits 10
+seconds (logging a countdown via `debugPrint` each second, so the wait is
+easy to verify while testing), then calls the exact same
+`FlutterForegroundTask.wakeUpScreen()` + `launchApp('escalate_demo')`
+pair the real fall alert uses after its own unanswered window. It never
+touches `FallDetectorService`/`FallDetectionTaskHandler` or posts the
+real emergency notification, and `BackgroundEscalationGate` routes
+`'escalate_demo'` straight to `EmergencyWorkflowService.start(...,
+forceMock: true)`, so it can never place a real call regardless of the
+app's real test-mode setting — fully isolated from the real
+fall-detection flow, per its own design brief.
 
 **Documented limitations, not hidden:**
 - The persistent "Monitoring for falls" notification while the service
@@ -932,6 +980,13 @@ unmodified, and needs no extra "special access" permission grant.
   app is foregrounded and closes its box immediately after each check —
   a best-effort mitigation, not a guarantee, given two isolates could in
   principle still race.
+- The emergency-alert notification's sound plays once per post, the
+  normal Android behavior for a channel-driven notification sound — it
+  does not loop the siren the way `AlarmSoundService` does for the
+  in-app disaster warning. Adding that would mean running a second,
+  independent audio system in the background isolate for a window
+  that's already backed by vibration, sound, and (on unlock) the SOS
+  screen itself; not done for this scope.
 - No automated test coverage for the service/notification/Activity-
   launch integration itself — this is almost entirely platform surface
   that isn't meaningfully unit-testable (consistent with this project's

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../disaster/hazard_type.dart';
+import '../../domain/demo_escalation_trigger.dart';
 import '../../domain/emergency_workflow_service.dart';
 import '../../storage/emergency_contact_store.dart';
 import '../imminent_warning_screen.dart';
@@ -108,6 +109,34 @@ class DeveloperDemoScreen extends StatelessWidget {
                       forceMock: true,
                     ),
             child: const Text('Preview emergency workflow'),
+          ),
+          const SizedBox(height: 24),
+          Text('Lock-screen SOS escalation (demo)',
+              style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 4),
+          Text(
+            'Waits 10 seconds (watch the logs for a live countdown), then '
+            'wakes the screen and shows the SOS screen exactly the way an '
+            'unanswered fall alert does — including over the lock screen '
+            'if the phone is locked during the wait. Always forced into '
+            'test mode: this can never place a real call, and never '
+            'touches the real fall-detection flow.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 12),
+          FilledButton.tonal(
+            onPressed: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    'Triggered — wait ~10s for the screen to wake and the '
+                    'SOS screen to appear (see logs for the countdown).',
+                  ),
+                ),
+              );
+              triggerDemoLockScreenEscalation();
+            },
+            child: const Text('Trigger lock-screen SOS escalation'),
           ),
           const SizedBox(height: 24),
           Text('Preview disaster warnings',

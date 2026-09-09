@@ -13,6 +13,7 @@ import android.telephony.PhoneStateListener
 import android.telephony.SmsManager
 import android.telephony.TelephonyCallback
 import android.telephony.TelephonyManager
+import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
@@ -198,10 +199,43 @@ class MainActivity : FlutterActivity() {
     /// directly here rather than relying on Dart-side initial-route
     /// plumbing, since this needs to work identically for both a cold
     /// start and a warm relaunch while the engine is already alive.
+    ///
+    /// Also drives whether this Activity is allowed to show over the lock
+    /// screen — scoped to exactly this launch, not a standing setting (see
+    /// applyLockScreenVisibility), so a fall/disaster/demo escalation can
+    /// still reach the user when the phone is locked, while ordinary use
+    /// of the app never appears over the lock screen.
     private fun forwardEscalationRoute(intent: Intent?) {
-        val route = intent?.getStringExtra("route") ?: return
-        if (!route.startsWith("escalate_")) return
-        escalationChannel?.invokeMethod("onEscalationRoute", route)
+        val route = intent?.getStringExtra("route")
+        val isEscalation = route != null && route.startsWith("escalate_")
+        applyLockScreenVisibility(isEscalation)
+        if (isEscalation) {
+            escalationChannel?.invokeMethod("onEscalationRoute", route)
+        }
+    }
+
+    /// Shows (or stops showing) this Activity over the lock screen — the
+    /// same OS-sanctioned mechanism incoming-call and alarm UIs use. The
+    /// device stays locked underneath; nothing here dismisses or bypasses
+    /// its security, it only draws the emergency/SOS UI on top of the
+    /// keyguard for the duration of one escalation launch.
+    private fun applyLockScreenVisibility(show: Boolean) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            setShowWhenLocked(show)
+            setTurnScreenOn(show)
+        } else if (show) {
+            window.addFlags(
+                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                    WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
+                    WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,
+            )
+        } else {
+            window.clearFlags(
+                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                    WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
+                    WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,
+            )
+        }
     }
 
     /// API 29+ can ask the platform for the device's actual regional

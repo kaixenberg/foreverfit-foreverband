@@ -254,16 +254,21 @@ tiles + a static state-level hazard baseline) and prefers live data
       running even while the app is backgrounded/screen off (confirmed
       Android hard-stops sensor delivery to backgrounded apps otherwise —
       there's no way around a foreground service for this); a detected
-      fall shows an actionable "I'm OK" notification with a 10s window,
-      escalating to bringing the app to the foreground (over the lock
-      screen if needed) to run the same emergency-call workflow if
+      fall shows a high-priority actionable notification (vibrates, plays
+      an alarm through the alarm audio stream, "I'm OK" action) with a
+      10s window, escalating to waking the screen and bringing the app
+      forward — over the lock screen for that one launch only, never as
+      a standing setting — to run the same emergency-call workflow if
       unaddressed. Disaster warnings escalate the same way from a
-      periodic background risk check. Uses a real Activity launch, not
+      periodic background risk check. A Settings → Developer/demo button
+      previews the lock-screen escalation path (10s delay, then the same
+      wake+launch) without ever touching the real fall-detection flow or
+      placing a real call. Uses a real Activity launch, not
       `SYSTEM_ALERT_WINDOW`/"draw over other apps" — see ARCHITECTURE.md
       for why, and for the documented limitations (the mandatory
-      persistent notification, a small unavoidable duplication between
-      the foreground/background detectors, and the Hive multi-isolate
-      coordination the background disaster check needs)
+      persistent monitoring notification, a small unavoidable duplication
+      between the foreground/background detectors, and the Hive
+      multi-isolate coordination the background disaster check needs)
 - [x] BMI now has its own history chart (previously the only Body &
       activity card without one); body fat is computed from BMI + age +
       sex (Deurenberg formula) instead of manually logged — see
