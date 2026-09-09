@@ -94,7 +94,9 @@ WellnessSnapshot _buildWellnessSnapshot({
     WellnessFactor(
       label: 'Body temperature',
       warn: bodyTempWarn,
-      detail: '${bodyTemp.toStringAsFixed(1)}°C (normal range 35.5–37.8°C).',
+      detail: !hasFingerReading
+          ? 'No finger detected — not scored right now.'
+          : '${bodyTemp.toStringAsFixed(1)}°C (normal range 35.5–37.8°C).',
     ),
     WellnessFactor(
       label: 'Ambient heat index',
@@ -162,8 +164,11 @@ class DashboardScreen extends StatelessWidget {
             heartRate > ceiling ||
             baseline.isAnomalous(heartRate));
     final spo2Warn = hasFingerReading && spo2 < spo2FloorPercent && spo2 > 0;
-    final bodyTempWarn =
-        vitals != null && (bodyTemp > bodyTempHighC || bodyTemp < bodyTempLowC);
+    // Same "no finger -> no reading" gate as HR/SpO2: the firmware now only
+    // populates bodyTempC while it also has skin contact (see
+    // health_companion.ino), so a 0 here means no reading, not hypothermia.
+    final bodyTempWarn = hasFingerReading &&
+        (bodyTemp > bodyTempHighC || bodyTemp < bodyTempLowC);
 
     // Which source wins when both are available is a Settings choice
     // (Sensor precedence) — "--" only when neither is available either way.
@@ -189,7 +194,7 @@ class DashboardScreen extends StatelessWidget {
             HeatRisk.danger;
     final heatStressWarn = resolvedAmbientTemp != null &&
         resolvedHumidity != null &&
-        vitals != null &&
+        hasFingerReading &&
         isHeatStressRisk(
           ambientC: resolvedAmbientTemp,
           humidityPercent: resolvedHumidity,
@@ -291,12 +296,14 @@ class DashboardScreen extends StatelessWidget {
               ),
               MetricCard(
                 label: 'Body temp',
-                value: vitals == null
-                    ? '--'
-                    : formatTemperatureC(bodyTemp, unitSystem)
+                value: hasFingerReading
+                    ? formatTemperatureC(bodyTemp, unitSystem)
                         .value
-                        .toStringAsFixed(1),
-                unit: formatTemperatureC(bodyTemp, unitSystem).unit,
+                        .toStringAsFixed(1)
+                    : '--',
+                unit: vitals != null && !hasFingerReading
+                    ? 'no finger'
+                    : formatTemperatureC(bodyTemp, unitSystem).unit,
                 icon: Icons.thermostat,
                 warn: bodyTempWarn,
                 accentColor: AppTheme.accentCoral,

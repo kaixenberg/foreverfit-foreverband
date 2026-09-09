@@ -48,6 +48,20 @@ free-fall-then-impact signature.
 - Body temperature is a stubbed simulation (`readBodyTempC()` in
   `health_companion.ino`) because the MAX30205 on hand doesn't work. Swap in
   a real driver call there if it's replaced.
+- **HR/SpO2 are also spoofed by default** (`USE_DUMMY_HR_SPO2` in
+  `health_companion.ino`, on by default) — a smooth random-walk around a
+  healthy resting range (65-85 bpm, 96-99% SpO2), same style as the body-
+  temp stub, in place of the real MAX30101 beat-detection algorithm's
+  output. For demo reliability: real skin-contact quality/ambient light
+  can make the real algorithm noisy on stage, and this trades that away
+  for a guaranteed "looks like a healthy wearable" reading. **The real
+  algorithm itself is untouched and still bench-tested** — only the two
+  output variables (`currentBpm`/`currentSpo2`) get overridden in place,
+  right before anything reads them, so flipping `USE_DUMMY_HR_SPO2` to 0
+  goes straight back to the real sensor's output with no other change.
+  Finger-presence detection is real either way (still driven by the
+  actual IR DC baseline) — dummy mode fakes the *numbers*, not "is
+  someone wearing it."
 
 **`fingerPresent` flag (fixed a real bias bug)**: the firmware zeroes
 `heartRate`/`spo2` when the MAX30101 doesn't detect finger/wrist contact
@@ -62,6 +76,34 @@ composite wellness score. Fix: `BleService._onVitals()` now only calls
 `historyStore.addVitals()` when `fingerPresent` is true, and
 `DashboardScreen` shows "no finger" instead of a bpm/percent value and
 skips the HR/SpO2 warning checks entirely in that state.
+
+**Body temperature now follows the same rule.** It used to be reported
+unconditionally (a jittering stub value regardless of contact), which
+didn't match how a real integrated sensor package behaves — no skin
+contact should mean no temperature reading either, the same as HR/SpO2.
+`notifyVitals()` now only calls `readBodyTempC()` while `fingerPresent`
+is true, sending 0 otherwise. Every place on the Dart side that already
+gated its heart-rate/SpO2 check on `fingerPresent` had to get the exact
+same fix for body temp — a 0°C reading would otherwise read as a false
+hypothermia signal the moment a finger came off, the very bias bug
+`fingerPresent` was originally introduced to prevent:
+- `dashboard_screen.dart`: `bodyTempWarn` and `heatStressWarn` gated on
+  `hasFingerReading` (weren't before), Body temp card/wellness-factor
+  text now show "no finger"/"not scored right now" the same way Heart
+  rate and SpO2 already did.
+- `insight_engine.dart`: the "Low/Elevated body temperature" rule that
+  feeds the Insights card and its notifications was a standalone
+  top-level check (`vitals != null`, not `hasFingerReading`) — moved
+  inside the same `if (hasFingerReading)` block heart rate/SpO2 already
+  used, instead of living outside it.
+- `emergency_summary_builder.dart`: the *live* body-temp check that
+  decides whether to mention it in an emergency call's AI-generated
+  summary had the identical bug — a 0°C reading could have been read out
+  as "body temperature: 0.0 degrees Celsius" during a real call. Fixed
+  the same way. (`_abnormalDurationText`'s walk over *historical*
+  records didn't need this fix — `BleService._onVitals()` never persists
+  a no-finger sample to `vitals_history` at all, so there's no 0°C
+  record to walk into in the first place.)
 
 ## On-device fall-detection CNN (implemented, currently phone-only)
 

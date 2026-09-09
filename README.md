@@ -11,9 +11,13 @@ heuristics, offline maps, and SOS.
 ## Hardware
 
 - ESP32-S3 N16R8 dev board (16MB flash, 8MB octal PSRAM)
-- MAX30101 — heart rate & SpO2
+- MAX30101 — heart rate & SpO2 (real finger-presence detection; the BPM/
+  SpO2 numbers themselves are spoofed to a healthy resting range by
+  default for demo reliability — `USE_DUMMY_HR_SPO2` in
+  `health_companion.ino`, flip to 0 for the real bench-tested algorithm)
 - MAX30205 — body temperature (not working on this build; firmware uses a
-  stubbed value, see `readBodyTempC()` in `health_companion.ino`)
+  stubbed value, see `readBodyTempC()` in `health_companion.ino` — only
+  reported while a finger is present, same as HR/SpO2)
 - MPU6050 — accelerometer & gyroscope (**dead on this breadboard build** —
   confirmed via I2C scan; app's fall detector currently runs on phone-only
   motion data instead, see `ARCHITECTURE.md`)

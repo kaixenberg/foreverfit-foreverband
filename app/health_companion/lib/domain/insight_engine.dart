@@ -65,21 +65,25 @@ List<Insight> computeInsights({
         icon: Icons.bloodtype,
       ));
     }
-  }
 
-  if (vitals != null &&
-      (vitals.bodyTempC > bodyTempHighC || vitals.bodyTempC < bodyTempLowC)) {
-    insights.add(Insight(
-      id: 'vitals.bodyTemp.range',
-      title: vitals.bodyTempC > bodyTempHighC
-          ? 'Elevated body temperature'
-          : 'Low body temperature',
-      message: '${vitals.bodyTempC.toStringAsFixed(1)}°C is outside the '
-          'normal range ($bodyTempLowC–$bodyTempHighC°C).',
-      severity: InsightSeverity.warning,
-      category: InsightCategory.vitals,
-      icon: Icons.thermostat,
-    ));
+    // Same "no finger -> no reading" rule as heart rate/SpO2 above — the
+    // firmware only reports bodyTempC while it also has skin contact
+    // (see health_companion.ino), so this must live inside the
+    // hasFingerReading block too, not check `vitals != null` alone
+    // (0°C would otherwise read as a false "Low body temperature").
+    if (vitals.bodyTempC > bodyTempHighC || vitals.bodyTempC < bodyTempLowC) {
+      insights.add(Insight(
+        id: 'vitals.bodyTemp.range',
+        title: vitals.bodyTempC > bodyTempHighC
+            ? 'Elevated body temperature'
+            : 'Low body temperature',
+        message: '${vitals.bodyTempC.toStringAsFixed(1)}°C is outside the '
+            'normal range ($bodyTempLowC–$bodyTempHighC°C).',
+        severity: InsightSeverity.warning,
+        category: InsightCategory.vitals,
+        icon: Icons.thermostat,
+      ));
+    }
   }
 
   final bp = healthLog.latestBloodPressure;

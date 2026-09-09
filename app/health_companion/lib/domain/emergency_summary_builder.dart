@@ -73,14 +73,18 @@ EmergencySummary buildEmergencySummary({
         valueText: '${vitals.spo2.toStringAsFixed(0)} percent',
       ));
     }
-  }
 
-  if (vitals != null &&
-      (vitals.bodyTempC > bodyTempHighC || vitals.bodyTempC < bodyTempLowC)) {
-    readings.add(EmergencyReading(
-      label: 'body temperature',
-      valueText: '${vitals.bodyTempC.toStringAsFixed(1)} degrees Celsius',
-    ));
+    // Same "no finger -> no reading" rule as heart rate/SpO2 above — the
+    // firmware only reports bodyTempC while it also has skin contact, so
+    // this must live inside the hasFingerReading block too (0°C would
+    // otherwise read as a false "low body temperature" claim read out
+    // during an actual emergency call).
+    if (vitals.bodyTempC > bodyTempHighC || vitals.bodyTempC < bodyTempLowC) {
+      readings.add(EmergencyReading(
+        label: 'body temperature',
+        valueText: '${vitals.bodyTempC.toStringAsFixed(1)} degrees Celsius',
+      ));
+    }
   }
 
   final bp = healthLog.latestBloodPressure;

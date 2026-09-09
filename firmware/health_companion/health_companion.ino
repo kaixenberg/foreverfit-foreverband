@@ -1,8 +1,11 @@
 // Personal Health Companion — wearable firmware (ESP32-S3)
 //
-// Reads MAX30101 (HR/SpO2), MPU6050 (accel/gyro), BME280 (env), a stubbed
-// MAX30205 (body temp — real sensor not working on this build), drives the
-// 0.96" OLED watchface, and streams everything to the phone over BLE.
+// Reads MAX30101 (HR/SpO2 — real finger-presence detection, optionally
+// dummy/spoofed BPM+SpO2 values, see USE_DUMMY_HR_SPO2), MPU6050
+// (accel/gyro), BME280 (env), a stubbed MAX30205 (body temp — real
+// sensor not working on this build, only reported while a finger is
+// present, same as HR/SpO2), drives the 0.96" OLED watchface, and
+// streams everything to the phone over BLE.
 //
 // Wire payload structs below MUST stay byte-for-byte in sync with
 // app/health_companion/lib/ble/protocol.dart — see ARCHITECTURE.md for the
@@ -34,6 +37,16 @@
 // adjust this if your specific board's LED coupling runs noticeably higher
 // or lower at rest.
 #define FINGER_PRESENT_IR_THRESHOLD 50000
+
+// Spoofs HR/SpO2 to a plausible healthy resting range instead of the real
+// MAX30101 beat-detection output — for demo reliability, since skin
+// contact quality/ambient light can make the real algorithm noisy on
+// stage. Real finger-presence detection (FINGER_PRESENT_IR_THRESHOLD,
+// still driven by actual IR DC baseline) is UNCHANGED and still gates
+// this: no finger still means no reading, same as the real sensor path —
+// only the computed BPM/SpO2 numbers are fake, not "is someone wearing
+// it." Set to 0 to use the real bench-tested algorithm's output instead.
+#define USE_DUMMY_HR_SPO2 1
 
 // ---------------------------------------------------------------------------
 // BLE — custom "Health Companion" service, three notify characteristics.
@@ -149,6 +162,31 @@ float readBodyTempC() {
   lastVal += (random(-10, 11) / 100.0f); // +/- 0.1C jitter
   lastVal = constrain(lastVal, 36.3f, 37.3f);
   return lastVal;
+}
+
+// ---------------------------------------------------------------------------
+// Dummy HR/SpO2 (see USE_DUMMY_HR_SPO2 above) — overrides currentBpm/
+// currentSpo2 in place, right before anything reads them, so neither the
+// real peak-detection algorithm above nor its FIFO draining (still needed
+// every loop to keep the sensor's buffer from overflowing) had to change
+// at all. Same smooth-random-walk-around-a-baseline style as
+// readBodyTempC()'s existing stub. Only overrides while fingerPresent is
+// true — with no finger, the real algorithm has already zeroed both via
+// resetHrSpo2State(), and this leaves that alone.
+// ---------------------------------------------------------------------------
+void applyDummyVitalsIfEnabled() {
+  if (!USE_DUMMY_HR_SPO2 || !fingerPresent) return;
+
+  static float dummyBpm = 74.0f;
+  static float dummySpo2 = 98.0f;
+
+  dummyBpm += (random(-30, 31) / 10.0f);  // +/- 3.0 bpm jitter
+  dummyBpm = constrain(dummyBpm, 65.0f, 85.0f);
+  dummySpo2 += (random(-10, 11) / 10.0f); // +/- 1.0% jitter
+  dummySpo2 = constrain(dummySpo2, 96.0f, 99.0f);
+
+  currentBpm = dummyBpm;
+  currentSpo2 = dummySpo2;
 }
 
 // ---------------------------------------------------------------------------
@@ -398,7 +436,12 @@ void notifyVitals() {
   pkt.tMs = millis();
   pkt.heartRate = currentBpm;
   pkt.spo2 = currentSpo2;
-  lastBodyTempC = readBodyTempC();
+  // Only report body temp alongside HR/SpO2, i.e. while there's actual
+  // skin contact — a real integrated wearable sensor package wouldn't
+  // give you a temperature reading without contact either, and the app
+  // side already treats 0 here the same way it treats 0 bpm/SpO2: "no
+  // reading," not a real (and alarming) value — see dashboard_screen.dart.
+  lastBodyTempC = fingerPresent ? readBodyTempC() : 0;
   pkt.bodyTempC = lastBodyTempC;
   pkt.fingerPresent = fingerPresent ? 1 : 0;
   vitalsChar->setValue((uint8_t*)&pkt, sizeof(pkt));
@@ -454,21 +497,24 @@ void updateOled() {
   if (!fingerPresent) {
     display.println("HR: -- (no finger)");
     display.println("SpO2: --");
+    display.println("Body: --");
   } else {
     // Rolling averages need a few beats before they're a stable reading —
-    // show a loading indicator until each has enough history.
-    if (ibiCount < IBI_HISTORY) {
+    // show a loading indicator until each has enough history. Skipped
+    // entirely in dummy mode (USE_DUMMY_HR_SPO2), which has a value from
+    // the first loop iteration with a finger present.
+    if (!USE_DUMMY_HR_SPO2 && ibiCount < IBI_HISTORY) {
       display.println("HR: ... bpm");
     } else {
       display.printf("HR: %.0f bpm\n", currentBpm);
     }
-    if (ampCount < AMP_HISTORY) {
+    if (!USE_DUMMY_HR_SPO2 && ampCount < AMP_HISTORY) {
       display.println("SpO2: ... %");
     } else {
       display.printf("SpO2: %.0f %%\n", currentSpo2);
     }
+    display.printf("Body: %.1f C\n", lastBodyTempC);
   }
-  display.printf("Body: %.1f C\n", lastBodyTempC);
   if (bmeOk) {
     display.printf("Amb: %.1f C  %.0f%%\n", bme.readTemperature(), bme.readHumidity());
     display.printf("P: %.0f hPa\n", bme.readPressure() / 100.0f);
@@ -496,6 +542,7 @@ void setup() {
 
 void loop() {
   pollHeartRateSensor(); // every iteration — don't miss FIFO samples
+  applyDummyVitalsIfEnabled();
 
   uint32_t now = millis();
 
