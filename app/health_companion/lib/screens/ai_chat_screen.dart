@@ -31,14 +31,7 @@ class _AiChatScreenState extends State<AiChatScreen> {
   String? _pendingPdfText;
 
   @override
-  void initState() {
-    super.initState();
-    context.read<AiChatService>().chatScreenOpen.value = true;
-  }
-
-  @override
   void dispose() {
-    context.read<AiChatService>().chatScreenOpen.value = false;
     _controller.dispose();
     _scrollController.dispose();
     super.dispose();

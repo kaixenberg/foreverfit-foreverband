@@ -67,10 +67,6 @@ class AiChatService extends ChangeNotifier {
   bool isGenerating = false;
   final List<AiChatMessage> messages = [];
 
-  /// Set true while AiChatScreen is on top, so the floating bubble hides
-  /// itself instead of overlapping the screen it opens.
-  final ValueNotifier<bool> chatScreenOpen = ValueNotifier(false);
-
   InferenceModel? _model;
   InferenceChat? _chat;
 
@@ -318,7 +314,6 @@ class AiChatService extends ChangeNotifier {
 
   @override
   void dispose() {
-    chatScreenOpen.dispose();
     unawaited(_chat?.close());
     unawaited(_model?.close());
     super.dispose();

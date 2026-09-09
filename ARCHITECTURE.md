@@ -1533,25 +1533,55 @@ token is required).
   top (same as any other widget below the active route), so it's only
   ever visible on the main screen — no separate route-tracking logic
   needed.
-  - **Positioning bug, found on real device**: the first cut computed the
-    button's position from `MediaQuery.of(context).size` (the *full
-    device screen*), but the `Stack` it lives in is the Scaffold's
-    `body` area only — smaller, since it excludes the AppBar and status
-    bar. `Stack` clips by default, so the button rendered barely inside
-    the clipped bottom edge (reported: "way down and can barely be
-    touched"), and since `_position` is cached once and re-clamped
-    against that same wrong size on every rebuild, a layout timing
-    difference on returning from another screen could push it fully
-    outside the clip and it would never come back (reported: "the AI
-    button disappears and never reappears"). Fixed by wrapping the
-    button in a `LayoutBuilder` and using its `constraints` — the
-    `Stack`'s real, current size — as the positioning bounds instead of
-    `MediaQuery.size`, with `MediaQuery.padding.bottom` added back in
-    just as bottom-inset clearance (the body isn't wrapped in
-    `SafeArea`, so it does extend behind the gesture-nav area). Since
-    `_clamp` re-derives against the *actual* current bounds every build,
-    this is self-correcting even if a bad position was cached earlier —
-    not just a one-time offset tweak.
+  - **Positioning bug — two attempts, real root cause on the second.**
+    First report from real-device testing: "way down and can barely be
+    touched." First fix guessed the position math was using
+    `MediaQuery.of(context).size` (the full device screen) instead of
+    the Scaffold `body`'s actual (smaller) area, and wrapped the button
+    in a `LayoutBuilder` to get the real area size — this compiled and
+    analyzed fine, but the real-device report afterward was worse: "top
+    left instead of bottom right" and "disappears permanently on switch
+    from main screen." The actual bug: `Positioned` only has any effect
+    as a **direct** child of a `Stack`. That `LayoutBuilder` fix returned
+    `Positioned(...)` from *inside* `LayoutBuilder`'s `builder` callback
+    — but `LayoutBuilder` is itself a real `RenderObjectWidget`, so it
+    sits as its own node between the `Positioned` and DashboardScreen's
+    outer `Stack` in the actual render tree. `Stack` only inspects the
+    parent data of its own *direct* render children; seeing a plain,
+    non-positioned `LayoutBuilder` node there (not something flagged
+    `StackParentData.isPositioned`), it fell back to its default
+    top-left alignment and sized the whole subtree to its own intrinsic
+    56x56 content — `_position`'s value had **no effect on render
+    position at all**, matching the "top left instead of bottom right"
+    report exactly. Fixed with the standard two-`Stack` idiom for this
+    exact problem: `Positioned.fill` (a direct child of the outer
+    `Stack`, correctly recognized) hands `LayoutBuilder` tight
+    constraints equal to the real body area; inside that, an **inner**
+    `Stack` + `Positioned` places the button freely, since that inner
+    `Positioned` is now a direct child of *that* Stack. `_clamp` still
+    re-derives against the actual current bounds every build, so a stale
+    cached `_position` is self-correcting rather than getting stuck.
+    Confirmed fixed via a real-device screenshot — bottom-right, exactly
+    where placed.
+  - **"Disappears permanently" — a real, separate bug, root-caused via
+    live `adb logcat` (not guessed a third time).** An earlier version
+    hid the button while `AiChatScreen` was on top using a manually
+    toggled `ValueNotifier<bool> chatScreenOpen` on `AiChatService`,
+    flipped `true` in `AiChatScreen.initState()` and back to `false` in
+    its `dispose()`. Instrumented `AiChatBubble` with debug logging and
+    watched a live device: opening the chat screen logged `chatOpen=
+    true` as expected — but after using it and navigating back to the
+    Dashboard, **no `dispose()` log ever appeared, and `chatOpen` never
+    flipped back to `false`**, permanently hiding the button from that
+    point on. Rather than chase why `dispose()` wasn't firing reliably,
+    removed the whole mechanism: now that the bubble lives *inside*
+    `DashboardScreen`'s own Stack (below the Navigator) rather than
+    mounted globally above it, Flutter already doesn't paint anything in
+    a covered route — `AiChatScreen` (or Settings, or Map, or anything
+    else) being pushed on top automatically hides the bubble along with
+    the rest of the Dashboard, no flag needed. The manually-toggled
+    boolean was leftover complexity from the old global-overlay
+    architecture; it had become both redundant and the actual bug.
   - **In-app only** — this is not a true system-wide overlay (no
     `SYSTEM_ALERT_WINDOW`), so it's only visible while ForeverFit itself
     is in the foreground, consistent with this project's existing
