@@ -1,4 +1,4 @@
-# Architecture — Personal Health Companion (SIH '26 #26181)
+# Architecture — ForeverFit (SIH '26 #26181)
 
 ## System overview
 
@@ -25,18 +25,20 @@ share it.
 
 ## BLE protocol (implemented)
 
-Custom GATT service, three `notify`-only characteristics. All multi-byte
-fields are **little-endian**, matching the ESP32's native order — Dart parses
-with `ByteData.getX(offset, Endian.little)`. This spec is the single source
+Custom GATT service ("ForeverBand"), three `notify`-only characteristics
+plus one `write`-only characteristic. All multi-byte fields are
+**little-endian**, matching the ESP32's native order — Dart parses with
+`ByteData.getX(offset, Endian.little)`. This spec is the single source
 of truth; the firmware (`firmware/health_companion/health_companion.ino`) and app
 (`app/health_companion/lib/ble/protocol.dart`) must be changed together.
 
-| UUID | Name | Rate | Layout |
-|---|---|---|---|
-| `6e400001-...` | Service | — | — |
-| `6e400002-...` | Vitals | ~1 Hz | `uint32 tMs; float heartRate; float spo2; float bodyTempC; uint8 fingerPresent;` (17 bytes) |
-| `6e400003-...` | Environment | ~1 Hz | `uint32 tMs; float ambientTempC; float humidity; float pressureHPa;` (16 bytes) |
-| `6e400004-...` | Motion | ~20 Hz | `uint32 tMs; float ax,ay,az; float gx,gy,gz;` (28 bytes) |
+| UUID | Name | Direction | Rate | Layout |
+|---|---|---|---|---|
+| `6e400001-...` | Service | — | — | — |
+| `6e400002-...` | Vitals | notify | ~1 Hz | `uint32 tMs; float heartRate; float spo2; float bodyTempC; uint8 fingerPresent;` (17 bytes) |
+| `6e400003-...` | Environment | notify | ~1 Hz | `uint32 tMs; float ambientTempC; float humidity; float pressureHPa;` (16 bytes) |
+| `6e400004-...` | Motion | notify | ~20 Hz | `uint32 tMs; float ax,ay,az; float gx,gy,gz;` (28 bytes) |
+| `6e400005-...` | Time sync | write | on connect + every 5 min | `uint8 hour,minute,second,day,month; uint16 year; uint8 weekday(0=Sun)` (8 bytes) — see "Watch faces + time sync" below |
 
 Motion is notified faster than the others because fall-detection needs
 enough samples per window (~40–60 samples over 2–3s) to see the
@@ -1182,6 +1184,172 @@ fall-detection flow, per its own design brief.
   existing precedent for other native-channel-heavy work). The one piece
   that *is* unit-tested: `FallInference`'s windowing logic
   (`test/ml/fall_inference_test.dart`).
+
+## Rebrand: ForeverFit/ForeverBand, logo, About, watch faces, auto-connect (implemented)
+
+The app and wearable were renamed from "Personal Health Companion" /
+"HealthCompanion" to **ForeverFit** / **ForeverBand** — user-facing
+branding only (AppBar/loading-screen title, onboarding welcome copy,
+Android app label, BLE device name/error text). The Dart package name
+(`health_companion`) and the `HealthCompanionProtocol` class name were
+deliberately **not** renamed — that would touch every `import
+'package:health_companion/...'` across ~80 files for zero user-visible
+benefit, pure internal-identifier churn.
+
+- **Logo/app icon**: a hand-drawn SVG (heart outline + an EKG pulse line
+  cutting through it, in the app's existing warm coral palette —
+  `AppTheme`'s `primary`/`onPrimary` colors, not a new palette) rasterized
+  via `rsvg-convert` to `assets/icon/icon.png` (opaque, 1024x1024) and
+  `assets/icon/icon_foreground.png` (transparent, same glyph, for the
+  Android adaptive-icon foreground layer). `flutter_launcher_icons`
+  (dev dependency, config in `pubspec.yaml`) generates every mipmap
+  density plus the `mipmap-anydpi-v26/ic_launcher.xml` adaptive-icon
+  definition from those two sources — regenerate with `dart run
+  flutter_launcher_icons` after changing either source image.
+  **`LoadingScreen` already reads the resulting launcher icon live from
+  the OS at runtime** (see "Loading screen + permission re-check" above,
+  built in an earlier session specifically for this) rather than bundling
+  a third copy of it — so the splash screen picked up the new logo
+  automatically, no code change needed there.
+- **About screen** (`lib/screens/settings/about_screen.dart`, new
+  Settings category): name, the same live-from-OS icon, version (from
+  `package_info_plus`), and a GitHub row — currently a disabled
+  placeholder ("Not public yet"), not a real link, since there's no
+  public repo yet; update it once one exists rather than leaving a dead
+  link now.
+- **Two OLED watch faces** (`health_companion.ino`), toggled by the
+  ESP32-S3 DevKit's built-in **BOOT button** (GPIO0) — chosen because
+  it's already present on every board with zero extra wiring, unlike a
+  dedicated button; free to read as a normal input once past power-on,
+  where its flash-mode role ends. Debounced poll in `loop()`
+  (`pollBootButton()`), not an interrupt — the 1Hz OLED refresh rate
+  makes that unnecessary.
+  - **Primary face** (`drawPrimaryFace()`): a real `HH:MM` clock (large,
+    `setTextSize(3)`), the date (`Weekday, Mon DD YYYY`), BME280 ambient
+    stats (temp/humidity/pressure) at the bottom, and a small dot
+    top-right standing in for a BLE-connection icon (filled = connected,
+    hollow = advertising only) — an actual smartwatch-style face instead
+    of a plain debug readout. Shows "--:--" and "Open the app to sync
+    time" instead of a wrong/frozen clock if the wearable has never
+    received a time sync (e.g. fresh boot, never yet connected to the
+    phone).
+  - **Secondary face** (`drawSecondaryFace()`): the detailed HR/SpO2/
+    body-temp/BLE/env readout the single face used to always show —
+    content unchanged, just no longer the only option.
+- **Time sync, phone -> wearable** (`CHAR_TIME_UUID`, write-only, see the
+  BLE protocol table above): the ESP32 has no RTC and no network access,
+  so it can't know the real time/date on its own. `BleService._syncTime()`
+  writes the phone's current local time once right after connecting and
+  every 5 minutes after that (best-effort — a failed write doesn't fail
+  the connection, the watch face just falls back to "--:--" until the
+  next successful sync). Firmware stores the synced value plus the
+  `millis()` timestamp of that sync (`timeSyncMillis`) and derives "now"
+  by adding elapsed milliseconds on every read (`currentTime()`) — proper
+  carry logic through minutes/hours/days/months/leap years (not just a
+  wraparound hack), so a demo running past midnight still shows the
+  right date.
+- **Auto-connect on launch** (`BleService.autoConnect()`): scans (already
+  filtered to the app's own service UUID at the OS level, same as the
+  existing manual "Scan & Connect" flow) and connects to the first match,
+  instead of requiring a manual tap every single launch. A no-op if
+  already connected/connecting/scanning, or if Bluetooth is off —
+  nothing silently retries in a loop in that case, matching how every
+  other permission/hardware-unavailable case in this app degrades (show
+  the real state, don't fake progress).
+  - **First fix attempt**: the original version called this once from
+    `main.dart`'s `_App` build via `addPostFrameCallback`, on the very
+    first frame — raced against `FlutterBluePlus`'s adapter-state
+    stream, an async round-trip to the native side not guaranteed to
+    land before the first frame, and `_App` doesn't watch `BleService`
+    so nothing rebuilt to retry once it did. Moved the trigger into
+    `BleService`'s own constructor, listening for the adapter-state
+    stream to report `on`.
+  - **Still didn't reliably work — a second, deeper fix.** Reading
+    `flutter_blue_plus`'s actual source (not just its public API)
+    clarified the listener alone should already fire promptly on
+    subscription (`adapterState`'s stream replays its current value to
+    every new listener, confirmed in `flutter_blue_plus.dart`) — so the
+    remaining gap was almost certainly `autoConnect()` racing a
+    **not-yet-granted runtime permission** at that exact moment
+    (`BLUETOOTH_SCAN`/`BLUETOOTH_CONNECT`, requested by `LoadingScreen`
+    on a separate, not-strictly-ordered path) and then never retrying,
+    the same *shape* of race as before at a different layer. Two
+    changes: (1) `autoConnect()` now checks `Permission.bluetoothScan`/
+    `Permission.bluetoothConnect` explicitly before scanning, instead of
+    letting a denied permission throw into a silently-swallowed
+    `catch`, and logs (`debugPrint('[BLE] autoConnect: ...')`) every
+    branch it takes — a missing permission, no device found, and a
+    successful connect all used to look identically like "nothing
+    happened," now they're distinguishable via `flutter logs`/logcat.
+    (2) `BleService` now also mixes in `WidgetsBindingObserver` and
+    retries `autoConnect()` on every `AppLifecycleState.resumed` — a
+    genuine retry loop (bounded by actual app-foreground events, not a
+    timer) that self-heals if the very first attempt raced anything,
+    permission-related or otherwise. `autoConnect()`'s own guards make
+    repeated calls cheap no-ops once connected.
+  - **The actual root cause — found via `adb logcat` on the user's real
+    device, not guessed.** The `[BLE]` log lines from the fix above
+    showed `autoConnect: scanning...` immediately followed
+    (~120ms later — nowhere near the 8s scan window) by
+    `autoConnect: no matching device found within timeout`, every single
+    time, while a manual "Scan & Connect" moments later succeeded fine.
+    Reading `flutter_blue_plus`'s own source (`FlutterBluePlus.startScan`
+    in `flutter_blue_plus.dart`) explained why: **`startScan()`'s
+    returned `Future` resolves the instant the scan *starts*, not when
+    it ends** — the `timeout` parameter only schedules an internal
+    `stopScan()` call for later; it does not make the call awaitable for
+    that duration. `autoConnect()` was awaiting `startScan()` and then
+    immediately checking whether a device had been found — checking
+    within milliseconds of the scan actually starting, not after any
+    real window to discover the wearable's advertisement. The existing
+    manual-scan `startScan()` method had the exact same defect (`status`
+    flipped back to `disconnected` within milliseconds of tapping
+    "Scan"), it just wasn't as visible there because the scan screen
+    reads the live, separately-updated `discovered` list rather than a
+    single post-scan check — the underlying scan genuinely kept running
+    in the background regardless of what `status` said. **Fixed in both
+    methods**: after the `startScan()` call, if `FlutterBluePlus
+    .isScanningNow` is still true, now `await`s
+    `FlutterBluePlus.isScanning.where((s) => s == false).first` — the
+    plugin's own "isScanning" stream, which only flips to `false` once
+    scanning genuinely stops (either the internal timeout timer, or an
+    explicit `stopScan()` call after a match is found) — before checking
+    results or resetting `status`.
+  - **If this still doesn't work**, the `[BLE] autoConnect: ...` log
+    lines (`adb logcat` filtered to `[BLE]`, or `flutter logs`) are still
+    the next debugging step — they say exactly which guard is stopping
+    it, whether the scan threw, or whether it genuinely found nothing
+    within the real 8-second window this time.
+- **Custom app-wide font**: never the platform system font, a standing
+  rule from here on per explicit user instruction.
+  [Nunito](https://github.com/google/fonts/tree/main/ofl/nunito)
+  (SIL Open Font License), chosen for rounded terminals matching this
+  theme's existing large-radius/pill-button/circular-badge visual
+  language. Bundled locally as a single variable-weight TTF
+  (`assets/fonts/Nunito-Variable.ttf`, weight axis 200-1000, declared at
+  several logical weights in `pubspec.yaml` pointing at the same file —
+  the standard Flutter pattern for one variable font) rather than
+  fetched at runtime via the `google_fonts` package, which this app's
+  offline-first rule rules out. Applied once, centrally, via
+  `AppTheme.fontFamily`/`ThemeData(fontFamily: ...)` — every screen
+  inherits it through the theme, nothing sets a font per-widget.
+- **"ForeverFit" header, made a real brand moment**: the Dashboard
+  AppBar title and the loading screen's wordmark both went from the
+  theme's default AppBar title style (`headlineSmall`/w800) to an
+  explicit `headlineMedium`/w900 override at the call site — bigger and
+  bolder than the theme default, and set directly rather than relying on
+  `AppBarTheme` resolution, so the result doesn't depend on how that
+  theme property happens to cascade.
+- **Firmware verified with a real compile**, not just read through —
+  `arduino-cli compile --fqbn esp32:esp32:esp32s3` against this repo's
+  already-configured ESP32 core + libraries succeeds with no new
+  warnings or errors (only two pre-existing, unrelated ones: a library-
+  internal macro redefinition, and a deprecated-but-harmless
+  `NimBLEService::start()` call). Still needs a real on-device flash/test
+  for anything actual hardware interaction can't be verified by
+  compilation alone (BOOT-button debounce feel, OLED layout at actual
+  contrast/viewing angle, whether the time-sync write round-trips
+  correctly over a real BLE link).
 
 ## Roadmap (not yet implemented)
 

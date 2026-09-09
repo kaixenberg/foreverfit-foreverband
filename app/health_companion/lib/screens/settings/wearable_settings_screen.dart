@@ -15,7 +15,7 @@ class WearableSettingsScreen extends StatelessWidget {
           Card(
             child: ListTile(
               leading: const Icon(Icons.watch_outlined),
-              title: const Text('Health Companion wearable'),
+              title: const Text('ForeverBand wearable'),
               subtitle: const Text('Connect or manage your device'),
               trailing: const Icon(Icons.chevron_right),
               onTap: () => Navigator.of(context).push(

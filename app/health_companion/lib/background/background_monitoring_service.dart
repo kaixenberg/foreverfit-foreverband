@@ -60,8 +60,7 @@ class BackgroundMonitoringService {
       serviceId: _serviceId,
       serviceTypes: const [ForegroundServiceTypes.health],
       notificationTitle: 'Monitoring for falls',
-      notificationText:
-          'Health Companion is watching for falls in the background.',
+      notificationText: 'ForeverFit is watching for falls in the background.',
       callback: fallDetectionTaskCallback,
     );
   }

@@ -1,7 +1,8 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../models/sensor_reading.dart';
 import '../storage/history_store.dart';
@@ -12,7 +13,11 @@ enum ConnectionStatus { disconnected, scanning, connecting, connected }
 /// Owns the BLE connection to the wearable: scanning, connecting,
 /// subscribing to the three notify characteristics, parsing packets, and
 /// persisting vitals/env history. Exposed to the widget tree via Provider.
-class BleService extends ChangeNotifier {
+///
+/// `with WidgetsBindingObserver` purely for the app-resume auto-connect
+/// retry below — a ChangeNotifier can register itself as an observer the
+/// same way a State can, it doesn't need to be a widget to do so.
+class BleService extends ChangeNotifier with WidgetsBindingObserver {
   final HistoryStore _historyStore;
 
   ConnectionStatus status = ConnectionStatus.disconnected;
@@ -28,13 +33,41 @@ class BleService extends ChangeNotifier {
   MotionReading? latestMotion;
   String? lastError;
 
+  BluetoothCharacteristic? _timeChar;
+  Timer? _timeSyncTimer;
+
   BluetoothAdapterState adapterState = FlutterBluePlus.adapterStateNow;
 
   BleService(this._historyStore) {
+    WidgetsBinding.instance.addObserver(this);
+
+    // Auto-connect is driven from here, reactively, rather than a one-shot
+    // call from main.dart's first frame — that raced against the adapter
+    // state stream's first real event (adapterStateNow reads "unknown"
+    // until the native side reports back, an async round-trip that isn't
+    // guaranteed to land before the first frame), so it could silently
+    // no-op and then never retry. FlutterBluePlus.adapterState replays
+    // its current value to every new listener (confirmed by reading the
+    // plugin source), so this fires promptly either way — but it only
+    // fires again on a genuine *change*, so on its own it wouldn't retry
+    // if the very first attempt happened to race a not-yet-granted
+    // permission. didChangeAppLifecycleState below is the retry for that.
     _adapterSub = FlutterBluePlus.adapterState.listen((state) {
       adapterState = state;
       notifyListeners();
+      if (state == BluetoothAdapterState.on) autoConnect();
     });
+  }
+
+  /// Retries auto-connect every time the app comes to the foreground —
+  /// covers reopening the app, and is a safety net if the very first
+  /// attempt (from the constructor above) ran before Bluetooth
+  /// permissions were actually granted and silently no-opped as a
+  /// result. autoConnect() is already guarded to do nothing once
+  /// connected, so this is safe to call unconditionally on every resume.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) autoConnect();
   }
 
   Future<void> startScan() async {
@@ -59,6 +92,18 @@ class BleService extends ChangeNotifier {
         timeout: const Duration(seconds: 10),
         withServices: [Guid(HealthCompanionProtocol.serviceUuid)],
       );
+      // startScan()'s own await resolves as soon as the scan *starts*,
+      // not when it ends — confirmed by reading the plugin source: the
+      // `timeout` param only schedules an internal stopScan() call for
+      // later, it doesn't make this awaitable. Without this, `status`
+      // flips back to "disconnected" within milliseconds of tapping
+      // "Scan," even though scanning is genuinely still happening in the
+      // background (discovered devices still populate the list below via
+      // the notify-driven listener — this was only a `status` bug, not a
+      // "scanning doesn't work" bug).
+      if (FlutterBluePlus.isScanningNow) {
+        await FlutterBluePlus.isScanning.where((s) => s == false).first;
+      }
     } catch (e) {
       lastError = 'Scan failed: $e';
     }
@@ -72,6 +117,87 @@ class BleService extends ChangeNotifier {
   Future<void> stopScan() async {
     await FlutterBluePlus.stopScan();
     await _scanSub?.cancel();
+  }
+
+  /// Scans for the wearable and connects to the first one found — used to
+  /// auto-connect on app launch instead of requiring a manual "Scan &
+  /// Connect" tap every time. A no-op if already connected/connecting/
+  /// scanning, or if Bluetooth is off (nothing to scan for in that case);
+  /// safe to call on every rebuild the same way BackgroundMonitoringService
+  /// .start() is (see main.dart) — guarded internally, not a standing
+  /// timer.
+  Future<void> autoConnect() async {
+    if (status != ConnectionStatus.disconnected) {
+      debugPrint('[BLE] autoConnect: skipped, status=$status');
+      return;
+    }
+    if (adapterState != BluetoothAdapterState.on) {
+      debugPrint('[BLE] autoConnect: skipped, adapterState=$adapterState');
+      return;
+    }
+
+    // Checked explicitly (rather than just letting startScan() throw and
+    // catching it) so a missing permission is visibly distinguishable
+    // from "no device found" in the log below — the two used to look
+    // identical, both silently doing nothing.
+    final scanGranted = await Permission.bluetoothScan.isGranted;
+    final connectGranted = await Permission.bluetoothConnect.isGranted;
+    if (!scanGranted || !connectGranted) {
+      debugPrint('[BLE] autoConnect: skipped, permission not granted '
+          '(scan=$scanGranted connect=$connectGranted)');
+      return;
+    }
+
+    debugPrint('[BLE] autoConnect: scanning...');
+    discovered.clear();
+    status = ConnectionStatus.scanning;
+    lastError = null;
+    notifyListeners();
+
+    BluetoothDevice? found;
+    final resultsSub = FlutterBluePlus.scanResults.listen((results) {
+      // Stops the scan the moment a match shows up, rather than always
+      // waiting out the full timeout below — the common case is the
+      // wearable already being in range at app launch.
+      if (results.isNotEmpty && found == null) {
+        found = results.first.device;
+        FlutterBluePlus.stopScan();
+      }
+    });
+
+    try {
+      await FlutterBluePlus.startScan(
+        timeout: const Duration(seconds: 8),
+        withServices: [Guid(HealthCompanionProtocol.serviceUuid)],
+      );
+      // This is the actual root cause of auto-connect never finding the
+      // wearable, confirmed via real device logs (adb logcat): the await
+      // above resolves the instant the scan *starts* (tens of ms), not
+      // when it ends — the plugin's `timeout` param only schedules an
+      // internal stopScan() for later, it doesn't make this awaitable.
+      // Without this, `found` was being checked before the wearable had
+      // any real chance to be seen, every single time — the logs showed
+      // "scanning..." immediately followed by "no matching device found"
+      // ~120ms later, nowhere near the real 8s window. Wait for the scan
+      // to actually stop (either the listener below calling stopScan()
+      // early after a match, or the internal timer) before checking.
+      if (FlutterBluePlus.isScanningNow) {
+        await FlutterBluePlus.isScanning.where((s) => s == false).first;
+      }
+    } catch (e) {
+      lastError = 'Auto-connect scan failed: $e';
+      debugPrint('[BLE] autoConnect: scan threw: $e');
+    }
+    await resultsSub.cancel();
+
+    if (found != null) {
+      debugPrint('[BLE] autoConnect: found ${found!.remoteId}, connecting');
+      await connect(found!);
+    } else {
+      debugPrint('[BLE] autoConnect: no matching device found within timeout');
+      status = ConnectionStatus.disconnected;
+      notifyListeners();
+    }
   }
 
   Future<void> connect(BluetoothDevice device) async {
@@ -97,9 +223,10 @@ class BleService extends ChangeNotifier {
         (s) =>
             s.uuid.toString().toLowerCase() ==
             HealthCompanionProtocol.serviceUuid,
-        orElse: () => throw Exception('Health Companion service not found'),
+        orElse: () => throw Exception('ForeverBand service not found'),
       );
 
+      _timeChar = null;
       for (final c in service.characteristics) {
         final uuid = c.uuid.toString().toLowerCase();
         if (uuid == HealthCompanionProtocol.vitalsCharUuid) {
@@ -108,15 +235,41 @@ class BleService extends ChangeNotifier {
           await _subscribe(c, _onEnv);
         } else if (uuid == HealthCompanionProtocol.motionCharUuid) {
           await _subscribe(c, _onMotion);
+        } else if (uuid == HealthCompanionProtocol.timeCharUuid) {
+          _timeChar = c;
         }
       }
 
       status = ConnectionStatus.connected;
+
+      // Lets the OLED show a real clock/date with no RTC or network access
+      // of its own — one write now, then a periodic re-sync so a long-
+      // running session doesn't drift against millis()-based timekeeping
+      // on the firmware side. Best-effort: a write failure here shouldn't
+      // fail the whole connection, the watch face just falls back to
+      // "--:--" until the next successful sync (see health_companion.ino).
+      unawaited(_syncTime());
+      _timeSyncTimer?.cancel();
+      _timeSyncTimer =
+          Timer.periodic(const Duration(minutes: 5), (_) => _syncTime());
     } catch (e) {
       lastError = 'Connect failed: $e';
       status = ConnectionStatus.disconnected;
     }
     notifyListeners();
+  }
+
+  Future<void> _syncTime() async {
+    final timeChar = _timeChar;
+    if (timeChar == null) return;
+    try {
+      await timeChar.write(
+        HealthCompanionProtocol.buildTimeSyncPacket(DateTime.now()),
+        withoutResponse: timeChar.properties.writeWithoutResponse,
+      );
+    } catch (_) {
+      // Best-effort — see the comment where this is first called.
+    }
   }
 
   Future<void> _subscribe(
@@ -159,6 +312,8 @@ class BleService extends ChangeNotifier {
   }
 
   Future<void> disconnect() async {
+    _timeSyncTimer?.cancel();
+    _timeChar = null;
     for (final s in _valueSubs) {
       await s.cancel();
     }
@@ -171,9 +326,11 @@ class BleService extends ChangeNotifier {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _scanSub?.cancel();
     _connSub?.cancel();
     _adapterSub?.cancel();
+    _timeSyncTimer?.cancel();
     for (final s in _valueSubs) {
       s.cancel();
     }

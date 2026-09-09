@@ -224,7 +224,12 @@ class DashboardScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Health Companion'),
+        title: Text(
+          'ForeverFit',
+          style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                fontWeight: FontWeight.w900,
+              ),
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.sos),

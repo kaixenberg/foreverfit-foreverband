@@ -14,7 +14,7 @@ final _permissionRationale = {
   ),
   Permission.bluetoothScan: (
     'Bluetooth',
-    'To find and connect your Health Companion wearable.'
+    'To find and connect your ForeverBand wearable.'
   ),
   Permission.bluetoothConnect: (
     'Bluetooth',
@@ -217,7 +217,7 @@ class _PermissionsPage extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(20),
       children: [
-        Text('Welcome to Health Companion',
+        Text('Welcome to ForeverFit',
             style: Theme.of(context).textTheme.headlineSmall),
         const SizedBox(height: 8),
         Text(

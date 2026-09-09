@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'profile_medical_screen.dart';
+import 'settings/about_screen.dart';
 import 'settings/appearance_settings_screen.dart';
 import 'settings/background_permission_screen.dart';
 import 'settings/data_backup_screen.dart';
@@ -86,6 +87,12 @@ final _categories = [
     'Developer / demo',
     'Test mode and full-screen warning previews',
     (_) => const DeveloperDemoScreen(),
+  ),
+  _SettingsCategory(
+    Icons.info_outline,
+    'About',
+    'App name, version, and links',
+    (_) => const AboutScreen(),
   ),
 ];
 

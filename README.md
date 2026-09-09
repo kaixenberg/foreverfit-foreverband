@@ -1,8 +1,10 @@
-# Personal Health Companion — SIH '26, Problem ID 26181
+# ForeverFit — SIH '26, Problem ID 26181
 
-A privacy-preserving, offline-first personal health companion: an ESP32-S3
-wearable streams sensor data over BLE to a phone, which does all the
-processing on-device — no cloud dependency required for core functionality.
+A privacy-preserving, offline-first personal health companion (working
+name "Personal Health Companion" during early development, renamed to
+ForeverFit): an ESP32-S3 wearable ("ForeverBand") streams sensor data
+over BLE to a phone, which does all the processing on-device — no cloud
+dependency required for core functionality.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full system design, BLE
 protocol spec, and the roadmap for ML-based anomaly detection, disaster
@@ -308,3 +310,39 @@ tiles + a static state-level hazard baseline) and prefers live data
       which now stays at the low-key Map banner tier instead. See
       ARCHITECTURE.md for the full reasoning and the known altitude-
       sensitivity limitation
+- [x] Rebranded to **ForeverFit** (app) / **ForeverBand** (wearable) —
+      user-facing branding only, not the internal Dart package name.
+      New hand-drawn logo (generated via SVG + `flutter_launcher_icons`,
+      same warm palette as the rest of the app) now the real launcher
+      icon everywhere, including the loading screen, which was already
+      built last session to read it live from the OS. New About screen
+      in Settings (name, version, GitHub placeholder) — see ARCHITECTURE.md
+- [x] Two OLED watch faces on the wearable, toggled by its BOOT button:
+      a primary clock/date/BME280 face (time synced from the phone over
+      BLE — the ESP32 has no RTC of its own) and a secondary
+      HR/SpO2/body-temp detail face (the previous single face). App now
+      auto-connects to the wearable on launch instead of requiring a
+      manual "Scan & Connect" tap — see ARCHITECTURE.md for the full
+      protocol/firmware details, including a real `arduino-cli` compile
+      check (not just a read-through) confirming the firmware builds
+      clean
+- [x] Auto-connect actually fixed, root cause found via `adb logcat` on
+      a real device (not guessed): `flutter_blue_plus`'s `startScan()`
+      resolves the instant a scan *starts*, not when it ends — the
+      `timeout` param doesn't make the call awaitable for that long —
+      so auto-connect was checking for a found device milliseconds after
+      the scan began, real logs showed "scanning..." immediately
+      followed by "no matching device found" ~120ms later, every time.
+      Now waits for the plugin's own `isScanning` stream to genuinely go
+      false before checking. The manual "Scan & Connect" screen had the
+      identical latent bug (fixed too) — it just wasn't visible there
+      since that screen reads a live, separately-updated device list
+      rather than a single post-scan check. Also added explicit
+      Bluetooth-permission checks, per-branch logging (`[BLE]
+      autoConnect: ...`), and an app-resume retry along the way — see
+      ARCHITECTURE.md for the full two-round debugging trail
+- [x] Custom app-wide font (Nunito, bundled locally — not fetched at
+      runtime, matching this app's offline-first rule) instead of the
+      platform system font, a standing rule from here on; the
+      "ForeverFit" header/wordmark is now bolder and larger than the
+      theme's default AppBar title style — see ARCHITECTURE.md

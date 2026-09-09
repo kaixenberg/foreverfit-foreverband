@@ -1,5 +1,5 @@
 name: health_companion
-description: Personal Health Companion — offline-first health & disaster-resilience app (SIH '26 #26181).
+description: ForeverFit — offline-first health & disaster-resilience app (SIH '26 #26181).
 publish_to: 'none'
 version: 0.1.0
 
@@ -34,16 +34,49 @@ dependencies:
   saf_stream: ^4.0.1
   flutter_foreground_task: ^11.0.3
   flutter_contacts: ^2.3.1
+  package_info_plus: ^10.2.1
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^4.0.0
+  flutter_launcher_icons: ^0.14.4
+
+flutter_launcher_icons:
+  # Regenerate with `dart run flutter_launcher_icons` after changing
+  # either source image. LoadingScreen reads the resulting launcher icon
+  # live from the OS at runtime (see app_icon_service.dart) rather than
+  # bundling a separate copy, so it updates automatically too.
+  android: true
+  image_path: assets/icon/icon.png
+  adaptive_icon_background: "#C1622A"
+  adaptive_icon_foreground: assets/icon/icon_foreground.png
 
 flutter:
   uses-material-design: true
   assets:
     - assets/models/fall_detector.tflite
+    - assets/icon/
     - assets/models/fall_detector_phone_only.tflite
     - assets/models/activity_classifier.tflite
     - assets/sounds/alarm_siren.wav
+  fonts:
+    # Bundled locally (not fetched from Google Fonts at runtime) — matches
+    # this app's offline-first rule everywhere else. One variable-weight
+    # TTF (200-1000 weight axis) declared at several logical weights, the
+    # standard Flutter pattern for a single variable font file — see
+    # assets/fonts/OFL.txt for the license.
+    - family: Nunito
+      fonts:
+        - asset: assets/fonts/Nunito-Variable.ttf
+          weight: 400
+        - asset: assets/fonts/Nunito-Variable.ttf
+          weight: 500
+        - asset: assets/fonts/Nunito-Variable.ttf
+          weight: 600
+        - asset: assets/fonts/Nunito-Variable.ttf
+          weight: 700
+        - asset: assets/fonts/Nunito-Variable.ttf
+          weight: 800
+        - asset: assets/fonts/Nunito-Variable.ttf
+          weight: 900

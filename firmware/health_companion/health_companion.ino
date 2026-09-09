@@ -1,11 +1,14 @@
-// Personal Health Companion — wearable firmware (ESP32-S3)
+// ForeverFit — "ForeverBand" wearable firmware (ESP32-S3)
 //
 // Reads MAX30101 (HR/SpO2 — real finger-presence detection, optionally
 // dummy/spoofed BPM+SpO2 values, see USE_DUMMY_HR_SPO2), MPU6050
 // (accel/gyro), BME280 (env), a stubbed MAX30205 (body temp — real
 // sensor not working on this build, only reported while a finger is
-// present, same as HR/SpO2), drives the 0.96" OLED watchface, and
-// streams everything to the phone over BLE.
+// present, same as HR/SpO2), drives two OLED watch faces (BOOT button
+// toggles between them — see BOOT_BUTTON_PIN), and streams everything to
+// the phone over BLE. The phone also writes the current time back over
+// BLE (see CHAR_TIME_UUID) so the primary watch face can show a real
+// clock/date without an RTC or network access of its own.
 //
 // Wire payload structs below MUST stay byte-for-byte in sync with
 // app/health_companion/lib/ble/protocol.dart — see ARCHITECTURE.md for the
@@ -31,6 +34,12 @@
 #define OLED_I2C_ADDR 0x3C
 #define BME280_I2C_ADDR 0x76
 
+// GPIO0 — the ESP32-S3 DevKit's built-in BOOT button. Only used at power-on
+// to enter flash mode; free to read as a normal button once the sketch is
+// running, so this needs no extra wiring. Active LOW (INPUT_PULLUP), used
+// here to toggle between the primary and secondary watch faces.
+#define BOOT_BUTTON_PIN 0
+
 // IR DC-baseline magnitude below which we treat the sensor as "no
 // finger/wrist contact". 50000 matches SparkFun/Maxim's own MAX3010x
 // reference examples; watch the "[HR] IRdc=..." serial debug line and
@@ -49,13 +58,15 @@
 #define USE_DUMMY_HR_SPO2 1
 
 // ---------------------------------------------------------------------------
-// BLE — custom "Health Companion" service, three notify characteristics.
+// BLE — custom "ForeverBand" service: three notify characteristics plus one
+// write-only characteristic for phone -> wearable time sync.
 // ---------------------------------------------------------------------------
 #define SERVICE_UUID     "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
 #define CHAR_VITALS_UUID "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
 #define CHAR_ENV_UUID    "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
 #define CHAR_MOTION_UUID "6e400004-b5a3-f393-e0a9-e50e24dcca9e"
-#define BLE_DEVICE_NAME  "HealthCompanion"
+#define CHAR_TIME_UUID   "6e400005-b5a3-f393-e0a9-e50e24dcca9e"
+#define BLE_DEVICE_NAME  "ForeverBand"
 
 const uint32_t VITALS_INTERVAL_MS = 1000;
 const uint32_t ENV_INTERVAL_MS    = 1000;
@@ -90,6 +101,18 @@ struct __attribute__((packed)) MotionPacket {
   float gx, gy, gz;
 };
 
+// Phone -> wearable, WRITE only (never notified back). weekday is
+// 0=Sunday..6=Saturday — see protocol.dart's buildTimeSyncPacket().
+struct __attribute__((packed)) TimeSyncPacket {
+  uint8_t hour;
+  uint8_t minute;
+  uint8_t second;
+  uint8_t day;
+  uint8_t month;
+  uint16_t year;
+  uint8_t weekday;
+};
+
 // ---------------------------------------------------------------------------
 // Globals
 // ---------------------------------------------------------------------------
@@ -102,12 +125,25 @@ NimBLEServer* bleServer = nullptr;
 NimBLECharacteristic* vitalsChar = nullptr;
 NimBLECharacteristic* envChar = nullptr;
 NimBLECharacteristic* motionChar = nullptr;
+NimBLECharacteristic* timeChar = nullptr;
 bool deviceConnected = false;
 
 bool bmeOk = false;
 bool mpuOk = false;
 bool oledOk = false;
 bool maxOk = false;
+
+// --- Time sync (see TimeSyncPacket above) and watch-face state ---
+bool timeSynced = false;
+uint32_t timeSyncMillis = 0; // millis() at the moment of the last sync
+uint8_t syncedHour = 0, syncedMinute = 0, syncedSecond = 0;
+uint8_t syncedDay = 1, syncedMonth = 1, syncedWeekday = 0;
+uint16_t syncedYear = 2026;
+
+bool showSecondaryFace = false;
+bool lastButtonReading = HIGH; // INPUT_PULLUP: HIGH = not pressed
+uint32_t lastButtonChangeMs = 0;
+const uint32_t BUTTON_DEBOUNCE_MS = 250;
 
 // --- HR + SpO2 via DC removal, AC low-pass filtering, and per-beat peak
 // detection. Bench-tested against a standalone reference sketch before
@@ -190,6 +226,101 @@ void applyDummyVitalsIfEnabled() {
 }
 
 // ---------------------------------------------------------------------------
+// Time sync (see TimeSyncPacket above) — the phone writes the current
+// time whenever it connects and every few minutes after that (see
+// BleService._syncTime in the app). Stored as a synced reference point
+// plus the millis() timestamp of that sync, so currentTime() below can
+// derive "now" between syncs without needing an RTC.
+// ---------------------------------------------------------------------------
+bool isLeapYear(uint16_t y) {
+  return (y % 4 == 0 && y % 100 != 0) || (y % 400 == 0);
+}
+
+uint8_t daysInMonth(uint8_t month, uint16_t year) {
+  static const uint8_t days[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+  if (month < 1 || month > 12) return 30;
+  if (month == 2 && isLeapYear(year)) return 29;
+  return days[month - 1];
+}
+
+// Advances the synced wall-clock time by the milliseconds elapsed since
+// the last sync. Read-only — doesn't mutate the synced* globals, so this
+// can be called as often as needed (once per OLED refresh) without
+// drifting the reference point itself.
+void currentTime(uint8_t& h, uint8_t& m, uint8_t& s, uint8_t& day,
+                  uint8_t& month, uint16_t& year, uint8_t& weekday) {
+  uint32_t elapsedSec = (millis() - timeSyncMillis) / 1000;
+  uint32_t totalSec = syncedSecond + elapsedSec;
+  s = totalSec % 60;
+  uint32_t totalMin = syncedMinute + totalSec / 60;
+  m = totalMin % 60;
+  uint32_t totalHour = syncedHour + totalMin / 60;
+  h = totalHour % 24;
+  uint32_t daysElapsed = totalHour / 24;
+
+  day = syncedDay;
+  month = syncedMonth;
+  year = syncedYear;
+  weekday = (syncedWeekday + daysElapsed) % 7;
+
+  while (daysElapsed > 0) {
+    uint8_t dim = daysInMonth(month, year);
+    if (day + daysElapsed <= dim) {
+      day += daysElapsed;
+      daysElapsed = 0;
+    } else {
+      daysElapsed -= (dim - day + 1);
+      day = 1;
+      month++;
+      if (month > 12) {
+        month = 1;
+        year++;
+      }
+    }
+  }
+}
+
+class TimeCallbacks : public NimBLECharacteristicCallbacks {
+  void onWrite(NimBLECharacteristic* c, NimBLEConnInfo& connInfo) override {
+    NimBLEAttValue value = c->getValue();
+    if (value.length() < sizeof(TimeSyncPacket)) return;
+    TimeSyncPacket pkt;
+    memcpy(&pkt, value.data(), sizeof(TimeSyncPacket));
+
+    syncedHour = pkt.hour;
+    syncedMinute = pkt.minute;
+    syncedSecond = pkt.second;
+    syncedDay = pkt.day;
+    syncedMonth = pkt.month;
+    syncedYear = pkt.year;
+    syncedWeekday = pkt.weekday;
+    timeSyncMillis = millis();
+    timeSynced = true;
+
+    Serial.printf("[TIME] synced %04d-%02d-%02d %02d:%02d:%02d\n", syncedYear,
+                  syncedMonth, syncedDay, syncedHour, syncedMinute, syncedSecond);
+  }
+};
+
+// ---------------------------------------------------------------------------
+// BOOT button — toggles which watch face updateOled() draws. Polled once
+// per loop() with simple debounce; no interrupt needed at this poll rate.
+// ---------------------------------------------------------------------------
+void pollBootButton() {
+  int reading = digitalRead(BOOT_BUTTON_PIN);
+  uint32_t now = millis();
+  if (reading != lastButtonReading && (now - lastButtonChangeMs) > BUTTON_DEBOUNCE_MS) {
+    lastButtonChangeMs = now;
+    lastButtonReading = reading;
+    if (reading == LOW) { // BOOT button is active LOW
+      showSecondaryFace = !showSecondaryFace;
+      Serial.printf("[BUTTON] switched to %s face\n",
+                    showSecondaryFace ? "secondary" : "primary");
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // BLE server callbacks
 // ---------------------------------------------------------------------------
 class ServerCallbacks : public NimBLEServerCallbacks {
@@ -217,6 +348,9 @@ void setupBle() {
       CHAR_ENV_UUID, NIMBLE_PROPERTY::NOTIFY);
   motionChar = service->createCharacteristic(
       CHAR_MOTION_UUID, NIMBLE_PROPERTY::NOTIFY);
+  timeChar = service->createCharacteristic(
+      CHAR_TIME_UUID, NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR);
+  timeChar->setCallbacks(new TimeCallbacks());
 
   service->start();
 
@@ -277,7 +411,7 @@ void setupSensors() {
     display.setTextColor(SSD1306_WHITE);
     display.setTextSize(1);
     display.setCursor(0, 0);
-    display.println("Health Companion");
+    display.println("ForeverFit");
     display.println("booting...");
     display.display();
   }
@@ -482,10 +616,63 @@ void notifyMotion() {
 }
 
 // ---------------------------------------------------------------------------
-// OLED watchface (unchanged core, plus a BLE status indicator)
+// OLED — two watch faces, toggled by the BOOT button (pollBootButton()).
 // ---------------------------------------------------------------------------
-void updateOled() {
-  if (!oledOk) return;
+const char* WEEKDAY_NAMES[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
+const char* MONTH_NAMES[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                              "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+
+/// Primary face: a real clock (synced from the phone — see TimeCallbacks),
+/// date, and BME280 ambient stats, the way an actual smartwatch face looks
+/// rather than a debug readout. A small dot top-right stands in for a BLE
+/// icon (filled = connected, hollow = advertising only) so this face
+/// doesn't need a whole text line just for connection status the way the
+/// secondary face does.
+void drawPrimaryFace() {
+  display.clearDisplay();
+
+  if (deviceConnected) {
+    display.fillCircle(122, 4, 3, SSD1306_WHITE);
+  } else {
+    display.drawCircle(122, 4, 3, SSD1306_WHITE);
+  }
+
+  display.setTextSize(3);
+  display.setCursor(19, 4);
+  if (timeSynced) {
+    uint8_t h, m, s, day, month, weekday;
+    uint16_t year;
+    currentTime(h, m, s, day, month, year, weekday);
+    display.printf("%02d:%02d", h, m);
+
+    display.drawFastHLine(4, 36, 120, SSD1306_WHITE);
+    display.setTextSize(1);
+    display.setCursor(4, 43);
+    display.printf("%s, %s %02d %04d", WEEKDAY_NAMES[weekday],
+                    MONTH_NAMES[month - 1], day, year);
+  } else {
+    display.print("--:--");
+    display.drawFastHLine(4, 36, 120, SSD1306_WHITE);
+    display.setTextSize(1);
+    display.setCursor(4, 43);
+    display.print("Open the app to sync time");
+  }
+
+  display.setCursor(4, 55);
+  if (bmeOk) {
+    display.printf("%.1fC  %.0f%%  %.0fhPa", bme.readTemperature(),
+                    bme.readHumidity(), bme.readPressure() / 100.0f);
+  } else {
+    display.print("Env sensor unavailable");
+  }
+
+  display.display();
+}
+
+/// Secondary face: the detailed HR/SpO2/body-temp/env readout the single
+/// face used to always show — unchanged content, just no longer the only
+/// option.
+void drawSecondaryFace() {
   display.clearDisplay();
   display.setCursor(0, 0);
   display.setTextSize(1);
@@ -493,7 +680,6 @@ void updateOled() {
   display.printf("BLE: %s\n", deviceConnected ? "connected" : "advertising");
   display.println();
 
-  display.setTextSize(1);
   if (!fingerPresent) {
     display.println("HR: -- (no finger)");
     display.println("SpO2: --");
@@ -522,11 +708,20 @@ void updateOled() {
   display.display();
 }
 
+void updateOled() {
+  if (!oledOk) return;
+  if (showSecondaryFace) {
+    drawSecondaryFace();
+  } else {
+    drawPrimaryFace();
+  }
+}
+
 // ---------------------------------------------------------------------------
 void setup() {
   Serial.begin(115200);
   delay(300);
-  Serial.println("\n[BOOT] Personal Health Companion");
+  Serial.println("\n[BOOT] ForeverFit / ForeverBand");
 
   Wire.begin(I2C_SDA, I2C_SCL);
   // Standard Mode (100kHz, the Wire library default) — reverted from Fast
@@ -536,6 +731,8 @@ void setup() {
   // moves to a proper PCB with short traces and correctly-sized pull-ups.
   randomSeed(analogRead(0));
 
+  pinMode(BOOT_BUTTON_PIN, INPUT_PULLUP);
+
   setupSensors();
   setupBle();
 }
@@ -543,6 +740,7 @@ void setup() {
 void loop() {
   pollHeartRateSensor(); // every iteration — don't miss FIFO samples
   applyDummyVitalsIfEnabled();
+  pollBootButton();
 
   uint32_t now = millis();
 

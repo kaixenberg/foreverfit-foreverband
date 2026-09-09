@@ -192,7 +192,7 @@ class _App extends StatelessWidget {
     }
 
     return MaterialApp(
-      title: 'Health Companion',
+      title: 'ForeverFit',
       theme: AppTheme.light,
       darkTheme: darkTheme,
       themeMode: settings.themeMode,

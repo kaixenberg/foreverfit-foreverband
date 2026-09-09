@@ -71,8 +71,16 @@ class AppTheme {
         Colors.black,
       );
 
+  /// Nunito — warm, rounded terminals matching this theme's large-radius
+  /// cards/pill buttons/circular badges, bundled locally as a variable
+  /// font (assets/fonts/, declared at several weights in pubspec.yaml)
+  /// rather than fetched at runtime, matching this app's offline-first
+  /// rule everywhere else.
+  static const fontFamily = 'Nunito';
+
   static ThemeData _build(ColorScheme scheme, Color scaffoldBg) {
-    final base = ThemeData(colorScheme: scheme, useMaterial3: true);
+    final base = ThemeData(
+        colorScheme: scheme, useMaterial3: true, fontFamily: fontFamily);
     return base.copyWith(
       scaffoldBackgroundColor: scaffoldBg,
       appBarTheme: AppBarTheme(

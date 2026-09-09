@@ -81,6 +81,14 @@ class _LoadingScreenState extends State<LoadingScreen> {
                         color: Theme.of(context).colorScheme.primary,
                       ),
               ),
+              const SizedBox(height: 16),
+              Text(
+                'ForeverFit',
+                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                      fontWeight: FontWeight.w900,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+              ),
               const SizedBox(height: 24),
               const CircularProgressIndicator(),
               const SizedBox(height: 16),
