@@ -144,6 +144,100 @@ turned out to be too much at once. See `ml/README.md` for the full
 reasoning and what to do if false positives are still a problem with
 just the threshold change in place.
 
+**Still too sensitive for two specific motions — root-caused with real
+drop-test data, not guessed a third time.** The user reported the
+detector still fired on a quick phone pickup and on short (~1ft) falls.
+Followed the note above exactly: logged real `cnnProb` from a handful
+of live pickup tests instead of adjusting another number blind. The
+result ruled out both existing levers at once — the CNN reports
+0.999-1.000 (not borderline at all) for a quick pickup, and because
+inference runs on a 3s *sliding* window, a brief jerk stays visible to
+every window it's inside for the model's entire ~3s window lifetime, so
+it satisfies "N consecutive triggers" the same way a longer real fall
+does; one test sustained `triggeredNow=true` for all 6 possible
+consecutive ticks, the maximum the window mechanics allow. Neither
+`threshold` nor `_consecutiveTriggersToAlert` can fix this — it's a
+genuine training-data gap (UMAFall's non-fall class likely doesn't
+have enough "grab the phone fast" examples), confirmed by data.
+
+Added `FallInference.longestFreefallRun()` as a physically-grounded
+corroboration instead, alongside the CNN (not replacing it — threshold
+and consecutive-count are untouched at their real-data-validated
+values): the longest continuous run of near-weightless accelerometer
+samples (< 0.5g resultant magnitude) in the buffered window. A phone
+being picked up is being accelerated toward a hand, not dropped — it
+never reads weightless. A real fall does, and the duration of that
+phase is a direct physical proxy for drop height via free-fall
+kinematics (`t = sqrt(2h/g)`). Only meaningful now that
+`PhoneMotionService` genuinely throttles to its intended ~20Hz (see the
+performance-pass section above) — the duration math assumes a real,
+known sample period.
+
+**First cut (300ms) proved too low — raised to 700ms on real evidence,
+then abandoned entirely once real fall-test data showed duration was
+backwards, not just mistuned.** 300ms came from an assumed ~1ft fall
+(~250ms) plus a small margin. A real logcat from deliberate quick/jerky
+phone handling — no fall at all — showed `freefallMs` reaching **550ms**:
+a sharp deceleration right after grabbing the phone can momentarily
+cancel gravity in the accelerometer's reading almost the same way true
+unsupported falling does, which the kinematic estimate alone didn't
+account for. Raised to 700ms on that evidence, clear margin above the
+550ms handling ceiling.
+
+A further round of real testing then measured the other side: a
+confidently-classified real drop test (`cnnProb` 0.999-1.000, sustained
+across the model's full ~3s window) produced only **~50ms** of
+`freefallMs` — over an order of magnitude short of the 700ms gate, and
+*shorter* than the 550ms handling false-positive it was meant to
+reject. Duration doesn't just need retuning here — for short falls on
+this device/sampling rate it's the wrong signal, backed up by the
+kinematics themselves (`t = sqrt(2·0.3/9.81) ≈ 247ms` for a 1ft drop,
+below what a sharp handling jerk can produce).
+
+Replaced with `FallInference.hasPostFreefallImpact()` /
+`peakImpactGAfterFreefall()`: instead of "how long was the weightless
+phase," gates on "was there a hard deceleration spike right after it" —
+a real fall ends by hitting the ground, a pickup ends by decelerating
+gently into a hand, a signal reasoned to not be inverted for short
+falls the way duration was. The impact threshold (`_impactGThreshold`
+in `fall_inference.dart`, **2.0g**) was a conservative literature
+default (1.5g-3g is the commonly cited range), not yet swept against
+this project's own impact data.
+
+**A third round of real testing disproved that too.** A fast phone
+pickup measured `peakImpactG` up to **4.02g** — well past the 2.0g
+gate — meaning a hard catch decelerates the phone just as sharply as
+many real falls would. Two corroboration signals in a row, each
+reasoned from real physics, each disproven by the next round of real
+device data.
+
+**Final decision, given the demo deadline and no time left to validate
+a third heuristic**: dropped corroboration entirely. `FallDetectorService`
+and `FallDetectionTaskHandler` now gate purely on `threshold` +
+`_consecutiveTriggersToAlert` — the only piece of this pipeline
+actually validated against real held-out labeled data (92%/92%).
+`longestFreefallRun`/`peakImpactGAfterFreefall`/`hasPostFreefallImpact`
+stay in `fall_inference.dart`, and `freefallMs`/`peakImpactG` are still
+logged on every inference for visibility, just no longer gated on. This
+knowingly brings back the pickup/short-fall false-positive rate —
+accepted because the existing 10s "I'm OK" countdown means a false
+positive costs one tap, not a real emergency call, while a missed real
+fall has no equivalent recovery. `ml/README.md` has the full
+before/after reasoning across all three rounds.
+
+Given that accepted tradeoff, Settings gained a dedicated **"Fall
+detection"** screen (`lib/screens/settings/fall_detection_screen.dart`):
+a master on/off toggle (`AppSettingsStore.fallDetectionEnabled`,
+persisted, on by default since this is a safety feature — reads through
+to `FallDetectorService.start()`/`.stop()`, which now support being
+toggled at runtime, not just once at app startup) and a "Trigger fall
+detection demo" button (`FallDetectorService.triggerFallDemo()`) that
+shows the exact same alert banner/10s-countdown/dismiss flow a real
+detection would, always forced into test mode so it can never place a
+real call. Deliberately separate from the existing "Background
+permission" screen's own toggle, which controls only the background
+foreground-service variant.
+
 Original design, on hold: a small 1D-CNN fuses the wearable's wrist
 motion (streaming over BLE at 20Hz) with the phone's own accelerometer
 for a second, independent view of the same physical event — a wrist-only

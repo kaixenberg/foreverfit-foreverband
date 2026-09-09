@@ -136,6 +136,28 @@ tiles + a static state-level hazard baseline) and prefers live data
       tuning"; wrist+phone fusion on hold pending IMU repair — see
       `ml/`), with a latched alert + 10s countdown that escalates into
       the real AI-assisted emergency-call workflow (see below)
+- [x] Fall detection: two corroboration heuristics tried alongside the
+      CNN, both disproven by real device data, both dropped. Real
+      drop-test logcat data first showed the CNN alone confidently
+      misclassifying a quick phone pickup and short (~1ft) falls as real
+      falls. Free-fall *duration* (300ms, then 700ms) turned out to be
+      backwards for short falls — a genuine confident fall trigger
+      measured only ~50ms of free-fall, shorter than the ~550ms a quick
+      pickup jerk produced. Impact *magnitude* right after the free-fall
+      dip was tried next, but a fast pickup catch also measured up to
+      4.02g, past the 2.0g gate meant to catch only real ground impacts.
+      Given the demo deadline and no time left to validate a third
+      heuristic, reverted to gating on the CNN threshold (0.8) +
+      consecutive-count (2) alone — the only piece ever validated
+      against real held-out labeled data (92%/92%). The pickup/short-fall
+      false-positive rate is knowingly back, accepted because the
+      existing 10s "I'm OK" countdown makes a false positive cost one
+      tap, not a real call. See ARCHITECTURE.md and `ml/README.md` for
+      the full three-round evidence trail
+- [x] Settings > "Fall detection": on/off toggle for the in-app detector
+      (`AppSettingsStore.fallDetectionEnabled`, on by default) and a
+      one-tap demo that previews the real alert banner + 10s countdown
+      without needing an actual drop, always forced into test mode
 - [x] Manual SOS button (Dashboard) — raises the same alert/countdown/
       emergency-call flow as an auto-detected fall, distinguished in the
       banner text

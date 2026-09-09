@@ -31,6 +31,12 @@ class AppSettingsStore extends ChangeNotifier {
   bool notifyHazards = true;
   bool notifyReminders = true;
 
+  /// Whether the on-device fall-detection CNN runs at all — a safety
+  /// feature, so on by default (opt-out, not opt-in). Settings' "Fall
+  /// detection" screen exposes the toggle; `main.dart` reads this once
+  /// at startup to decide whether to call `FallDetectorService.start()`.
+  bool fallDetectionEnabled = true;
+
   bool isCategoryEnabled(InsightCategory category) {
     switch (category) {
       case InsightCategory.vitals:
@@ -63,6 +69,7 @@ class AppSettingsStore extends ChangeNotifier {
     notifyVitals = saved['notifyVitals'] as bool? ?? true;
     notifyHazards = saved['notifyHazards'] as bool? ?? true;
     notifyReminders = saved['notifyReminders'] as bool? ?? true;
+    fallDetectionEnabled = saved['fallDetectionEnabled'] as bool? ?? true;
   }
 
   Future<void> setUnitSystem(UnitSystem value) async {
@@ -110,6 +117,12 @@ class AppSettingsStore extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> setFallDetectionEnabled(bool value) async {
+    fallDetectionEnabled = value;
+    await _persist();
+    notifyListeners();
+  }
+
   Future<void> _persist() async {
     await _box?.put(_key, {
       'unitSystem': unitSystem.name,
@@ -119,6 +132,7 @@ class AppSettingsStore extends ChangeNotifier {
       'notifyVitals': notifyVitals,
       'notifyHazards': notifyHazards,
       'notifyReminders': notifyReminders,
+      'fallDetectionEnabled': fallDetectionEnabled,
     });
   }
 }

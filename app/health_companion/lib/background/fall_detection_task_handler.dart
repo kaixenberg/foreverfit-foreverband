@@ -40,6 +40,18 @@ class FallDetectionTaskHandler extends TaskHandler {
   // 2 (real falls stopped triggering reliably once stacked with
   // FallInference's threshold bump).
   static const _consecutiveTriggersToAlert = 2;
+
+  // Kept in sync with FallDetectorService's identical decision — see its
+  // comment for the full evidence trail: free-fall duration (300ms, then
+  // 700ms) and impact magnitude were each tried as corroboration and
+  // each disproven by the next round of real on-device test data (a
+  // pickup jerk can match or exceed a real fall on both signals).
+  // Reverted to gating on `threshold`/`_consecutiveTriggersToAlert`
+  // alone — the only piece validated against real held-out labeled
+  // data — accepting the pickup/short-fall false-positive rate back in
+  // exchange for not risking a missed real fall, since the 10s "I'm OK"
+  // window below means a false positive costs one tap, not a real call.
+
   static const _alertCountdownSeconds = 10;
   static const _disasterCheckInterval = Duration(minutes: 15);
 

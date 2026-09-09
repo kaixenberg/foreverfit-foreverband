@@ -7,6 +7,7 @@ import 'settings/appearance_settings_screen.dart';
 import 'settings/background_permission_screen.dart';
 import 'settings/data_backup_screen.dart';
 import 'settings/developer_demo_screen.dart';
+import 'settings/fall_detection_screen.dart';
 import 'settings/medical_emergency_screen.dart';
 import 'settings/permissions_screen.dart';
 import 'settings/sensor_precedence_screen.dart';
@@ -76,6 +77,12 @@ final _categories = [
     'Medical emergency',
     'Emergency contact and local hotline number',
     (_) => const MedicalEmergencyScreen(),
+  ),
+  _SettingsCategory(
+    Icons.personal_injury_outlined,
+    'Fall detection',
+    'Turn detection on/off, try the demo',
+    (_) => const FallDetectionScreen(),
   ),
   _SettingsCategory(
     Icons.verified_user_outlined,

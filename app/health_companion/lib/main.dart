@@ -172,10 +172,16 @@ class HealthCompanionApp extends StatelessWidget {
           },
         ),
         ChangeNotifierProvider(
-          create: (context) => FallDetectorService(
-            phoneMotionService: context.read<PhoneMotionService>(),
-            emergencyWorkflow: context.read<EmergencyWorkflowService>(),
-          )..start(),
+          create: (context) {
+            final service = FallDetectorService(
+              phoneMotionService: context.read<PhoneMotionService>(),
+              emergencyWorkflow: context.read<EmergencyWorkflowService>(),
+            );
+            if (context.read<AppSettingsStore>().fallDetectionEnabled) {
+              service.start();
+            }
+            return service;
+          },
         ),
         ChangeNotifierProvider(
           create: (context) => ActivityClassifierService(
