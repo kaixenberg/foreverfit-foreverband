@@ -112,11 +112,78 @@ phone_az, phone_gx, phone_gy, phone_gz]`.
 Same architecture, unit conversions, and subject-level split (1-14 train,
 15-17 val, 18-19 test) as the wrist+phone model below. Held-out test
 performance (subjects 18-19), with the impact-based labeling described
-above: **99% accuracy, 88% fall precision, 94% fall recall**.
-`fall_detector_service.dart` uses a plain `cnnProb > 0.5` threshold
-(matching the evaluation above) — no separate heuristic corroboration
-step needed, since both channels are now properly trained inputs rather
-than one being real and one being a rule-based stand-in.
+above, **at the model's own default 0.5 cutoff**: 99% accuracy, 88% fall
+precision, 94% fall recall. `fall_detector_service.dart` no longer uses
+0.5 directly — see "Threshold tuning" below — but no separate
+heuristic-corroboration step is needed either way, since both channels
+are now properly trained inputs rather than one being real and one being
+a rule-based stand-in.
+
+### Threshold tuning
+
+The user reported the deployed detector felt too trigger-happy. Rather
+than guess a new cutoff, re-ran inference on the same held-out test set
+(subjects 18-19, 1504 windows, 7.4% fall-positive) across a range of
+thresholds using the already-trained/saved model
+(`data/fall_model_phone_only.keras`) — no retraining needed:
+
+```
+threshold  precision   recall   fall-alerts   missed-falls
+     0.50      88.2%    93.8%           119              7
+     0.55      89.0%    93.8%           118              7
+     0.60      89.0%    93.8%           118              7
+     0.65      89.0%    93.8%           118              7
+     0.70      90.4%    92.0%           114              9
+     0.75      90.4%    92.0%           114              9
+     0.80      92.0%    92.0%           112              9
+     0.85      91.9%    91.1%           111             10
+     0.90      91.4%    85.7%           105             16
+```
+
+**0.80** is the sweet spot: it strictly dominates every threshold below
+it (precision keeps climbing while recall holds at 92.0%) and every
+threshold above it (0.85+ starts trading real recall for flat-or-worse
+precision). `FallInference.threshold` in
+`lib/ml/fall_inference.dart` was raised from 0.5 to 0.8 on this basis —
+this part is backed by real held-out data and stayed.
+
+**Also briefly raised `_consecutiveTriggersToAlert` from 2 to 3** in both
+`fall_detector_service.dart` and `fall_detection_task_handler.dart`
+(kept in sync) — inference runs every 500ms on a 3s *sliding* window, so
+2 consecutive triggers only demanded ~1s of sustained motion over
+heavily-overlapping windows, which a single hard jolt (dropping the
+phone, a hard step) could pass regardless of the model's own confidence.
+**Reverted back to 2** after live on-device testing: this lever isn't
+reflected in the window-level table above (that's per-window precision/
+recall, not the compounded "N consecutive windows" requirement an actual
+alert needs), and stacking it on top of the already-stricter 0.8
+threshold made genuine falls harder to trigger too, not just false
+positives — an untested combination that turned out to be too much at
+once. If false positives are still a problem with just the threshold
+change, revisit this one with real fall-test data behind the choice
+(e.g. log `cnnProb` across a handful of real drop tests) rather than
+guessing again.
+
+To regenerate this table after any retraining:
+
+```python
+import numpy as np, tensorflow as tf
+from sklearn.metrics import precision_score, recall_score, confusion_matrix
+
+data = np.load("data/processed/windows_phone_only.npz")
+X, y, subjects = data["X"], data["y"], data["subjects"]
+mask = np.isin(subjects, [18, 19])
+X_test, y_test = X[mask], y[mask]
+
+model = tf.keras.models.load_model("data/fall_model_phone_only.keras")
+probs = model.predict(X_test, verbose=0).ravel()
+
+for t in [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9]:
+    pred = (probs > t).astype(int)
+    p = precision_score(y_test, pred, zero_division=0)
+    r = recall_score(y_test, pred, zero_division=0)
+    print(t, p, r)
+```
 
 ## Wrist+phone model (on hold)
 

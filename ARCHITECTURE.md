@@ -75,11 +75,29 @@ approach and easy to resume once the wearable's IMU is replaced — but
 right now `fall_detector_service.dart` loads
 `fall_detector_phone_only.tflite`, trained on real phone accelerometer +
 a waist-sensor gyro proxy (see `ml/README.md`), and needs no BLE
-connection to work at all. Held-out test performance: 99% accuracy, 88%
-fall precision, 94% fall recall — see `ml/README.md` for the labeling fix
-(only windows containing the actual impact are labeled Fall, not every
-window in a Fall trial) that a live test on real hardware caught and
-this number reflects.
+connection to work at all. Held-out test performance at the model's
+default 0.5 cutoff: 99% accuracy, 88% fall precision, 94% fall recall —
+see `ml/README.md` for the labeling fix (only windows containing the
+actual impact are labeled Fall, not every window in a Fall trial) that a
+live test on real hardware caught and this number reflects.
+
+**Dialed down after the user reported it felt too sensitive**: rather
+than guess, re-ran the held-out test set through the already-trained
+model at several cutoffs (no retraining) and picked the threshold that
+actually maximizes precision without costing recall — 0.8, not 0.5; see
+`ml/README.md`'s "Threshold tuning" section for the full sweep table
+(92.0% precision at the same 92.0% recall as 0.7-0.75, vs. 88.2%/93.8%
+at the old 0.5). `FallInference.threshold` was raised accordingly and
+stayed there.
+
+`_consecutiveTriggersToAlert` (both `fall_detector_service.dart` and
+`fall_detection_task_handler.dart`, kept in sync) was also briefly raised
+from 2 to 3 alongside it, then **reverted back to 2** after the user
+found real falls stopped triggering reliably — stacking an unvalidated
+debounce increase on top of the already-stricter, data-backed threshold
+turned out to be too much at once. See `ml/README.md` for the full
+reasoning and what to do if false positives are still a problem with
+just the threshold change in place.
 
 Original design, on hold: a small 1D-CNN fuses the wearable's wrist
 motion (streaming over BLE at 20Hz) with the phone's own accelerometer

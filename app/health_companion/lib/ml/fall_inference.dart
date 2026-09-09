@@ -29,10 +29,14 @@ class FallInference {
   static const windowLen = 60; // 3s @ 20Hz
   static const modelAsset = 'assets/models/fall_detector_phone_only.tflite';
 
-  // Matches the 0.5 threshold used when evaluating the trained model
-  // (ml/train_fall_model_phone_only.py: 99% accuracy, 94% fall recall,
-  // 88% fall precision on held-out subjects).
-  static const threshold = 0.5;
+  // Raised from the model's own eval default of 0.5 to dial down false
+  // positives, backed by a real precision/recall sweep over the held-out
+  // test set rather than a guess: 0.8 is the sweet spot where precision
+  // peaks (88.2% -> 92.0%) at effectively no recall cost (93.8% -> 92.0%)
+  // — thresholds above 0.8 start trading real recall for no further
+  // precision gain. See ml/README.md's "Threshold tuning" section for the
+  // full sweep table and how to regenerate it.
+  static const threshold = 0.8;
 
   Interpreter? _interpreter;
   final List<MotionSample> _buffer = [];

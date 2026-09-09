@@ -34,6 +34,16 @@ class FallDetectorService extends ChangeNotifier {
   final PhoneMotionService phoneMotionService;
   final EmergencyWorkflowService emergencyWorkflow;
 
+  // Was briefly raised to 3 alongside FallInference's threshold bump
+  // (0.5 -> 0.8) to dial down false positives, but reverted back to 2 —
+  // unlike the threshold change, requiring 3 consecutive high-confidence
+  // windows was never validated against real held-out fall data (only
+  // per-window precision/recall was measured, not the compounded
+  // "N-in-a-row" alert-level requirement), and stacking it on top of the
+  // already-stricter threshold made real falls harder to trigger, not
+  // just false positives — confirmed by live on-device testing. See
+  // fall_inference.dart / ml/README.md's "Threshold tuning" for the part
+  // of this that IS backed by real data.
   static const int _consecutiveTriggersToAlert = 2;
   static const int _emergencyCountdownSeconds = 10;
 

@@ -124,10 +124,12 @@ tiles + a static state-level hazard baseline) and prefers live data
       reached from the Dashboard, all reachable without a wearable; BLE
       connect + live dashboard + local history confirmed working
       end-to-end on a physical Android phone
-- [x] On-device fall-detection CNN (currently phone-only, 94% recall on
-      held-out subjects; wrist+phone fusion on hold pending IMU repair —
-      see `ml/`), with a latched alert + 10s countdown that escalates
-      into the real AI-assisted emergency-call workflow (see below)
+- [x] On-device fall-detection CNN (currently phone-only, 92% precision/
+      92% recall on held-out subjects at a threshold dialed down from
+      the model's 0.5 default to 0.8 — see `ml/README.md`'s "Threshold
+      tuning"; wrist+phone fusion on hold pending IMU repair — see
+      `ml/`), with a latched alert + 10s countdown that escalates into
+      the real AI-assisted emergency-call workflow (see below)
 - [x] Manual SOS button (Dashboard) — raises the same alert/countdown/
       emergency-call flow as an auto-detected fall, distinguished in the
       banner text

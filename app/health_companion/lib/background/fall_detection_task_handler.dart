@@ -35,6 +35,10 @@ void fallDetectionTaskCallback() {
 /// monitoring notification, Hive multi-isolate coordination for the
 /// disaster check).
 class FallDetectionTaskHandler extends TaskHandler {
+  // Kept in sync with FallDetectorService's identical constant — see its
+  // comment for why this was briefly raised to 3, then reverted back to
+  // 2 (real falls stopped triggering reliably once stacked with
+  // FallInference's threshold bump).
   static const _consecutiveTriggersToAlert = 2;
   static const _alertCountdownSeconds = 10;
   static const _disasterCheckInterval = Duration(minutes: 15);
