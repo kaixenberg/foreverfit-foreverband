@@ -273,7 +273,14 @@ tiles + a static state-level hazard baseline) and prefers live data
       activity card without one); body fat is computed from BMI + age +
       sex (Deurenberg formula) instead of manually logged — see
       ARCHITECTURE.md
-- [ ] Wearable-sensor disaster heuristics (heat-index formula now exists
-      — this item is wiring it to the wearable's own BME280 instead of
-      phone GPS, plus BME280 pressure drop-rate) once the wearable's IMU
-      is replaced
+- [x] Wearable-sensor disaster heuristics: the full-screen imminent
+      warning now includes a live "storm approaching" signal from a rapid
+      barometric pressure fall (≥3 hPa in 3h, a real marine/aviation
+      early-warning threshold), fed by the wearable's BME280 in
+      conjunction with online weather data (same precedence/fallback
+      setting as the Dashboard's ambient cards) — replacing the previous
+      "high rain forecast in a flood-prone state" trigger, which was a
+      coarse statistical approximation rather than a live detection, and
+      which now stays at the low-key Map banner tier instead. See
+      ARCHITECTURE.md for the full reasoning and the known altitude-
+      sensitivity limitation

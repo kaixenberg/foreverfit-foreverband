@@ -5,8 +5,11 @@ import 'package:geolocator/geolocator.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:http/http.dart' as http;
 
+import '../ble/ble_service.dart';
+import '../storage/app_settings_store.dart';
 import 'hazard_type.dart';
 import 'india_hazard_data.dart';
+import 'pressure_trend.dart';
 
 enum DataFreshness { live, cachedStale, staticOnly }
 
@@ -44,6 +47,14 @@ class DisasterRisk {
   final DataFreshness airQualityFreshness;
   final DateTime? airQualityAsOf;
 
+  // Rapid barometric pressure fall — a live, local early-warning signal
+  // for an approaching storm (see pressure_trend.dart), fed by the
+  // wearable's BME280 when connected (falling back to Open-Meteo's
+  // current pressure, per the same sensor-precedence setting used for
+  // the Dashboard's ambient cards) rather than a forecast probability.
+  final double? pressureDropHPa3h;
+  final bool pressureTrendFromWearable;
+
   DisasterRisk({
     required this.stateName,
     required this.hazardProfile,
@@ -63,6 +74,8 @@ class DisasterRisk {
     required this.pm10,
     required this.airQualityFreshness,
     required this.airQualityAsOf,
+    required this.pressureDropHPa3h,
+    required this.pressureTrendFromWearable,
   });
 
   /// NOAA/AirNow-standard US AQI category labels.
@@ -107,18 +120,24 @@ class DisasterRisk {
   /// Stricter tier than [hasWarning] — reserved for the full-screen,
   /// explicit-acknowledgment warning. Deliberately much higher bars than
   /// the low-key Map banner so it doesn't fire at the same rate and cause
-  /// alert fatigue.
+  /// alert fatigue, AND deliberately restricted to genuine *live/detected*
+  /// signals (a nearby quake that already happened, wind currently being
+  /// observed, pressure currently falling) rather than a forecast
+  /// probability paired with a static "this state is prone to X" flag —
+  /// a >85% forecast chance of rain in a flood-prone state isn't actually
+  /// evidence a flood is imminent right now, so that combination stays at
+  /// the low-key Map banner tier ([hasWarning]) instead of triggering this
+  /// full-screen warning.
   List<HazardType> get imminentHazards {
     final hazards = <HazardType>[];
     if ((nearbyMaxQuakeMagnitude ?? 0) >= 5.5) {
       hazards.add(HazardType.earthquake);
     }
-    if (hazardProfile.floodProne &&
-        (precipitationProbabilityPercent ?? 0) > 85) {
-      hazards.add(HazardType.flood);
-    }
     if (hazardProfile.cycloneProne && (windSpeedKmh ?? 0) > 60) {
       hazards.add(HazardType.cyclone);
+    }
+    if ((pressureDropHPa3h ?? 0) >= rapidPressureFallHPa) {
+      hazards.add(HazardType.stormApproaching);
     }
     return hazards;
   }
@@ -129,12 +148,18 @@ class DisasterRisk {
       parts.add('M${nearbyMaxQuakeMagnitude!.toStringAsFixed(1)} earthquake '
           'detected nearby in the last 30 days');
     }
-    if (imminentHazards.contains(HazardType.flood)) {
-      parts.add('${precipitationProbabilityPercent!.round()}% chance of '
-          'heavy rain today in a flood-prone area');
-    }
     if (imminentHazards.contains(HazardType.cyclone)) {
       parts.add('${windSpeedKmh!.round()} km/h winds in a cyclone-prone area');
+    }
+    if (imminentHazards.contains(HazardType.stormApproaching)) {
+      final source =
+          pressureTrendFromWearable ? 'your wearable' : 'online weather data';
+      final humidityPart = humidityPercent != null
+          ? ', humidity at ${humidityPercent!.round()}%'
+          : '';
+      parts.add('barometric pressure ($source) fell '
+          '${pressureDropHPa3h!.toStringAsFixed(1)} hPa in the last 3 hours'
+          '$humidityPart — conditions consistent with an approaching storm');
     }
     if (parts.isEmpty) return null;
     return parts.join('; ');
@@ -152,6 +177,17 @@ class DisasterService extends ChangeNotifier {
   static const _geocodeCooldown = Duration(minutes: 10);
   static const _geocodeMinMoveMeters = 2000.0;
   static const _fetchTimeout = Duration(seconds: 8);
+
+  /// Both optional: the background fall-detection isolate constructs this
+  /// with neither (see fall_detection_task_handler.dart) — there's no BLE
+  /// connection or Provider tree in that isolate — and gets the online-
+  /// only pressure trend automatically as a result.
+  DisasterService({BleService? ble, AppSettingsStore? appSettings})
+      : _ble = ble,
+        _appSettings = appSettings;
+
+  final BleService? _ble;
+  final AppSettingsStore? _appSettings;
 
   Box? _cache;
 
@@ -191,6 +227,7 @@ class DisasterService extends ChangeNotifier {
       final weather = await _fetchWeather(position);
       final quakes = await _fetchQuakes(position);
       final airQuality = await _fetchAirQuality(position);
+      final pressureTrend = await _recordPressureSample(weather);
 
       risk = DisasterRisk(
         stateName: stateName,
@@ -219,6 +256,8 @@ class DisasterService extends ChangeNotifier {
                 : DataFreshness.cachedStale)
             : DataFreshness.staticOnly,
         airQualityAsOf: airQuality?.asOf,
+        pressureDropHPa3h: pressureTrend?.dropHPa,
+        pressureTrendFromWearable: pressureTrend?.fromWearable ?? false,
       );
       lastError = null;
     } catch (e) {
@@ -227,6 +266,53 @@ class DisasterService extends ChangeNotifier {
       isLoading = false;
       notifyListeners();
     }
+  }
+
+  /// Feeds the current pressure reading into the rolling trend history
+  /// and returns the resulting 3h drop (if any). Prefers the wearable's
+  /// live BME280 reading over Open-Meteo's, per the same ambient-source
+  /// precedence setting used for the Dashboard's ambient cards — falling
+  /// back the other way if the preferred source isn't currently
+  /// available. Kept separate from [DisasterRisk.pressureHPa] (which
+  /// stays online-only, unchanged, for its existing Dashboard-fallback
+  /// role) since this is a rolling series, not a single snapshot.
+  Future<_PressureTrendResult?> _recordPressureSample(
+    _WeatherResult? weather,
+  ) async {
+    final env = _ble?.latestEnv;
+    final preferWearable = (_appSettings?.ambientSourcePreference ??
+            AmbientSourcePreference.preferWearable) ==
+        AmbientSourcePreference.preferWearable;
+
+    double? hPa;
+    var fromWearable = false;
+    if (preferWearable && env != null) {
+      hPa = env.pressureHPa;
+      fromWearable = true;
+    } else if (weather?.pressureHPa != null) {
+      hPa = weather!.pressureHPa;
+    } else if (env != null) {
+      hPa = env.pressureHPa;
+      fromWearable = true;
+    }
+    if (hPa == null) return null;
+
+    final now = DateTime.now();
+    final stored = (_cache?.get('pressureTrend') as List?) ?? const [];
+    final samples = [
+      for (final entry in stored)
+        if (entry is Map)
+          if (PressureSample.fromMap(entry) case final sample?) sample,
+      PressureSample(now, hPa),
+    ];
+    final pruned = prunePressureSamples(samples, now);
+    await _cache?.put(
+      'pressureTrend',
+      [for (final s in pruned) s.toMap()],
+    );
+
+    final drop = pressureDropOverWindow(pruned, now);
+    return _PressureTrendResult(dropHPa: drop, fromWearable: fromWearable);
   }
 
   /// Live GPS fix when possible; falls back to the OS's last-known fix
@@ -518,6 +604,13 @@ class _AirQualityResult {
     required this.asOf,
     required this.isLive,
   });
+}
+
+class _PressureTrendResult {
+  final double? dropHPa;
+  final bool fromWearable;
+
+  _PressureTrendResult({required this.dropHPa, required this.fromWearable});
 }
 
 class _QuakeResult {

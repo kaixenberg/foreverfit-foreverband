@@ -134,7 +134,12 @@ class HealthCompanionApp extends StatelessWidget {
             phoneMotionService: context.read<PhoneMotionService>(),
           )..start(),
         ),
-        ChangeNotifierProvider(create: (_) => DisasterService()..init()),
+        ChangeNotifierProvider(
+          create: (context) => DisasterService(
+            ble: context.read<BleService>(),
+            appSettings: context.read<AppSettingsStore>(),
+          )..init(),
+        ),
         ChangeNotifierProvider(create: (_) => StepCounterService()..start()),
         Provider<NotificationService>(create: (_) => NotificationService()),
         ChangeNotifierProvider(

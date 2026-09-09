@@ -190,6 +190,26 @@ falling back to cached-then-static data when not — see
     to resolve GPS → state name, respecting its usage policy (only
     re-queried after >2km of movement or a 10-minute cooldown, with a
     descriptive User-Agent header — not queried on every GPS update).
+  - **Rapid barometric pressure fall** (`lib/disaster/pressure_trend.dart`):
+    every `refresh()` records one pressure sample — the wearable's live
+    BME280 reading when connected, falling back to Open-Meteo's current
+    `pressure_msl` (and the other way round if the preferred source is
+    momentarily unavailable), per the same `AmbientSourcePreference`
+    setting already used for the Dashboard's ambient cards
+    (`sensor_precedence_screen.dart`) — into a rolling 6h history in the
+    disaster Hive cache. A fall of ≥3 hPa within the last 3 hours (a
+    widely used marine/aviation "rapid pressure fall" warning threshold —
+    the UK Met Office and Australian BoM both use a comparable trigger
+    for small-craft warnings) is treated as a genuine, live early-warning
+    signal that a storm is approaching, independent of any forecast
+    probability. Requires ≥2h of accumulated history before it can fire,
+    so a fresh install/reconnect can't misread a couple of noisy samples
+    a few minutes apart as a "fall." **Known limitation**: a wearable's
+    BME280 also responds to altitude (stairs, an elevator, a car climbing
+    a hill), which a fixed weather station never sees — this isn't
+    corrected for, so a real altitude change during the 3h window could
+    read as a false pressure-drop signal. Documented, not hidden, per
+    this project's existing pattern for platform-integration caveats.
 - **Static offline baseline** (`lib/disaster/india_hazard_data.dart`): a
   hardcoded state-level table of seismic zone (BIS IS 1893:2016,
   approximate — a state's predominant zone, not district-level), cyclone
@@ -252,10 +272,20 @@ falling back to cached-then-static data when not — see
 A harder-to-miss tier above the Map screen's dismissible banner, for when
 a hazard crosses a much stricter threshold — `DisasterRisk.imminentHazards`
 in `lib/disaster/disaster_service.dart` requires a nearby M5.5+ quake (vs.
-the banner's M4.5+), >85% rain probability in a flood-prone state (vs.
->70% with no flood-prone requirement), or >60 km/h wind in a
-cyclone-prone state (vs. >40 km/h) — deliberately much rarer than the
+the banner's M4.5+), >60 km/h wind in a cyclone-prone state (vs.
+>40 km/h), or a rapid barometric pressure fall (≥3 hPa in 3h — see the
+disaster risk map section above) — deliberately much rarer than the
 banner so it doesn't cause alert fatigue.
+
+Deliberately restricted to genuine *live/detected* signals only — a
+nearby quake that already happened, wind currently being observed,
+pressure currently falling — rather than a forecast probability paired
+with a static "this area is prone to X" flag. Earlier this fired on
+">85% rain probability forecast for today, in a flood-prone state," but
+that combination is a coarse statistical approximation, not evidence a
+flood is actually imminent right now, so it was moved back down to the
+low-key Map banner tier (`hasWarning`/`warningMessage`, unconditional on
+flood-proneness) instead of the full-screen warning.
 
 - **`ImminentWarningGate`** (`lib/disaster/imminent_warning_gate.dart`)
   wraps the whole app (`main.dart`), watches `DisasterService`, and pushes
@@ -266,11 +296,13 @@ banner so it doesn't cause alert fatigue.
   blocks the back gesture (`PopScope(canPop: false)`) — the only way out
   is the explicit "I understand" button — and shows static, bundled
   per-hazard guidance (`lib/disaster/hazard_type.dart`): Drop/Cover/Hold
-  On for earthquakes, move to higher ground for floods, stay indoors for
-  cyclones, hydration/heat-exhaustion signs for heat waves (heat wave has
-  guidance text ready but no live trigger yet — `DisasterService` doesn't
-  track temperature; see the wearable heat-index item below for where
-  that data would come from).
+  On for earthquakes, stay indoors for cyclones, move indoors/secure
+  loose objects for an approaching storm (rapid pressure fall), hydration/
+  heat-exhaustion signs for heat waves (heat wave has guidance text ready
+  but no live trigger yet — `DisasterService` doesn't track a heat-index
+  threshold as a hazard, only as a Dashboard warning). Flood guidance
+  still exists (`HazardType.flood`) for the manual preview list below,
+  even though nothing currently triggers it live.
 - **Siren audio**: loops through Android's `STREAM_ALARM` (not the
   ringer/media stream), via `lib/services/alarm_sound_service.dart`
   (`audioplayers` with `AndroidUsageType.alarm`) plus a small native
