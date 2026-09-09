@@ -30,6 +30,7 @@ import 'storage/health_log_store.dart';
 import 'storage/history_store.dart';
 import 'storage/metrics_store.dart';
 import 'storage/user_profile_store.dart';
+import 'storage/watch_settings_store.dart';
 import 'theme/app_theme.dart';
 
 Future<void> main() async {
@@ -46,6 +47,8 @@ Future<void> main() async {
   await userProfileStore.init();
   final appSettingsStore = AppSettingsStore();
   await appSettingsStore.init();
+  final watchSettingsStore = WatchSettingsStore();
+  await watchSettingsStore.init();
 
   runApp(HealthCompanionApp(
     historyStore: historyStore,
@@ -54,6 +57,7 @@ Future<void> main() async {
     emergencyContactStore: emergencyContactStore,
     userProfileStore: userProfileStore,
     appSettingsStore: appSettingsStore,
+    watchSettingsStore: watchSettingsStore,
   ));
 }
 
@@ -66,6 +70,7 @@ class HealthCompanionApp extends StatelessWidget {
     required this.emergencyContactStore,
     required this.userProfileStore,
     required this.appSettingsStore,
+    required this.watchSettingsStore,
   });
 
   final HistoryStore historyStore;
@@ -74,13 +79,18 @@ class HealthCompanionApp extends StatelessWidget {
   final EmergencyContactStore emergencyContactStore;
   final UserProfileStore userProfileStore;
   final AppSettingsStore appSettingsStore;
+  final WatchSettingsStore watchSettingsStore;
 
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
         Provider<HistoryStore>.value(value: historyStore),
-        ChangeNotifierProvider(create: (_) => BleService(historyStore)),
+        ChangeNotifierProvider.value(value: watchSettingsStore),
+        ChangeNotifierProvider(
+          create: (context) =>
+              BleService(historyStore, context.read<WatchSettingsStore>()),
+        ),
         ChangeNotifierProvider(create: (_) => PhoneMotionService()..start()),
         ChangeNotifierProvider.value(value: healthLogStore),
         ChangeNotifierProvider.value(value: metricsStore),

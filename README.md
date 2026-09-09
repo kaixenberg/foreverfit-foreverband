@@ -348,3 +348,12 @@ tiles + a static state-level hazard baseline) and prefers live data
       platform system font, a standing rule from here on; the
       "ForeverFit" header/wordmark is now bolder and larger than the
       theme's default AppBar title style — see ARCHITECTURE.md
+- [x] Watch customization: phone-side control over the wearable's two
+      OLED faces — which one is active, optional timed auto-cycling
+      between them, 12/24-hour format, four date-format presets, and an
+      optional seconds display — over a new BLE characteristic
+      (`6e400006-...`), reachable from Settings → Wearable and a new
+      watch-shaped Dashboard AppBar button. Includes a disabled
+      "check for firmware update" stub (no OTA mechanism yet). Firmware
+      verified with a real `arduino-cli compile --warnings all` — no new
+      warnings/errors — see ARCHITECTURE.md

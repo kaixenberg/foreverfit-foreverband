@@ -8,6 +8,7 @@ library;
 import 'dart:typed_data';
 
 import '../models/sensor_reading.dart';
+import '../models/watch_settings.dart';
 
 class HealthCompanionProtocol {
   static const String serviceUuid = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
@@ -15,6 +16,8 @@ class HealthCompanionProtocol {
   static const String envCharUuid = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
   static const String motionCharUuid = '6e400004-b5a3-f393-e0a9-e50e24dcca9e';
   static const String timeCharUuid = '6e400005-b5a3-f393-e0a9-e50e24dcca9e';
+  static const String watchSettingsCharUuid =
+      '6e400006-b5a3-f393-e0a9-e50e24dcca9e';
   static const String deviceName = 'ForeverBand';
 
   /// VitalsPacket: uint32 tMs; float heartRate; float spo2; float bodyTempC;
@@ -34,6 +37,26 @@ class HealthCompanionProtocol {
   /// access on the ESP32 side — see health_companion.ino's time-sync
   /// handling and the primary watch face.
   static const int timeSyncPacketLength = 8;
+
+  /// WatchSettingsPacket (phone -> wearable, WRITE only, no notify/parse
+  /// side): uint8 selectedFace(0=primary,1=secondary); uint8
+  /// autoCycleEnabled(0/1); uint16 autoCycleIntervalSec; uint8
+  /// use24HourFormat(0/1); uint8 dateFormat (see WatchDateFormat's
+  /// index — must stay in the same order there); uint8 showSeconds(0/1).
+  /// Pushed on connect and again whenever a setting changes while
+  /// connected — see BleService.syncWatchSettings().
+  static const int watchSettingsPacketLength = 7;
+
+  static List<int> buildWatchSettingsPacket(WatchSettings settings) {
+    final data = ByteData(watchSettingsPacketLength);
+    data.setUint8(0, settings.selectedFace.index);
+    data.setUint8(1, settings.autoCycleEnabled ? 1 : 0);
+    data.setUint16(2, settings.autoCycleIntervalSeconds, Endian.little);
+    data.setUint8(4, settings.use24HourFormat ? 1 : 0);
+    data.setUint8(5, settings.dateFormat.index);
+    data.setUint8(6, settings.showSeconds ? 1 : 0);
+    return data.buffer.asUint8List();
+  }
 
   static VitalsReading? parseVitals(List<int> bytes) {
     if (bytes.length < vitalsPacketLength) return null;

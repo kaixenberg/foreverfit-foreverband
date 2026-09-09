@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../scan_connect_screen.dart';
+import 'watch_settings_screen.dart';
 
 class WearableSettingsScreen extends StatelessWidget {
   const WearableSettingsScreen({super.key});
@@ -20,6 +21,18 @@ class WearableSettingsScreen extends StatelessWidget {
               trailing: const Icon(Icons.chevron_right),
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const ScanConnectScreen()),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.tune),
+              title: const Text('Watch customization'),
+              subtitle: const Text('Watch faces, auto-cycle, time/date format'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const WatchSettingsScreen()),
               ),
             ),
           ),

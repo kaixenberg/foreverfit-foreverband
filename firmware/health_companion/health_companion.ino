@@ -58,15 +58,16 @@
 #define USE_DUMMY_HR_SPO2 1
 
 // ---------------------------------------------------------------------------
-// BLE — custom "ForeverBand" service: three notify characteristics plus one
-// write-only characteristic for phone -> wearable time sync.
+// BLE — custom "ForeverBand" service: three notify characteristics plus two
+// write-only characteristics (phone -> wearable time sync, watch settings).
 // ---------------------------------------------------------------------------
-#define SERVICE_UUID     "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
-#define CHAR_VITALS_UUID "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
-#define CHAR_ENV_UUID    "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
-#define CHAR_MOTION_UUID "6e400004-b5a3-f393-e0a9-e50e24dcca9e"
-#define CHAR_TIME_UUID   "6e400005-b5a3-f393-e0a9-e50e24dcca9e"
-#define BLE_DEVICE_NAME  "ForeverBand"
+#define SERVICE_UUID           "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
+#define CHAR_VITALS_UUID       "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
+#define CHAR_ENV_UUID          "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
+#define CHAR_MOTION_UUID       "6e400004-b5a3-f393-e0a9-e50e24dcca9e"
+#define CHAR_TIME_UUID         "6e400005-b5a3-f393-e0a9-e50e24dcca9e"
+#define CHAR_WATCH_SETTINGS_UUID "6e400006-b5a3-f393-e0a9-e50e24dcca9e"
+#define BLE_DEVICE_NAME        "ForeverBand"
 
 const uint32_t VITALS_INTERVAL_MS = 1000;
 const uint32_t ENV_INTERVAL_MS    = 1000;
@@ -113,6 +114,19 @@ struct __attribute__((packed)) TimeSyncPacket {
   uint8_t weekday;
 };
 
+// Phone -> wearable, WRITE only. Field meanings/order MUST match
+// lib/models/watch_settings.dart + protocol.dart's
+// buildWatchSettingsPacket() exactly — selectedFace/dateFormat are raw
+// enum indices, not free-form values.
+struct __attribute__((packed)) WatchSettingsPacket {
+  uint8_t selectedFace;        // 0=primary, 1=secondary
+  uint8_t autoCycleEnabled;    // 0/1
+  uint16_t autoCycleIntervalSec;
+  uint8_t use24HourFormat;     // 0/1
+  uint8_t dateFormat;          // 0..3, see formatDate() below
+  uint8_t showSeconds;         // 0/1
+};
+
 // ---------------------------------------------------------------------------
 // Globals
 // ---------------------------------------------------------------------------
@@ -126,6 +140,7 @@ NimBLECharacteristic* vitalsChar = nullptr;
 NimBLECharacteristic* envChar = nullptr;
 NimBLECharacteristic* motionChar = nullptr;
 NimBLECharacteristic* timeChar = nullptr;
+NimBLECharacteristic* watchSettingsChar = nullptr;
 bool deviceConnected = false;
 
 bool bmeOk = false;
@@ -144,6 +159,17 @@ bool showSecondaryFace = false;
 bool lastButtonReading = HIGH; // INPUT_PULLUP: HIGH = not pressed
 uint32_t lastButtonChangeMs = 0;
 const uint32_t BUTTON_DEBOUNCE_MS = 250;
+
+// --- Watch settings pushed from the phone (see WatchSettingsPacket above)
+// — defaults here match WatchSettings.defaults in watch_settings.dart, so
+// the very first boot (before any BLE write ever arrives) already looks
+// the same as what the app would push anyway. ---
+bool autoCycleEnabled = false;
+uint16_t autoCycleIntervalSec = 10;
+uint32_t lastFaceCycleMs = 0;
+bool use24HourFormat = true;
+uint8_t dateFormatSetting = 1; // 1 = weekdayShortWithYear, see formatDate()
+bool showSecondsSetting = false;
 
 // --- HR + SpO2 via DC removal, AC low-pass filtering, and per-beat peak
 // detection. Bench-tested against a standalone reference sketch before
@@ -302,6 +328,33 @@ class TimeCallbacks : public NimBLECharacteristicCallbacks {
   }
 };
 
+// Applies the phone's watch-face preferences immediately on write — the
+// face selection takes effect right away (not just on the next redraw),
+// and lastFaceCycleMs resets so a freshly-changed auto-cycle interval
+// starts counting from now, not from whenever the last cycle happened to
+// be under the old interval.
+class WatchSettingsCallbacks : public NimBLECharacteristicCallbacks {
+  void onWrite(NimBLECharacteristic* c, NimBLEConnInfo& connInfo) override {
+    NimBLEAttValue value = c->getValue();
+    if (value.length() < sizeof(WatchSettingsPacket)) return;
+    WatchSettingsPacket pkt;
+    memcpy(&pkt, value.data(), sizeof(WatchSettingsPacket));
+
+    showSecondaryFace = pkt.selectedFace != 0;
+    autoCycleEnabled = pkt.autoCycleEnabled != 0;
+    autoCycleIntervalSec = pkt.autoCycleIntervalSec;
+    use24HourFormat = pkt.use24HourFormat != 0;
+    dateFormatSetting = pkt.dateFormat;
+    showSecondsSetting = pkt.showSeconds != 0;
+    lastFaceCycleMs = millis();
+
+    Serial.printf("[WATCH] settings: face=%d autoCycle=%d/%us 24h=%d "
+                  "dateFmt=%d seconds=%d\n",
+                  pkt.selectedFace, autoCycleEnabled, autoCycleIntervalSec,
+                  use24HourFormat, dateFormatSetting, showSecondsSetting);
+  }
+};
+
 // ---------------------------------------------------------------------------
 // BOOT button — toggles which watch face updateOled() draws. Polled once
 // per loop() with simple debounce; no interrupt needed at this poll rate.
@@ -314,9 +367,25 @@ void pollBootButton() {
     lastButtonReading = reading;
     if (reading == LOW) { // BOOT button is active LOW
       showSecondaryFace = !showSecondaryFace;
+      lastFaceCycleMs = now; // a manual switch shouldn't get immediately
+                              // undone by an auto-cycle that was already
+                              // close to due
       Serial.printf("[BUTTON] switched to %s face\n",
                     showSecondaryFace ? "secondary" : "primary");
     }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Auto-cycle — flips the active face on a timer when enabled, independent
+// of (but resettable by) the BOOT button above. Polled once per loop().
+// ---------------------------------------------------------------------------
+void pollAutoCycle() {
+  if (!autoCycleEnabled) return;
+  uint32_t now = millis();
+  if (now - lastFaceCycleMs >= (uint32_t)autoCycleIntervalSec * 1000) {
+    showSecondaryFace = !showSecondaryFace;
+    lastFaceCycleMs = now;
   }
 }
 
@@ -351,6 +420,9 @@ void setupBle() {
   timeChar = service->createCharacteristic(
       CHAR_TIME_UUID, NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR);
   timeChar->setCallbacks(new TimeCallbacks());
+  watchSettingsChar = service->createCharacteristic(
+      CHAR_WATCH_SETTINGS_UUID, NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR);
+  watchSettingsChar->setCallbacks(new WatchSettingsCallbacks());
 
   service->start();
 
@@ -622,6 +694,28 @@ const char* WEEKDAY_NAMES[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
 const char* MONTH_NAMES[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
                               "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
 
+/// Prints the date portion of the primary face per dateFormatSetting —
+/// index order MUST match WatchDateFormat in watch_settings.dart.
+void printDate(uint8_t weekday, uint8_t day, uint8_t month, uint16_t year) {
+  switch (dateFormatSetting) {
+    case 0: // weekdayShort: "Wed, Sep 09"
+      display.printf("%s, %s %02d", WEEKDAY_NAMES[weekday],
+                      MONTH_NAMES[month - 1], day);
+      break;
+    case 2: // dayMonthYearSlash: "09/09/2026"
+      display.printf("%02d/%02d/%04d", day, month, year);
+      break;
+    case 3: // monthDayYearSlash: "09/09/2026" (US ordering)
+      display.printf("%02d/%02d/%04d", month, day, year);
+      break;
+    case 1: // weekdayShortWithYear
+    default:
+      display.printf("%s, %s %02d %04d", WEEKDAY_NAMES[weekday],
+                      MONTH_NAMES[month - 1], day, year);
+      break;
+  }
+}
+
 /// Primary face: a real clock (synced from the phone — see TimeCallbacks),
 /// date, and BME280 ambient stats, the way an actual smartwatch face looks
 /// rather than a debug readout. A small dot top-right stands in for a BLE
@@ -637,20 +731,44 @@ void drawPrimaryFace() {
     display.drawCircle(122, 4, 3, SSD1306_WHITE);
   }
 
-  display.setTextSize(3);
-  display.setCursor(19, 4);
   if (timeSynced) {
     uint8_t h, m, s, day, month, weekday;
     uint16_t year;
     currentTime(h, m, s, day, month, year, weekday);
-    display.printf("%02d:%02d", h, m);
+
+    uint8_t displayHour = h;
+    if (!use24HourFormat) {
+      displayHour = h % 12;
+      if (displayHour == 0) displayHour = 12;
+    }
+
+    // "HH:MM:SS" (8 chars) only fits this display at textSize(2) — at
+    // textSize(3) it would run past the right edge. Dropping to
+    // textSize(2) only when seconds are actually shown keeps the normal
+    // "HH:MM" clock as big as possible otherwise.
+    if (showSecondsSetting) {
+      display.setTextSize(2);
+      display.setCursor(4, 8);
+      display.printf("%2d:%02d:%02d", displayHour, m, s);
+    } else {
+      display.setTextSize(3);
+      display.setCursor(19, 4);
+      display.printf("%2d:%02d", displayHour, m);
+    }
+
+    if (!use24HourFormat) {
+      display.setTextSize(1);
+      display.setCursor(100, 10);
+      display.print(h < 12 ? "AM" : "PM");
+    }
 
     display.drawFastHLine(4, 36, 120, SSD1306_WHITE);
     display.setTextSize(1);
     display.setCursor(4, 43);
-    display.printf("%s, %s %02d %04d", WEEKDAY_NAMES[weekday],
-                    MONTH_NAMES[month - 1], day, year);
+    printDate(weekday, day, month, year);
   } else {
+    display.setTextSize(3);
+    display.setCursor(19, 4);
     display.print("--:--");
     display.drawFastHLine(4, 36, 120, SSD1306_WHITE);
     display.setTextSize(1);
@@ -741,6 +859,7 @@ void loop() {
   pollHeartRateSensor(); // every iteration — don't miss FIFO samples
   applyDummyVitalsIfEnabled();
   pollBootButton();
+  pollAutoCycle();
 
   uint32_t now = millis();
 

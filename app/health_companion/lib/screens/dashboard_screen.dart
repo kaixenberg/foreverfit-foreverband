@@ -25,6 +25,7 @@ import 'health_log_screens.dart';
 import 'map_screen.dart';
 import 'metric_detail_screens.dart';
 import 'scan_connect_screen.dart';
+import 'settings/watch_settings_screen.dart';
 import 'settings_screen.dart';
 import 'wellness_detail_screen.dart';
 
@@ -249,6 +250,13 @@ class DashboardScreen extends StatelessWidget {
                       MaterialPageRoute(
                           builder: (_) => const ScanConnectScreen()),
                     ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.watch_outlined),
+            tooltip: 'Watch customization',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const WatchSettingsScreen()),
+            ),
           ),
           IconButton(
             icon: const Icon(Icons.settings_outlined),

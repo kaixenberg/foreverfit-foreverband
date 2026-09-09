@@ -6,6 +6,7 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../models/sensor_reading.dart';
 import '../storage/history_store.dart';
+import '../storage/watch_settings_store.dart';
 import 'protocol.dart';
 
 enum ConnectionStatus { disconnected, scanning, connecting, connected }
@@ -19,6 +20,7 @@ enum ConnectionStatus { disconnected, scanning, connecting, connected }
 /// same way a State can, it doesn't need to be a widget to do so.
 class BleService extends ChangeNotifier with WidgetsBindingObserver {
   final HistoryStore _historyStore;
+  final WatchSettingsStore _watchSettingsStore;
 
   ConnectionStatus status = ConnectionStatus.disconnected;
   BluetoothDevice? _device;
@@ -35,10 +37,11 @@ class BleService extends ChangeNotifier with WidgetsBindingObserver {
 
   BluetoothCharacteristic? _timeChar;
   Timer? _timeSyncTimer;
+  BluetoothCharacteristic? _watchSettingsChar;
 
   BluetoothAdapterState adapterState = FlutterBluePlus.adapterStateNow;
 
-  BleService(this._historyStore) {
+  BleService(this._historyStore, this._watchSettingsStore) {
     WidgetsBinding.instance.addObserver(this);
 
     // Auto-connect is driven from here, reactively, rather than a one-shot
@@ -227,6 +230,7 @@ class BleService extends ChangeNotifier with WidgetsBindingObserver {
       );
 
       _timeChar = null;
+      _watchSettingsChar = null;
       for (final c in service.characteristics) {
         final uuid = c.uuid.toString().toLowerCase();
         if (uuid == HealthCompanionProtocol.vitalsCharUuid) {
@@ -237,6 +241,8 @@ class BleService extends ChangeNotifier with WidgetsBindingObserver {
           await _subscribe(c, _onMotion);
         } else if (uuid == HealthCompanionProtocol.timeCharUuid) {
           _timeChar = c;
+        } else if (uuid == HealthCompanionProtocol.watchSettingsCharUuid) {
+          _watchSettingsChar = c;
         }
       }
 
@@ -252,6 +258,12 @@ class BleService extends ChangeNotifier with WidgetsBindingObserver {
       _timeSyncTimer?.cancel();
       _timeSyncTimer =
           Timer.periodic(const Duration(minutes: 5), (_) => _syncTime());
+
+      // Applies whatever watch-face preferences were already set (or the
+      // defaults) the moment the wearable connects — otherwise it would
+      // sit at firmware defaults until the user happened to open the
+      // watch settings screen and change something.
+      unawaited(syncWatchSettings());
     } catch (e) {
       lastError = 'Connect failed: $e';
       status = ConnectionStatus.disconnected;
@@ -269,6 +281,26 @@ class BleService extends ChangeNotifier with WidgetsBindingObserver {
       );
     } catch (_) {
       // Best-effort — see the comment where this is first called.
+    }
+  }
+
+  /// Pushes the current WatchSettingsStore state to the wearable. Called
+  /// automatically on connect, and again by WatchSettingsScreen whenever
+  /// the user changes a preference while already connected — a no-op
+  /// (not an error) if not connected, since the store itself is the
+  /// source of truth and will just get pushed on the next connect.
+  Future<void> syncWatchSettings() async {
+    final char = _watchSettingsChar;
+    if (char == null) return;
+    try {
+      await char.write(
+        HealthCompanionProtocol.buildWatchSettingsPacket(
+            _watchSettingsStore.settings),
+        withoutResponse: char.properties.writeWithoutResponse,
+      );
+    } catch (e) {
+      lastError = 'Watch settings sync failed: $e';
+      notifyListeners();
     }
   }
 
@@ -314,6 +346,7 @@ class BleService extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> disconnect() async {
     _timeSyncTimer?.cancel();
     _timeChar = null;
+    _watchSettingsChar = null;
     for (final s in _valueSubs) {
       await s.cancel();
     }

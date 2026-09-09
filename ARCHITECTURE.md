@@ -39,6 +39,7 @@ of truth; the firmware (`firmware/health_companion/health_companion.ino`) and ap
 | `6e400003-...` | Environment | notify | ~1 Hz | `uint32 tMs; float ambientTempC; float humidity; float pressureHPa;` (16 bytes) |
 | `6e400004-...` | Motion | notify | ~20 Hz | `uint32 tMs; float ax,ay,az; float gx,gy,gz;` (28 bytes) |
 | `6e400005-...` | Time sync | write | on connect + every 5 min | `uint8 hour,minute,second,day,month; uint16 year; uint8 weekday(0=Sun)` (8 bytes) — see "Watch faces + time sync" below |
+| `6e400006-...` | Watch settings | write | on connect + on change | `uint8 selectedFace; uint8 autoCycleEnabled; uint16 autoCycleIntervalSec; uint8 use24HourFormat; uint8 dateFormat; uint8 showSeconds;` (7 bytes) — see "Watch customization" below |
 
 Motion is notified faster than the others because fall-detection needs
 enough samples per window (~40–60 samples over 2–3s) to see the
@@ -1359,6 +1360,55 @@ benefit, pure internal-identifier churn.
   compilation alone (BOOT-button debounce feel, OLED layout at actual
   contrast/viewing angle, whether the time-sync write round-trips
   correctly over a real BLE link).
+
+## Watch customization (implemented)
+
+The two OLED watch faces (see "Rebrand" above) were previously
+fixed-format — always 24-hour, always the same date layout, switchable
+only by pressing BOOT on the wearable itself. This adds phone-side
+control over how the primary face looks and how the two faces switch,
+over the new `6e400006-...` characteristic (BLE protocol table above).
+
+- **`WatchSettings`** (`lib/models/watch_settings.dart`): the six
+  user-facing options — `selectedFace` (`WatchFace.primary/secondary`),
+  `autoCycleEnabled`/`autoCycleIntervalSeconds` (5-60s), `use24HourFormat`,
+  `dateFormat` (`WatchDateFormat`, four presets: weekday-short,
+  weekday-short-with-year [default, matches the original hardcoded
+  format], DD/MM/YYYY, MM/DD/YYYY), and `showSeconds`. Both enums' index
+  order is **wire format**, not just a Dart implementation detail — it's
+  sent as a raw byte and must stay in sync with the `switch` statements
+  in `health_companion.ino`'s `WatchSettingsCallbacks`/`printDate()`.
+- **`WatchSettingsStore`** (`lib/storage/watch_settings_store.dart`):
+  same single-Hive-document pattern as `AppSettingsStore` — persists
+  locally, does not itself talk to BLE (`BleService` owns that, so the
+  store stays testable without a live connection).
+- **`WatchSettingsScreen`** (`lib/screens/settings/watch_settings_screen.dart`,
+  reachable from Settings → Wearable → "Watch customization" and from a
+  new watch-shaped icon button in the Dashboard AppBar): every control
+  writes through `WatchSettingsStore.update()` then calls
+  `BleService.syncWatchSettings()` immediately if connected; if not
+  connected, the change is saved and pushed automatically the next time
+  `BleService.connect()` succeeds (mirrors the existing `_syncTime()`
+  on-connect behavior). A stub "Check for firmware update" row (disabled,
+  "Not available yet") follows this project's established stub-tile
+  convention (see the About screen's GitHub row) — no OTA mechanism
+  exists yet.
+- **Firmware** (`health_companion.ino`): `WatchSettingsCallbacks::onWrite`
+  unpacks the 7-byte `WatchSettingsPacket` into the existing
+  `showSecondaryFace` toggle plus five new globals. `pollAutoCycle()`
+  (called from `loop()` alongside the existing `pollBootButton()`) flips
+  `showSecondaryFace` on a `millis()`-based interval when
+  `autoCycleEnabled` is set; a manual BOOT press resets that same timer
+  so it doesn't immediately re-flip right after a deliberate manual
+  switch. `drawPrimaryFace()` now respects `use24HourFormat` (12-hour
+  conversion + a small AM/PM label) and `showSecondsSetting` (switches
+  from `setTextSize(3)` "HH:MM" to `setTextSize(2)` "HH:MM:SS" — the
+  128px-wide OLED can't fit seconds at the larger size). `printDate()`
+  (new helper) renders whichever of the four `dateFormat` presets was
+  selected. Verified with a real `arduino-cli compile
+  --fqbn esp32:esp32:esp32s3 --warnings all` — succeeds with no new
+  warnings or errors versus the pre-existing baseline (same four
+  library-internal warnings noted elsewhere in this doc).
 
 ## Roadmap (not yet implemented)
 
