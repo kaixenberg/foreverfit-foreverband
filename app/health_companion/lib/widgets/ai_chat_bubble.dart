@@ -40,55 +40,68 @@ class _AiChatBubbleState extends State<AiChatBubble> {
       builder: (context, isOpen, _) {
         if (isOpen) return const SizedBox.shrink();
 
-        final screenSize = MediaQuery.of(context).size;
-        final padding = MediaQuery.of(context).padding;
-        _position ??= Offset(
-          screenSize.width - _size - 16,
-          screenSize.height - padding.bottom - _size - 40,
-        );
-        final pos = _clamp(_position!, screenSize, padding);
+        // The Stack this widget lives in is the Scaffold's *body* area —
+        // smaller than the full device screen (no AppBar, no status bar).
+        // MediaQuery.of(context).size is the full device size, so using it
+        // here computed a position below/outside the Stack's actual bounds
+        // — Stack clips by default, so the button ended up barely visible
+        // at the clipped bottom edge, and stayed there forever since
+        // _position is cached once and re-clamped against that same wrong
+        // size on every rebuild. LayoutBuilder's constraints are the
+        // Stack's real, current size — ground truth, not a guess.
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final areaSize = Size(constraints.maxWidth, constraints.maxHeight);
+            final bottomInset = MediaQuery.of(context).padding.bottom;
+            _position ??= Offset(
+              areaSize.width - _size - 16,
+              areaSize.height - bottomInset - _size - 16,
+            );
+            final pos = _clamp(_position!, areaSize, bottomInset);
 
-        return Positioned(
-          left: pos.dx,
-          top: pos.dy,
-          child: GestureDetector(
-            onPanUpdate: (details) {
-              setState(() {
-                _position = _clamp(
-                  _position! + details.delta,
-                  screenSize,
-                  padding,
-                );
-              });
-            },
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const AiChatScreen()),
-            ),
-            child: Material(
-              elevation: 6,
-              shape: const CircleBorder(),
-              color: Theme.of(context).colorScheme.primary,
-              child: SizedBox(
-                width: _size,
-                height: _size,
-                child: Icon(
-                  Icons.smart_toy_outlined,
-                  color: Theme.of(context).colorScheme.onPrimary,
+            return Positioned(
+              left: pos.dx,
+              top: pos.dy,
+              child: GestureDetector(
+                onPanUpdate: (details) {
+                  setState(() {
+                    _position = _clamp(
+                      _position! + details.delta,
+                      areaSize,
+                      bottomInset,
+                    );
+                  });
+                },
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const AiChatScreen()),
+                ),
+                child: Material(
+                  elevation: 6,
+                  shape: const CircleBorder(),
+                  color: Theme.of(context).colorScheme.primary,
+                  child: SizedBox(
+                    width: _size,
+                    height: _size,
+                    child: Icon(
+                      Icons.smart_toy_outlined,
+                      color: Theme.of(context).colorScheme.onPrimary,
+                    ),
+                  ),
                 ),
               ),
-            ),
-          ),
+            );
+          },
         );
       },
     );
   }
 
-  Offset _clamp(Offset offset, Size screenSize, EdgeInsets padding) {
-    final maxX = screenSize.width - _size;
-    final maxY = screenSize.height - _size;
+  Offset _clamp(Offset offset, Size areaSize, double bottomInset) {
+    final maxX = areaSize.width - _size;
+    final maxY = areaSize.height - bottomInset - _size;
     return Offset(
       offset.dx.clamp(0, maxX < 0 ? 0 : maxX),
-      offset.dy.clamp(padding.top, maxY < padding.top ? padding.top : maxY),
+      offset.dy.clamp(0, maxY < 0 ? 0 : maxY),
     );
   }
 }

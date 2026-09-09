@@ -147,9 +147,19 @@ class AiChatService extends ChangeNotifier {
     // E2B (2B params) is small enough that CPU-only inference is still
     // reasonably fast for this "wow" demo feature. Revisit if flutter_gemma
     // ships a safer GPU path later.
+    // supportImage has to be requested here, at the MODEL level, not just
+    // on createChat below — this is what actually loads the native vision
+    // executor. Passing it only to createChat looked plausible (its own
+    // supportImage flag exists too, and analyze/tests couldn't catch this
+    // since it's a runtime engine-state check) but fails on the first real
+    // image with "Vision executor should not be null, please
+    // TryLoadingVisionExecutor() first." — the createChat flag only
+    // controls whether the Dart-side chat object routes image messages
+    // through, it doesn't load anything itself.
     final model = _model ??= await FlutterGemma.getActiveModel(
       maxTokens: 4096,
       preferredBackend: PreferredBackend.cpu,
+      supportImage: true,
     );
     final chat = await model.createChat(
       modelType: ModelType.gemma4,

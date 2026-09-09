@@ -1468,6 +1468,18 @@ token is required).
   switching to `PreferredBackend.cpu` — no vendor GPU-driver dependency,
   and E2B (2B params) is small enough that CPU-only inference is still
   reasonably fast for this "wow" feature.
+- **`supportImage` has to be requested at the model level, not just the
+  chat level — a second real crash, on the first real image.** Sending a
+  photo threw `Stream error: INVALID_ARGUMENT: Vision executor should
+  not be null, please TryLoadingVisionExecutor() first.` `createChat()`
+  was already passed `supportImage: true`, which looked sufficient (and
+  compiled/analyzed fine — this is a runtime engine-state check, not
+  something static analysis catches) but only controls whether the
+  Dart-side chat object *routes* image messages through; the actual
+  native vision executor is loaded by `FlutterGemma.getActiveModel(...,
+  supportImage: true)` at model-creation time. Fixed by passing
+  `supportImage: true` there too, alongside `preferredBackend`/
+  `maxTokens`.
 - **Chat history — `AiChatHistoryStore`**
   (`lib/storage/ai_chat_history_store.dart`): each conversation is a
   document (key = session id, a timestamp) in a Hive box, one-document-
@@ -1520,14 +1532,33 @@ token is required).
   means it's naturally covered whenever any other screen is pushed on
   top (same as any other widget below the active route), so it's only
   ever visible on the main screen — no separate route-tracking logic
-  needed. Initial position also nudged down along the y-axis (closer to
-  the bottom of the screen) per the same request. **In-app only** — this
-  is not a true system-wide overlay (no `SYSTEM_ALERT_WINDOW`), so it's
-  only visible while ForeverFit itself is in the foreground, consistent
-  with this project's existing preference for narrower, Play-sanctioned
-  mechanisms over broad overlay permissions (see the full-screen-intent
-  vs. `SYSTEM_ALERT_WINDOW` decision in "Background fall detection"
-  above).
+  needed.
+  - **Positioning bug, found on real device**: the first cut computed the
+    button's position from `MediaQuery.of(context).size` (the *full
+    device screen*), but the `Stack` it lives in is the Scaffold's
+    `body` area only — smaller, since it excludes the AppBar and status
+    bar. `Stack` clips by default, so the button rendered barely inside
+    the clipped bottom edge (reported: "way down and can barely be
+    touched"), and since `_position` is cached once and re-clamped
+    against that same wrong size on every rebuild, a layout timing
+    difference on returning from another screen could push it fully
+    outside the clip and it would never come back (reported: "the AI
+    button disappears and never reappears"). Fixed by wrapping the
+    button in a `LayoutBuilder` and using its `constraints` — the
+    `Stack`'s real, current size — as the positioning bounds instead of
+    `MediaQuery.size`, with `MediaQuery.padding.bottom` added back in
+    just as bottom-inset clearance (the body isn't wrapped in
+    `SafeArea`, so it does extend behind the gesture-nav area). Since
+    `_clamp` re-derives against the *actual* current bounds every build,
+    this is self-correcting even if a bad position was cached earlier —
+    not just a one-time offset tweak.
+  - **In-app only** — this is not a true system-wide overlay (no
+    `SYSTEM_ALERT_WINDOW`), so it's only visible while ForeverFit itself
+    is in the foreground, consistent with this project's existing
+    preference for narrower, Play-sanctioned mechanisms over broad
+    overlay permissions (see the full-screen-intent vs.
+    `SYSTEM_ALERT_WINDOW` decision in "Background fall detection"
+    above).
 - **`AiChatScreen`** (`lib/screens/ai_chat_screen.dart`): a plain
   message-list + text field chat UI with a persistent "fully offline"
   banner — the strongest demo beat for this feature is toggling airplane
