@@ -83,6 +83,16 @@ class EmergencyWorkflowService extends ChangeNotifier {
   final MockTelephonyService _mockTelephony;
 
   EmergencyWorkflowState state = EmergencyWorkflowState.idle;
+
+  /// Incremented once per [start] call, before any `await` — lets
+  /// listeners (see EmergencyCallGate) detect "a new run began" reliably,
+  /// unlike watching for the exact transient `emergencyDetected` state
+  /// value, which [start] itself overwrites (to `collectingData`) via a
+  /// Hive write that typically resolves faster than Flutter's next frame
+  /// — a race the state-value check was consistently losing, so the
+  /// emergency screen would silently never appear.
+  int runId = 0;
+
   int attempt = 0;
   String? servicesScript;
   String? contactScript;
@@ -165,6 +175,7 @@ class EmergencyWorkflowService extends ChangeNotifier {
           'Ignored duplicate emergency trigger — a run is already active.');
       return;
     }
+    runId++;
     _cancelRequested = false;
     _cancelSignal = Completer<void>();
     attempt = 0;

@@ -29,6 +29,17 @@ class FlutterTtsService implements TtsService {
   Future<void> _ensureInit() async {
     if (_initialized) return;
     await _tts.awaitSpeakCompletion(true);
+    // Without an explicit language, the engine has nothing to synthesize
+    // with — speak() then completes almost instantly (well under a
+    // second, confirmed via logcat: bind → AudioTrack stop →
+    // abandonAudioFocus all within ~700ms) with no exception and no
+    // audio, since there's no real utterance for it to produce. Falls
+    // back to "en" if the device has no "en-US" voice installed.
+    if (await _tts.isLanguageAvailable('en-US') == true) {
+      await _tts.setLanguage('en-US');
+    } else {
+      await _tts.setLanguage('en');
+    }
     await _tts.setSpeechRate(0.45);
     await _tts.setVolume(1.0);
     _initialized = true;
@@ -37,7 +48,14 @@ class FlutterTtsService implements TtsService {
   @override
   Future<void> speak(String text) async {
     await _ensureInit();
-    await _tts.speak(text).timeout(_speakTimeout, onTimeout: () => null);
+    // `focus: true` makes Android request audio focus for this utterance —
+    // without it, speak() completes "successfully" at the API level but is
+    // never actually audible while something else holds audio focus, which
+    // is exactly the situation here: this speaks *during a live phone
+    // call*, the most audio-focus-contested moment there is.
+    await _tts
+        .speak(text, focus: true)
+        .timeout(_speakTimeout, onTimeout: () => null);
   }
 
   @override

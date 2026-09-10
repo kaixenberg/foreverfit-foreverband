@@ -1,21 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../models/emergency_state.dart';
 import '../screens/emergency_call_screen.dart';
 import 'emergency_workflow_service.dart';
 
 /// Wraps the app and watches [EmergencyWorkflowService] — the moment a new
-/// run starts (`emergencyDetected`, set exactly once at the top of
-/// `start()`), pushes [EmergencyCallScreen] full-screen. Mirrors
+/// run starts, pushes [EmergencyCallScreen] full-screen. Mirrors
 /// ImminentWarningGate's `_showing`-guarded addPostFrameCallback pattern.
 ///
-/// Deliberately keys off that one specific transition rather than "state
-/// != idle" — a terminal state (`completed`/`failed`/`cancelled`) is also
-/// non-idle and persists until the *next* run starts, so triggering on
-/// "non-idle" would re-push the screen on every later rebuild after the
-/// user closed it (the app doesn't reset the workflow back to `idle`
-/// after finishing — only `start()` does, for the next run).
+/// Keys off [EmergencyWorkflowService.runId] changing, not off catching
+/// `state == emergencyDetected` at the moment this widget happens to
+/// rebuild — that state is transient and `start()` itself overwrites it
+/// (to `collectingData`) via a Hive write that typically resolves faster
+/// than Flutter's next frame, so a check for that exact value was a race
+/// this gate would almost always lose, silently never showing the screen.
+/// `runId` instead stays at its new value for the whole run, so it's safe
+/// to compare against regardless of how far the run has already
+/// progressed by the time a frame actually happens.
 class EmergencyCallGate extends StatefulWidget {
   const EmergencyCallGate({super.key, required this.child});
 
@@ -27,6 +28,7 @@ class EmergencyCallGate extends StatefulWidget {
 
 class _EmergencyCallGateState extends State<EmergencyCallGate> {
   bool _showing = false;
+  int _lastHandledRunId = 0;
 
   @override
   Widget build(BuildContext context) {
@@ -37,8 +39,9 @@ class _EmergencyCallGateState extends State<EmergencyCallGate> {
 
   void _maybeShow(EmergencyWorkflowService workflow) {
     if (!mounted || _showing) return;
-    if (workflow.state != EmergencyWorkflowState.emergencyDetected) return;
+    if (workflow.runId == _lastHandledRunId) return;
 
+    _lastHandledRunId = workflow.runId;
     _showing = true;
     Navigator.of(context, rootNavigator: true)
         .push(

@@ -104,5 +104,12 @@
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="https" />
         </intent>
+        <!-- Required on Android 11+ (API 30+) package-visibility rules for
+             flutter_tts to find an on-device TTS engine — without this the
+             emergency-call announcement silently never speaks (no error,
+             no audio) instead of failing loudly. -->
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
     </queries>
 </manifest>
