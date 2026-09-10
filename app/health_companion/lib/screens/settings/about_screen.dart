@@ -2,8 +2,13 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../services/app_icon_service.dart';
+
+Future<void> _openUrl(String url) async {
+  await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+}
 
 /// Name, short description, version, and a GitHub placeholder — reads the
 /// icon live from the OS the same way LoadingScreen does (see
@@ -95,14 +100,94 @@ class _AboutScreenState extends State<AboutScreen> {
             ),
           ),
           const SizedBox(height: 16),
-          const Card(
+          Card(
             child: ListTile(
-              leading: Icon(Icons.code),
-              title: Text('GitHub'),
-              subtitle: Text('Not public yet'),
-              enabled: false,
+              leading: const Icon(Icons.code),
+              title: const Text('Source'),
+              subtitle: Text(
+                'GitLab',
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.primary,
+                  decoration: TextDecoration.underline,
+                ),
+              ),
+              trailing: const Icon(Icons.open_in_new, size: 18),
+              onTap: () => _openUrl(
+                'https://gitlab.com/kaixenberg/foreverfit-foreverband',
+              ),
             ),
           ),
+          const SizedBox(height: 16),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Credits',
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleMedium
+                          ?.copyWith(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 2),
+                  Text('By Team ABBOY',
+                      style: Theme.of(context).textTheme.bodySmall),
+                  const SizedBox(height: 12),
+                  const _CreditRow(
+                    name: 'Smarajit Datta',
+                    role: 'Full Stack',
+                    link: 'https://gitlab.com/kaixenberg',
+                  ),
+                  const _CreditRow(name: 'Ankit Gupta', role: 'Backend Design'),
+                  const _CreditRow(
+                    name: 'Pradipta Bhattacharya, Saptak Chatterjee',
+                    role: 'Financial Investment & Idea Management',
+                  ),
+                  const _CreditRow(
+                    name: 'Abhijeet, Anushka Mondal',
+                    role: 'Idea Management',
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CreditRow extends StatelessWidget {
+  const _CreditRow({required this.name, required this.role, this.link});
+
+  final String name;
+  final String role;
+  final String? link;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(name,
+              style: Theme.of(context)
+                  .textTheme
+                  .bodyMedium
+                  ?.copyWith(fontWeight: FontWeight.w600)),
+          Text(role, style: Theme.of(context).textTheme.bodySmall),
+          if (link != null)
+            InkWell(
+              onTap: () => _openUrl(link!),
+              child: Text(
+                'GitLab profile',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.primary,
+                      decoration: TextDecoration.underline,
+                    ),
+              ),
+            ),
         ],
       ),
     );

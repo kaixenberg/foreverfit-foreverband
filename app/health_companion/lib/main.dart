@@ -244,11 +244,12 @@ class _App extends StatelessWidget {
     final userProfile = context.watch<UserProfileStore>();
     final darkTheme = settings.oledBlack ? AppTheme.oledDark : AppTheme.dark;
 
-    // Fall detection is a safety feature, not an opt-in extra — started
-    // automatically once onboarding completes (Settings has an explicit
-    // toggle to turn it back off). start() is itself a no-op once
-    // already running, so calling it on every build here is safe — same
-    // "cheap to re-check, guarded internally" pattern the gates below use.
+    // Background fall monitoring follows the master "Detect falls" toggle
+    // (Settings > Fall detection) — started automatically once onboarding
+    // completes, unless the user has turned fall detection off entirely.
+    // start()/stop() are themselves no-ops when already in the requested
+    // state, so calling them on every build here is safe — same "cheap to
+    // re-check, guarded internally" pattern the gates below use.
     //
     // Deliberately does NOT set the app to show over the lock screen as a
     // standing, app-wide setting — MainActivity.kt applies that only for
@@ -257,7 +258,12 @@ class _App extends StatelessWidget {
     // preview), never for ordinary use of the app.
     if (userProfile.onboardingCompleted) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        context.read<BackgroundMonitoringService>().start();
+        final monitoring = context.read<BackgroundMonitoringService>();
+        if (settings.fallDetectionEnabled) {
+          monitoring.start();
+        } else {
+          monitoring.stop();
+        }
       });
     }
 

@@ -7,10 +7,10 @@ import 'fall_detection_task_handler.dart';
 /// Dart-side controller for the background fall-detection foreground
 /// service — see `fall_detection_task_handler.dart` for what actually
 /// runs inside it, and ARCHITECTURE.md for why a foreground service is
-/// unavoidable for this. Fall detection is a safety feature, not an
-/// opt-in extra, so this is started automatically once onboarding
-/// completes (see `main.dart`) — Settings' Background permission screen
-/// exposes an explicit toggle to turn it back off.
+/// unavoidable for this. Started automatically once onboarding completes,
+/// following the master "Detect falls" toggle in Settings > Fall detection
+/// (see `main.dart`) — Settings' Background permission screen also exposes
+/// a manual start/stop for this same service.
 class BackgroundMonitoringService {
   static const _serviceId = 1000;
 

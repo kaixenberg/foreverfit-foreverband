@@ -98,5 +98,11 @@
         <intent>
             <action android:name="android.speech.RecognitionService" />
         </intent>
+        <!-- Required on Android 11+ (API 30+) package-visibility rules for
+             url_launcher's canLaunchUrl/launchUrl to find a browser. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
     </queries>
 </manifest>
