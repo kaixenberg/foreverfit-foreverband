@@ -1,0 +1,668 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		009594E8CA2D434BA2F39496 /* FallDetectionSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17B728E6F53247AD8DF555BC /* FallDetectionSettingsView.swift */; };
+		00E0037885AB45CB8399D03C /* AppearanceSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDCD242FBF40486CB011C0A3 /* AppearanceSettingsView.swift */; };
+		010000000000000000000061 /* ForeverFit/Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 010000000000000000000060 /* ForeverFit/Assets.xcassets */; };
+		0301216D30CA4CA4826B1FBD /* EmergencyCallView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1D02607D7F74CFCB150D90E /* EmergencyCallView.swift */; };
+		05408AC59F9848C7A9861F82 /* DataBackupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F47769C711B44EC09D65DAF5 /* DataBackupView.swift */; };
+		0B929E64CCBA450F858F1041 /* InsightEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D23D4B63D3E4F4B95007B49 /* InsightEngine.swift */; };
+		10CD269EEACD4FE59EDAA810 /* DisasterMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D5E594284DE4B2D857CC9B8 /* DisasterMapView.swift */; };
+		12808D919E8046C69FAC0E38 /* MetricHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF8F01AC7BA84916859268E0 /* MetricHistoryView.swift */; };
+		131FE72D72A14FC49B47948B /* EmergencyContactsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E405878B2BD34A4BAE0EAF3D /* EmergencyContactsView.swift */; };
+		1728B9F7C85945968A118728 /* EmergencyAlertBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC8F6270DF5B4996A34DA901 /* EmergencyAlertBanner.swift */; };
+		19CAE0E3193840A0BD5560BD /* DisasterModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DB69E255CF848F489B72A74 /* DisasterModels.swift */; };
+		1E9F40FDBF794298968E2B39 /* WearableSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5414EA966ED46D997A7E067 /* WearableSettingsView.swift */; };
+		209B6B1E1CB64F0F8DF3FE47 /* activity_classifier.tflite in Resources */ = {isa = PBXBuildFile; fileRef = 227B9A3713724DDAAAA147F4 /* activity_classifier.tflite */; };
+		217158820BA8441388AF59E1 /* UserProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2ABED849212B4F4984EE0B2E /* UserProfile.swift */; };
+		228AFD5E3FA7486A942942A9 /* EmergencySummaryBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D97F0FC522F49BF9441EC2B /* EmergencySummaryBuilder.swift */; };
+		2569973137AE4625BF8E5E15 /* MedicalIdView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F910EE964DAE4AC88FEA36E7 /* MedicalIdView.swift */; };
+		295BFB3AFE89477CA8FFDD55 /* OLEDWatchFacePreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = D06D6459BACB4351A08CC80D /* OLEDWatchFacePreview.swift */; };
+		2C3A646656B040FAB2CD8B2E /* IndiaHazardData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AE308CDCE9B4CE79801E2B4 /* IndiaHazardData.swift */; };
+		2CBAEFFC50C343F2BFE77A59 /* HealthDataStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14D395F687B9446AB8CAADB9 /* HealthDataStore.swift */; };
+		2E9DFEED69034714A48D4EDB /* fall_detector.tflite in Resources */ = {isa = PBXBuildFile; fileRef = 25C8A2B1D00546FC9B01F015 /* fall_detector.tflite */; };
+		316B0B0052C74B14B9094FFE /* BackgroundPermissionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E1464CAAE7B4985A771BED7 /* BackgroundPermissionView.swift */; };
+		317F01EDE5974CBE94AECD51 /* HealthContextBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F8264FE3EE146A7BB2901FF /* HealthContextBuilder.swift */; };
+		32B970F28FE7423B9264B655 /* FallDetectorService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 554CA682C2E8424781B42E22 /* FallDetectorService.swift */; };
+		34822410C4C74D93876930C0 /* ScanConnectView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56D4C77E56694E3F8CC22FBE /* ScanConnectView.swift */; };
+		34E162BDFA1343A2BA973D48 /* DisasterService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 708B69FA64D1490291909874 /* DisasterService.swift */; };
+		3715C11B0FD3476CB4DE3B87 /* MedicationsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2612A5B03F4F21B53A5297 /* MedicationsView.swift */; };
+		37A9AE58AB864B1695C69658 /* ShareSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6EA6FC8B5D97419FA91C02D3 /* ShareSheet.swift */; };
+		37FCBBABEC6B4F73B8BE90F1 /* BaselineService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F557DAA3088B4144909D5A8B /* BaselineService.swift */; };
+		401AA19DACF746E9A248AF62 /* PDFReportGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10554E7049A14BF3A8D66236 /* PDFReportGenerator.swift */; };
+		446BFE3263594A39A3707AB5 /* EmergencyWorkflowService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EFC6886A35945D9B96A72E0 /* EmergencyWorkflowService.swift */; };
+		44B3798ADD7B49529A57C9F0 /* HealthLogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4D1BFB5AB4248FFAFAE145C /* HealthLogView.swift */; };
+		46BCB5F7E3594906973E6A6C /* SensorPrecedenceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 415A83D7B9B74D46A0C2BCED /* SensorPrecedenceView.swift */; };
+		4747E8402162415A82422C65 /* LiveVitalsGauges.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADD86563FAEA421AB1C7C2B9 /* LiveVitalsGauges.swift */; };
+		48AFE3403B664AFD9E8D09B0 /* EmergencyLocationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4869D2E0644840AB8E88CBBA /* EmergencyLocationService.swift */; };
+		4CAB7B42AA964B73B47BBE46 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B30C0CADC34A4886916BA964 /* SettingsView.swift */; };
+		50D1E79C02B8499693B17B8D /* MetricDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C6368AFDE93463DA194119F /* MetricDetailView.swift */; };
+		513A25294CC34862AEA1C2AC /* VoiceAndVisionServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA71783A09C9462E85A3763B /* VoiceAndVisionServices.swift */; };
+		51A9D7B7955F4D6093E98BE0 /* WatchSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1FE1040868CB4D1B8CD6CBBC /* WatchSettings.swift */; };
+		51F39CE569554AF1A7F339A3 /* WellnessDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85AB010539754B0DAEF31C32 /* WellnessDetailView.swift */; };
+		561100F46C3C49878CD05CA3 /* GemmaModelManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A566980E25F41E78D081F50 /* GemmaModelManager.swift */; };
+		56E4DB32D03343378D093D0A /* ActivityClassifierEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9652F28B7124B019D7AD5A1 /* ActivityClassifierEngine.swift */; };
+		5D103654274A49ECAE7F87AC /* LocalLLMEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = C641FB4E65B14B17B715F19A /* LocalLLMEngine.swift */; };
+		5EC911FD90B840259754D91C /* ProfileMedicalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D98F7B4B836F4DC893378E6B /* ProfileMedicalView.swift */; };
+		66EEBA3BC6734CF79D5EB189 /* DeveloperDemoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B93B7BEA1C345D9A49802F7 /* DeveloperDemoView.swift */; };
+		68ADA4CAF1EC436197E43E53 /* UnitsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38A719B1CF8942D3B6435AC3 /* UnitsSettingsView.swift */; };
+		6F110DC4E7904F8E84CFE01B /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = B77BEB89C246445AB634D410 /* AppState.swift */; };
+		7063458D29E540158D11BB21 /* WarningChoicesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 128150AFBE834C0C84EB45C5 /* WarningChoicesView.swift */; };
+		77ACDDFE03CD4C259EBDD43B /* alarm_siren.wav in Resources */ = {isa = PBXBuildFile; fileRef = BFC6501AA4854739B34370DA /* alarm_siren.wav */; };
+		7E88AE9D3B6446C992DF1D62 /* DisasterCenterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19C8B5BC69224D129D3DB9C3 /* DisasterCenterView.swift */; };
+		880425B52D4642AFBEDE2969 /* SensorReadings.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1939BCC0CA64499B8A81D56 /* SensorReadings.swift */; };
+		8A84EE0AEC974F3B8ACED370 /* LiquidTabBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28B7CFCAE7294773A6126DEC /* LiquidTabBar.swift */; };
+		8AEA8AE3E2144BA48648FCF2 /* Nunito-Variable.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 19EBD1A56905471CB623FB48 /* Nunito-Variable.ttf */; };
+		8AEDB0AD1DAE43579187CA1A /* LiquidGlassTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53DA0C40B90C46D7A5D2B65C /* LiquidGlassTheme.swift */; };
+		93C8B7B6DC1440A793965B9A /* PedometerService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B22433CF11674CC8B316C6F2 /* PedometerService.swift */; };
+		9414FC9BCBBE4CDB8D31BDAC /* AiChatService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB23498ED7CA4179A5097849 /* AiChatService.swift */; };
+		96C7A48CCFDC443B890F186B /* ForeverBandProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0663AFF6C90A4B1690E8DCE2 /* ForeverBandProtocol.swift */; };
+		9D7DA9B9CF1740F0B69C2CB3 /* MedicalEmergencyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E1C90CF206B42CE922C8BD1 /* MedicalEmergencyView.swift */; };
+		A032C0107D9940BDA4D236C4 /* ForeverFitTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1FF892EBF3F84D14ADA026C4 /* ForeverFitTests.swift */; };
+		A1023DE813254285879A804B /* fall_detector_phone_only.tflite in Resources */ = {isa = PBXBuildFile; fileRef = 8BE604C45CBA402592607632 /* fall_detector_phone_only.tflite */; };
+		A76F3438780B4FDFA87670F0 /* PermissionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E4A35C358C644579B97343D /* PermissionsView.swift */; };
+		A80ACEFB12BC4B228A61807F /* HealthMetrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7813040096F54867875CA610 /* HealthMetrics.swift */; };
+		AD613ADDB1674361B62163C9 /* AiChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EA2F490BC6B4DA28BA74CEC /* AiChatView.swift */; };
+		B081427D82204E1BB1142AEA /* AiChatModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54B24AF05EB34A88A14DB126 /* AiChatModels.swift */; };
+		B858AAD9A74C4DE9B73D1217 /* ForeverBandBLEManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4CBB53A95A3402483F5B2E1 /* ForeverBandBLEManager.swift */; };
+		BA31DFDB3ACC4FC4AF62D367 /* PhoneMotionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E8F42CE31B248F38CDD5732 /* PhoneMotionService.swift */; };
+		C1C26F2EAC9E40DC8560FE9D /* HealthThresholds.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC6D89B994C6460E8ED110D9 /* HealthThresholds.swift */; };
+		CC7132C80A3149FDA4A82E0E /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA78E0BF310D494BB1B95D7F /* DashboardView.swift */; };
+		D50D5695EE1D4E0D83F6C7A2 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26EEA41B34664D208265B6BF /* OnboardingView.swift */; };
+		D931050E194E46EC8631D45E /* AddMetricSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = F112D89D25A44D56A05E3BF3 /* AddMetricSheet.swift */; };
+		DF97BFB5C15948F3939ED00C /* ForeverFitApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12CFD0D1FDFF4BB2B56992FE /* ForeverFitApp.swift */; };
+		E3F601EEB1ED4AA69A8B66D3 /* FallInferenceEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71F800C015B249F38116B42D /* FallInferenceEngine.swift */; };
+		ED3681F6E1DA433F8CE40098 /* ChatBubbleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B568130FDEB1416F87C81346 /* ChatBubbleView.swift */; };
+		EE452EFC418F448791B4A1B1 /* ImminentWarningView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFB647F188D14EF294E968D7 /* ImminentWarningView.swift */; };
+		F27AFA2BC25A4BC8814859CC /* HeatIndex.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7483B9BEC25464093C76B3A /* HeatIndex.swift */; };
+		F9A85D1AC18B4004BE0B82D1 /* MeshGradientBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F26B8A36FBA42AA81BA4BAE /* MeshGradientBackground.swift */; };
+		FCC26AB057B648CA9E0034AC /* MetricCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A484DEB379C484F8DE95F49 /* MetricCardView.swift */; };
+		FDE468C120764E4AB5F7E38F /* AiAssistantSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D18C28CF19C4457938EFD65 /* AiAssistantSettingsView.swift */; };
+		FDFCB65BAD2541798B838C1F /* AboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33D167667E4A4E5D90CE31E1 /* AboutView.swift */; };
+		FE7F9CDE2D734D9689BB7BD5 /* MenstrualCycleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7E15AB9AE734A75A7B7E35A /* MenstrualCycleView.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		010000000000000000000026 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 010000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 010000000000000000000010;
+			remoteInfo = ForeverFit;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		010000000000000000000011 /* ForeverFit.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ForeverFit.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		010000000000000000000021 /* ForeverFitTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ForeverFitTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		010000000000000000000060 /* ForeverFit/Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = ForeverFit/Assets.xcassets; sourceTree = SOURCE_ROOT; };
+		0663AFF6C90A4B1690E8DCE2 /* ForeverBandProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ForeverBandProtocol.swift; path = ForeverFit/BLE/ForeverBandProtocol.swift; sourceTree = SOURCE_ROOT; };
+		0A566980E25F41E78D081F50 /* GemmaModelManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = GemmaModelManager.swift; path = ForeverFit/AIChat/GemmaModelManager.swift; sourceTree = SOURCE_ROOT; };
+		0D97F0FC522F49BF9441EC2B /* EmergencySummaryBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = EmergencySummaryBuilder.swift; path = ForeverFit/Domain/EmergencySummaryBuilder.swift; sourceTree = SOURCE_ROOT; };
+		0E4A35C358C644579B97343D /* PermissionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PermissionsView.swift; path = ForeverFit/Views/Settings/PermissionsView.swift; sourceTree = SOURCE_ROOT; };
+		10554E7049A14BF3A8D66236 /* PDFReportGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PDFReportGenerator.swift; path = ForeverFit/Domain/PDFReportGenerator.swift; sourceTree = SOURCE_ROOT; };
+		128150AFBE834C0C84EB45C5 /* WarningChoicesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WarningChoicesView.swift; path = ForeverFit/Views/Settings/WarningChoicesView.swift; sourceTree = SOURCE_ROOT; };
+		12CFD0D1FDFF4BB2B56992FE /* ForeverFitApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ForeverFitApp.swift; path = ForeverFit/App/ForeverFitApp.swift; sourceTree = SOURCE_ROOT; };
+		14D395F687B9446AB8CAADB9 /* HealthDataStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HealthDataStore.swift; path = ForeverFit/Storage/HealthDataStore.swift; sourceTree = SOURCE_ROOT; };
+		17B728E6F53247AD8DF555BC /* FallDetectionSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FallDetectionSettingsView.swift; path = ForeverFit/Views/Settings/FallDetectionSettingsView.swift; sourceTree = SOURCE_ROOT; };
+		19C8B5BC69224D129D3DB9C3 /* DisasterCenterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DisasterCenterView.swift; path = ForeverFit/Views/Disaster/DisasterCenterView.swift; sourceTree = SOURCE_ROOT; };
+		19EBD1A56905471CB623FB48 /* Nunito-Variable.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; name = "Nunito-Variable.ttf"; path = "ForeverFit/Resources/Nunito-Variable.ttf"; sourceTree = SOURCE_ROOT; };
+		1A2612A5B03F4F21B53A5297 /* MedicationsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MedicationsView.swift; path = ForeverFit/Views/HealthLog/MedicationsView.swift; sourceTree = SOURCE_ROOT; };
+		1DB69E255CF848F489B72A74 /* DisasterModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DisasterModels.swift; path = ForeverFit/Models/DisasterModels.swift; sourceTree = SOURCE_ROOT; };
+		1FE1040868CB4D1B8CD6CBBC /* WatchSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WatchSettings.swift; path = ForeverFit/Models/WatchSettings.swift; sourceTree = SOURCE_ROOT; };
+		1FF892EBF3F84D14ADA026C4 /* ForeverFitTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ForeverFitTests.swift; path = ForeverFitTests/ForeverFitTests.swift; sourceTree = SOURCE_ROOT; };
+		227B9A3713724DDAAAA147F4 /* activity_classifier.tflite */ = {isa = PBXFileReference; lastKnownFileType = file; name = activity_classifier.tflite; path = ForeverFit/Resources/activity_classifier.tflite; sourceTree = SOURCE_ROOT; };
+		25C8A2B1D00546FC9B01F015 /* fall_detector.tflite */ = {isa = PBXFileReference; lastKnownFileType = file; name = fall_detector.tflite; path = ForeverFit/Resources/fall_detector.tflite; sourceTree = SOURCE_ROOT; };
+		26EEA41B34664D208265B6BF /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = OnboardingView.swift; path = ForeverFit/Views/Onboarding/OnboardingView.swift; sourceTree = SOURCE_ROOT; };
+		28B7CFCAE7294773A6126DEC /* LiquidTabBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LiquidTabBar.swift; path = ForeverFit/Theme/LiquidTabBar.swift; sourceTree = SOURCE_ROOT; };
+		2ABED849212B4F4984EE0B2E /* UserProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = UserProfile.swift; path = ForeverFit/Models/UserProfile.swift; sourceTree = SOURCE_ROOT; };
+		2D18C28CF19C4457938EFD65 /* AiAssistantSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AiAssistantSettingsView.swift; path = ForeverFit/Views/Settings/AiAssistantSettingsView.swift; sourceTree = SOURCE_ROOT; };
+		2EFC6886A35945D9B96A72E0 /* EmergencyWorkflowService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = EmergencyWorkflowService.swift; path = ForeverFit/Domain/EmergencyWorkflowService.swift; sourceTree = SOURCE_ROOT; };
+		33D167667E4A4E5D90CE31E1 /* AboutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AboutView.swift; path = ForeverFit/Views/Settings/AboutView.swift; sourceTree = SOURCE_ROOT; };
+		38A719B1CF8942D3B6435AC3 /* UnitsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = UnitsSettingsView.swift; path = ForeverFit/Views/Settings/UnitsSettingsView.swift; sourceTree = SOURCE_ROOT; };
+		415A83D7B9B74D46A0C2BCED /* SensorPrecedenceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SensorPrecedenceView.swift; path = ForeverFit/Views/Settings/SensorPrecedenceView.swift; sourceTree = SOURCE_ROOT; };
+		4869D2E0644840AB8E88CBBA /* EmergencyLocationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = EmergencyLocationService.swift; path = ForeverFit/Domain/EmergencyLocationService.swift; sourceTree = SOURCE_ROOT; };
+		4B93B7BEA1C345D9A49802F7 /* DeveloperDemoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DeveloperDemoView.swift; path = ForeverFit/Views/Settings/DeveloperDemoView.swift; sourceTree = SOURCE_ROOT; };
+		4D23D4B63D3E4F4B95007B49 /* InsightEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = InsightEngine.swift; path = ForeverFit/Domain/InsightEngine.swift; sourceTree = SOURCE_ROOT; };
+		4D5E594284DE4B2D857CC9B8 /* DisasterMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DisasterMapView.swift; path = ForeverFit/Views/Disaster/DisasterMapView.swift; sourceTree = SOURCE_ROOT; };
+		4E1464CAAE7B4985A771BED7 /* BackgroundPermissionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = BackgroundPermissionView.swift; path = ForeverFit/Views/Settings/BackgroundPermissionView.swift; sourceTree = SOURCE_ROOT; };
+		53DA0C40B90C46D7A5D2B65C /* LiquidGlassTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LiquidGlassTheme.swift; path = ForeverFit/Theme/LiquidGlassTheme.swift; sourceTree = SOURCE_ROOT; };
+		54B24AF05EB34A88A14DB126 /* AiChatModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AiChatModels.swift; path = ForeverFit/Models/AiChatModels.swift; sourceTree = SOURCE_ROOT; };
+		554CA682C2E8424781B42E22 /* FallDetectorService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FallDetectorService.swift; path = ForeverFit/ML/FallDetectorService.swift; sourceTree = SOURCE_ROOT; };
+		56D4C77E56694E3F8CC22FBE /* ScanConnectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ScanConnectView.swift; path = ForeverFit/Views/Wearable/ScanConnectView.swift; sourceTree = SOURCE_ROOT; };
+		5A484DEB379C484F8DE95F49 /* MetricCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MetricCardView.swift; path = ForeverFit/Views/Dashboard/MetricCardView.swift; sourceTree = SOURCE_ROOT; };
+		5EA2F490BC6B4DA28BA74CEC /* AiChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AiChatView.swift; path = ForeverFit/Views/AIChat/AiChatView.swift; sourceTree = SOURCE_ROOT; };
+		5F26B8A36FBA42AA81BA4BAE /* MeshGradientBackground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MeshGradientBackground.swift; path = ForeverFit/Theme/MeshGradientBackground.swift; sourceTree = SOURCE_ROOT; };
+		6E1C90CF206B42CE922C8BD1 /* MedicalEmergencyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MedicalEmergencyView.swift; path = ForeverFit/Views/Settings/MedicalEmergencyView.swift; sourceTree = SOURCE_ROOT; };
+		6E8F42CE31B248F38CDD5732 /* PhoneMotionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PhoneMotionService.swift; path = ForeverFit/Sensors/PhoneMotionService.swift; sourceTree = SOURCE_ROOT; };
+		6EA6FC8B5D97419FA91C02D3 /* ShareSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ShareSheet.swift; path = ForeverFit/Theme/ShareSheet.swift; sourceTree = SOURCE_ROOT; };
+		708B69FA64D1490291909874 /* DisasterService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DisasterService.swift; path = ForeverFit/Disaster/DisasterService.swift; sourceTree = SOURCE_ROOT; };
+		71F800C015B249F38116B42D /* FallInferenceEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FallInferenceEngine.swift; path = ForeverFit/ML/FallInferenceEngine.swift; sourceTree = SOURCE_ROOT; };
+		7813040096F54867875CA610 /* HealthMetrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HealthMetrics.swift; path = ForeverFit/Models/HealthMetrics.swift; sourceTree = SOURCE_ROOT; };
+		7AE308CDCE9B4CE79801E2B4 /* IndiaHazardData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = IndiaHazardData.swift; path = ForeverFit/Disaster/IndiaHazardData.swift; sourceTree = SOURCE_ROOT; };
+		85AB010539754B0DAEF31C32 /* WellnessDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WellnessDetailView.swift; path = ForeverFit/Views/Dashboard/WellnessDetailView.swift; sourceTree = SOURCE_ROOT; };
+		8BE604C45CBA402592607632 /* fall_detector_phone_only.tflite */ = {isa = PBXFileReference; lastKnownFileType = file; name = fall_detector_phone_only.tflite; path = ForeverFit/Resources/fall_detector_phone_only.tflite; sourceTree = SOURCE_ROOT; };
+		9C6368AFDE93463DA194119F /* MetricDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MetricDetailView.swift; path = ForeverFit/Views/Vitals/MetricDetailView.swift; sourceTree = SOURCE_ROOT; };
+		9F8264FE3EE146A7BB2901FF /* HealthContextBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HealthContextBuilder.swift; path = ForeverFit/AIChat/HealthContextBuilder.swift; sourceTree = SOURCE_ROOT; };
+		AB23498ED7CA4179A5097849 /* AiChatService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AiChatService.swift; path = ForeverFit/AIChat/AiChatService.swift; sourceTree = SOURCE_ROOT; };
+		ADD86563FAEA421AB1C7C2B9 /* LiveVitalsGauges.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LiveVitalsGauges.swift; path = ForeverFit/Views/Dashboard/LiveVitalsGauges.swift; sourceTree = SOURCE_ROOT; };
+		B1939BCC0CA64499B8A81D56 /* SensorReadings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SensorReadings.swift; path = ForeverFit/Models/SensorReadings.swift; sourceTree = SOURCE_ROOT; };
+		B22433CF11674CC8B316C6F2 /* PedometerService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PedometerService.swift; path = ForeverFit/Sensors/PedometerService.swift; sourceTree = SOURCE_ROOT; };
+		B30C0CADC34A4886916BA964 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SettingsView.swift; path = ForeverFit/Views/Settings/SettingsView.swift; sourceTree = SOURCE_ROOT; };
+		B568130FDEB1416F87C81346 /* ChatBubbleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ChatBubbleView.swift; path = ForeverFit/Views/AIChat/ChatBubbleView.swift; sourceTree = SOURCE_ROOT; };
+		B77BEB89C246445AB634D410 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppState.swift; path = ForeverFit/App/AppState.swift; sourceTree = SOURCE_ROOT; };
+		BA71783A09C9462E85A3763B /* VoiceAndVisionServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = VoiceAndVisionServices.swift; path = ForeverFit/AIChat/VoiceAndVisionServices.swift; sourceTree = SOURCE_ROOT; };
+		BF8F01AC7BA84916859268E0 /* MetricHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MetricHistoryView.swift; path = ForeverFit/Views/Vitals/MetricHistoryView.swift; sourceTree = SOURCE_ROOT; };
+		BFC6501AA4854739B34370DA /* alarm_siren.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; name = alarm_siren.wav; path = ForeverFit/Resources/alarm_siren.wav; sourceTree = SOURCE_ROOT; };
+		C1D02607D7F74CFCB150D90E /* EmergencyCallView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = EmergencyCallView.swift; path = ForeverFit/Views/Dashboard/EmergencyCallView.swift; sourceTree = SOURCE_ROOT; };
+		C4D1BFB5AB4248FFAFAE145C /* HealthLogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HealthLogView.swift; path = ForeverFit/Views/HealthLog/HealthLogView.swift; sourceTree = SOURCE_ROOT; };
+		C5414EA966ED46D997A7E067 /* WearableSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WearableSettingsView.swift; path = ForeverFit/Views/Wearable/WearableSettingsView.swift; sourceTree = SOURCE_ROOT; };
+		C641FB4E65B14B17B715F19A /* LocalLLMEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LocalLLMEngine.swift; path = ForeverFit/AIChat/LocalLLMEngine.swift; sourceTree = SOURCE_ROOT; };
+		C7483B9BEC25464093C76B3A /* HeatIndex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HeatIndex.swift; path = ForeverFit/Disaster/HeatIndex.swift; sourceTree = SOURCE_ROOT; };
+		D06D6459BACB4351A08CC80D /* OLEDWatchFacePreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = OLEDWatchFacePreview.swift; path = ForeverFit/Views/Wearable/OLEDWatchFacePreview.swift; sourceTree = SOURCE_ROOT; };
+		D98F7B4B836F4DC893378E6B /* ProfileMedicalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ProfileMedicalView.swift; path = ForeverFit/Views/Settings/ProfileMedicalView.swift; sourceTree = SOURCE_ROOT; };
+		DA78E0BF310D494BB1B95D7F /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DashboardView.swift; path = ForeverFit/Views/Dashboard/DashboardView.swift; sourceTree = SOURCE_ROOT; };
+		DC6D89B994C6460E8ED110D9 /* HealthThresholds.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HealthThresholds.swift; path = ForeverFit/Domain/HealthThresholds.swift; sourceTree = SOURCE_ROOT; };
+		DC8F6270DF5B4996A34DA901 /* EmergencyAlertBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = EmergencyAlertBanner.swift; path = ForeverFit/Views/Dashboard/EmergencyAlertBanner.swift; sourceTree = SOURCE_ROOT; };
+		DDCD242FBF40486CB011C0A3 /* AppearanceSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppearanceSettingsView.swift; path = ForeverFit/Views/Settings/AppearanceSettingsView.swift; sourceTree = SOURCE_ROOT; };
+		E405878B2BD34A4BAE0EAF3D /* EmergencyContactsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = EmergencyContactsView.swift; path = ForeverFit/Views/Settings/EmergencyContactsView.swift; sourceTree = SOURCE_ROOT; };
+		E4CBB53A95A3402483F5B2E1 /* ForeverBandBLEManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ForeverBandBLEManager.swift; path = ForeverFit/BLE/ForeverBandBLEManager.swift; sourceTree = SOURCE_ROOT; };
+		F112D89D25A44D56A05E3BF3 /* AddMetricSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AddMetricSheet.swift; path = ForeverFit/Views/HealthLog/AddMetricSheet.swift; sourceTree = SOURCE_ROOT; };
+		F47769C711B44EC09D65DAF5 /* DataBackupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DataBackupView.swift; path = ForeverFit/Views/Settings/DataBackupView.swift; sourceTree = SOURCE_ROOT; };
+		F557DAA3088B4144909D5A8B /* BaselineService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = BaselineService.swift; path = ForeverFit/Domain/BaselineService.swift; sourceTree = SOURCE_ROOT; };
+		F7E15AB9AE734A75A7B7E35A /* MenstrualCycleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MenstrualCycleView.swift; path = ForeverFit/Views/HealthLog/MenstrualCycleView.swift; sourceTree = SOURCE_ROOT; };
+		F910EE964DAE4AC88FEA36E7 /* MedicalIdView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MedicalIdView.swift; path = ForeverFit/Views/HealthLog/MedicalIdView.swift; sourceTree = SOURCE_ROOT; };
+		F9652F28B7124B019D7AD5A1 /* ActivityClassifierEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ActivityClassifierEngine.swift; path = ForeverFit/ML/ActivityClassifierEngine.swift; sourceTree = SOURCE_ROOT; };
+		FFB647F188D14EF294E968D7 /* ImminentWarningView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ImminentWarningView.swift; path = ForeverFit/Views/Disaster/ImminentWarningView.swift; sourceTree = SOURCE_ROOT; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		010000000000000000000013 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		010000000000000000000023 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		010000000000000000000002 = {
+			isa = PBXGroup;
+			children = (
+				B22433CF11674CC8B316C6F2 /* PedometerService.swift */,
+				6E8F42CE31B248F38CDD5732 /* PhoneMotionService.swift */,
+				0663AFF6C90A4B1690E8DCE2 /* ForeverBandProtocol.swift */,
+				E4CBB53A95A3402483F5B2E1 /* ForeverBandBLEManager.swift */,
+				B77BEB89C246445AB634D410 /* AppState.swift */,
+				12CFD0D1FDFF4BB2B56992FE /* ForeverFitApp.swift */,
+				1FE1040868CB4D1B8CD6CBBC /* WatchSettings.swift */,
+				B1939BCC0CA64499B8A81D56 /* SensorReadings.swift */,
+				1DB69E255CF848F489B72A74 /* DisasterModels.swift */,
+				7813040096F54867875CA610 /* HealthMetrics.swift */,
+				2ABED849212B4F4984EE0B2E /* UserProfile.swift */,
+				54B24AF05EB34A88A14DB126 /* AiChatModels.swift */,
+				14D395F687B9446AB8CAADB9 /* HealthDataStore.swift */,
+				BA71783A09C9462E85A3763B /* VoiceAndVisionServices.swift */,
+				AB23498ED7CA4179A5097849 /* AiChatService.swift */,
+				9F8264FE3EE146A7BB2901FF /* HealthContextBuilder.swift */,
+				0A566980E25F41E78D081F50 /* GemmaModelManager.swift */,
+				C641FB4E65B14B17B715F19A /* LocalLLMEngine.swift */,
+				5F26B8A36FBA42AA81BA4BAE /* MeshGradientBackground.swift */,
+				53DA0C40B90C46D7A5D2B65C /* LiquidGlassTheme.swift */,
+				28B7CFCAE7294773A6126DEC /* LiquidTabBar.swift */,
+				6EA6FC8B5D97419FA91C02D3 /* ShareSheet.swift */,
+				71F800C015B249F38116B42D /* FallInferenceEngine.swift */,
+				554CA682C2E8424781B42E22 /* FallDetectorService.swift */,
+				F9652F28B7124B019D7AD5A1 /* ActivityClassifierEngine.swift */,
+				708B69FA64D1490291909874 /* DisasterService.swift */,
+				7AE308CDCE9B4CE79801E2B4 /* IndiaHazardData.swift */,
+				C7483B9BEC25464093C76B3A /* HeatIndex.swift */,
+				9C6368AFDE93463DA194119F /* MetricDetailView.swift */,
+				BF8F01AC7BA84916859268E0 /* MetricHistoryView.swift */,
+				33D167667E4A4E5D90CE31E1 /* AboutView.swift */,
+				F47769C711B44EC09D65DAF5 /* DataBackupView.swift */,
+				B30C0CADC34A4886916BA964 /* SettingsView.swift */,
+				38A719B1CF8942D3B6435AC3 /* UnitsSettingsView.swift */,
+				2D18C28CF19C4457938EFD65 /* AiAssistantSettingsView.swift */,
+				E405878B2BD34A4BAE0EAF3D /* EmergencyContactsView.swift */,
+				6E1C90CF206B42CE922C8BD1 /* MedicalEmergencyView.swift */,
+				4E1464CAAE7B4985A771BED7 /* BackgroundPermissionView.swift */,
+				D98F7B4B836F4DC893378E6B /* ProfileMedicalView.swift */,
+				4B93B7BEA1C345D9A49802F7 /* DeveloperDemoView.swift */,
+				128150AFBE834C0C84EB45C5 /* WarningChoicesView.swift */,
+				DDCD242FBF40486CB011C0A3 /* AppearanceSettingsView.swift */,
+				415A83D7B9B74D46A0C2BCED /* SensorPrecedenceView.swift */,
+				0E4A35C358C644579B97343D /* PermissionsView.swift */,
+				17B728E6F53247AD8DF555BC /* FallDetectionSettingsView.swift */,
+				D06D6459BACB4351A08CC80D /* OLEDWatchFacePreview.swift */,
+				56D4C77E56694E3F8CC22FBE /* ScanConnectView.swift */,
+				C5414EA966ED46D997A7E067 /* WearableSettingsView.swift */,
+				DA78E0BF310D494BB1B95D7F /* DashboardView.swift */,
+				5A484DEB379C484F8DE95F49 /* MetricCardView.swift */,
+				ADD86563FAEA421AB1C7C2B9 /* LiveVitalsGauges.swift */,
+				C1D02607D7F74CFCB150D90E /* EmergencyCallView.swift */,
+				85AB010539754B0DAEF31C32 /* WellnessDetailView.swift */,
+				DC8F6270DF5B4996A34DA901 /* EmergencyAlertBanner.swift */,
+				5EA2F490BC6B4DA28BA74CEC /* AiChatView.swift */,
+				B568130FDEB1416F87C81346 /* ChatBubbleView.swift */,
+				F7E15AB9AE734A75A7B7E35A /* MenstrualCycleView.swift */,
+				C4D1BFB5AB4248FFAFAE145C /* HealthLogView.swift */,
+				1A2612A5B03F4F21B53A5297 /* MedicationsView.swift */,
+				F112D89D25A44D56A05E3BF3 /* AddMetricSheet.swift */,
+				F910EE964DAE4AC88FEA36E7 /* MedicalIdView.swift */,
+				4D5E594284DE4B2D857CC9B8 /* DisasterMapView.swift */,
+				FFB647F188D14EF294E968D7 /* ImminentWarningView.swift */,
+				19C8B5BC69224D129D3DB9C3 /* DisasterCenterView.swift */,
+				26EEA41B34664D208265B6BF /* OnboardingView.swift */,
+				4D23D4B63D3E4F4B95007B49 /* InsightEngine.swift */,
+				0D97F0FC522F49BF9441EC2B /* EmergencySummaryBuilder.swift */,
+				2EFC6886A35945D9B96A72E0 /* EmergencyWorkflowService.swift */,
+				F557DAA3088B4144909D5A8B /* BaselineService.swift */,
+				DC6D89B994C6460E8ED110D9 /* HealthThresholds.swift */,
+				4869D2E0644840AB8E88CBBA /* EmergencyLocationService.swift */,
+				10554E7049A14BF3A8D66236 /* PDFReportGenerator.swift */,
+				1FF892EBF3F84D14ADA026C4 /* ForeverFitTests.swift */,
+				BFC6501AA4854739B34370DA /* alarm_siren.wav */,
+				8BE604C45CBA402592607632 /* fall_detector_phone_only.tflite */,
+				227B9A3713724DDAAAA147F4 /* activity_classifier.tflite */,
+				25C8A2B1D00546FC9B01F015 /* fall_detector.tflite */,
+				19EBD1A56905471CB623FB48 /* Nunito-Variable.ttf */,
+				010000000000000000000060 /* ForeverFit/Assets.xcassets */,
+				010000000000000000000003 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		010000000000000000000003 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				010000000000000000000011 /* ForeverFit.app */,
+				010000000000000000000021 /* ForeverFitTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		010000000000000000000010 /* ForeverFit */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 010000000000000000000040 /* Build configuration list for PBXNativeTarget "ForeverFit" */;
+			buildPhases = (
+				010000000000000000000012 /* Sources */,
+				010000000000000000000013 /* Frameworks */,
+				010000000000000000000014 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = ForeverFit;
+			productName = ForeverFit;
+			productReference = 010000000000000000000011 /* ForeverFit.app */;
+			productType = "com.apple.product-type.application";
+		};
+		010000000000000000000020 /* ForeverFitTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 010000000000000000000050 /* Build configuration list for PBXNativeTarget "ForeverFitTests" */;
+			buildPhases = (
+				010000000000000000000022 /* Sources */,
+				010000000000000000000023 /* Frameworks */,
+				010000000000000000000024 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				010000000000000000000025 /* PBXTargetDependency */,
+			);
+			name = ForeverFitTests;
+			productName = ForeverFitTests;
+			productReference = 010000000000000000000021 /* ForeverFitTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		010000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+					010000000000000000000010 = {
+						CreatedOnToolsVersion = 16.0;
+					};
+					010000000000000000000020 = {
+						CreatedOnToolsVersion = 16.0;
+						TestTargetID = 010000000000000000000010;
+					};
+				};
+			};
+			buildConfigurationList = 010000000000000000000030 /* Build configuration list for PBXProject "ForeverFit" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 010000000000000000000002;
+			productRefGroup = 010000000000000000000003 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				010000000000000000000010 /* ForeverFit */,
+				010000000000000000000020 /* ForeverFitTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		010000000000000000000014 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				010000000000000000000061 /* ForeverFit/Assets.xcassets in Resources */,
+				77ACDDFE03CD4C259EBDD43B /* alarm_siren.wav in Resources */,
+				A1023DE813254285879A804B /* fall_detector_phone_only.tflite in Resources */,
+				209B6B1E1CB64F0F8DF3FE47 /* activity_classifier.tflite in Resources */,
+				2E9DFEED69034714A48D4EDB /* fall_detector.tflite in Resources */,
+				8AEA8AE3E2144BA48648FCF2 /* Nunito-Variable.ttf in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		010000000000000000000024 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		010000000000000000000012 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				93C8B7B6DC1440A793965B9A /* PedometerService.swift in Sources */,
+				BA31DFDB3ACC4FC4AF62D367 /* PhoneMotionService.swift in Sources */,
+				96C7A48CCFDC443B890F186B /* ForeverBandProtocol.swift in Sources */,
+				B858AAD9A74C4DE9B73D1217 /* ForeverBandBLEManager.swift in Sources */,
+				6F110DC4E7904F8E84CFE01B /* AppState.swift in Sources */,
+				DF97BFB5C15948F3939ED00C /* ForeverFitApp.swift in Sources */,
+				51A9D7B7955F4D6093E98BE0 /* WatchSettings.swift in Sources */,
+				880425B52D4642AFBEDE2969 /* SensorReadings.swift in Sources */,
+				19CAE0E3193840A0BD5560BD /* DisasterModels.swift in Sources */,
+				A80ACEFB12BC4B228A61807F /* HealthMetrics.swift in Sources */,
+				217158820BA8441388AF59E1 /* UserProfile.swift in Sources */,
+				B081427D82204E1BB1142AEA /* AiChatModels.swift in Sources */,
+				2CBAEFFC50C343F2BFE77A59 /* HealthDataStore.swift in Sources */,
+				513A25294CC34862AEA1C2AC /* VoiceAndVisionServices.swift in Sources */,
+				9414FC9BCBBE4CDB8D31BDAC /* AiChatService.swift in Sources */,
+				317F01EDE5974CBE94AECD51 /* HealthContextBuilder.swift in Sources */,
+				561100F46C3C49878CD05CA3 /* GemmaModelManager.swift in Sources */,
+				5D103654274A49ECAE7F87AC /* LocalLLMEngine.swift in Sources */,
+				F9A85D1AC18B4004BE0B82D1 /* MeshGradientBackground.swift in Sources */,
+				8AEDB0AD1DAE43579187CA1A /* LiquidGlassTheme.swift in Sources */,
+				8A84EE0AEC974F3B8ACED370 /* LiquidTabBar.swift in Sources */,
+				37A9AE58AB864B1695C69658 /* ShareSheet.swift in Sources */,
+				E3F601EEB1ED4AA69A8B66D3 /* FallInferenceEngine.swift in Sources */,
+				32B970F28FE7423B9264B655 /* FallDetectorService.swift in Sources */,
+				56E4DB32D03343378D093D0A /* ActivityClassifierEngine.swift in Sources */,
+				34E162BDFA1343A2BA973D48 /* DisasterService.swift in Sources */,
+				2C3A646656B040FAB2CD8B2E /* IndiaHazardData.swift in Sources */,
+				F27AFA2BC25A4BC8814859CC /* HeatIndex.swift in Sources */,
+				50D1E79C02B8499693B17B8D /* MetricDetailView.swift in Sources */,
+				12808D919E8046C69FAC0E38 /* MetricHistoryView.swift in Sources */,
+				FDFCB65BAD2541798B838C1F /* AboutView.swift in Sources */,
+				05408AC59F9848C7A9861F82 /* DataBackupView.swift in Sources */,
+				4CAB7B42AA964B73B47BBE46 /* SettingsView.swift in Sources */,
+				68ADA4CAF1EC436197E43E53 /* UnitsSettingsView.swift in Sources */,
+				FDE468C120764E4AB5F7E38F /* AiAssistantSettingsView.swift in Sources */,
+				131FE72D72A14FC49B47948B /* EmergencyContactsView.swift in Sources */,
+				9D7DA9B9CF1740F0B69C2CB3 /* MedicalEmergencyView.swift in Sources */,
+				316B0B0052C74B14B9094FFE /* BackgroundPermissionView.swift in Sources */,
+				5EC911FD90B840259754D91C /* ProfileMedicalView.swift in Sources */,
+				66EEBA3BC6734CF79D5EB189 /* DeveloperDemoView.swift in Sources */,
+				7063458D29E540158D11BB21 /* WarningChoicesView.swift in Sources */,
+				00E0037885AB45CB8399D03C /* AppearanceSettingsView.swift in Sources */,
+				46BCB5F7E3594906973E6A6C /* SensorPrecedenceView.swift in Sources */,
+				A76F3438780B4FDFA87670F0 /* PermissionsView.swift in Sources */,
+				009594E8CA2D434BA2F39496 /* FallDetectionSettingsView.swift in Sources */,
+				295BFB3AFE89477CA8FFDD55 /* OLEDWatchFacePreview.swift in Sources */,
+				34822410C4C74D93876930C0 /* ScanConnectView.swift in Sources */,
+				1E9F40FDBF794298968E2B39 /* WearableSettingsView.swift in Sources */,
+				CC7132C80A3149FDA4A82E0E /* DashboardView.swift in Sources */,
+				FCC26AB057B648CA9E0034AC /* MetricCardView.swift in Sources */,
+				4747E8402162415A82422C65 /* LiveVitalsGauges.swift in Sources */,
+				0301216D30CA4CA4826B1FBD /* EmergencyCallView.swift in Sources */,
+				51F39CE569554AF1A7F339A3 /* WellnessDetailView.swift in Sources */,
+				1728B9F7C85945968A118728 /* EmergencyAlertBanner.swift in Sources */,
+				AD613ADDB1674361B62163C9 /* AiChatView.swift in Sources */,
+				ED3681F6E1DA433F8CE40098 /* ChatBubbleView.swift in Sources */,
+				FE7F9CDE2D734D9689BB7BD5 /* MenstrualCycleView.swift in Sources */,
+				44B3798ADD7B49529A57C9F0 /* HealthLogView.swift in Sources */,
+				3715C11B0FD3476CB4DE3B87 /* MedicationsView.swift in Sources */,
+				D931050E194E46EC8631D45E /* AddMetricSheet.swift in Sources */,
+				2569973137AE4625BF8E5E15 /* MedicalIdView.swift in Sources */,
+				10CD269EEACD4FE59EDAA810 /* DisasterMapView.swift in Sources */,
+				EE452EFC418F448791B4A1B1 /* ImminentWarningView.swift in Sources */,
+				7E88AE9D3B6446C992DF1D62 /* DisasterCenterView.swift in Sources */,
+				D50D5695EE1D4E0D83F6C7A2 /* OnboardingView.swift in Sources */,
+				0B929E64CCBA450F858F1041 /* InsightEngine.swift in Sources */,
+				228AFD5E3FA7486A942942A9 /* EmergencySummaryBuilder.swift in Sources */,
+				446BFE3263594A39A3707AB5 /* EmergencyWorkflowService.swift in Sources */,
+				37FCBBABEC6B4F73B8BE90F1 /* BaselineService.swift in Sources */,
+				C1C26F2EAC9E40DC8560FE9D /* HealthThresholds.swift in Sources */,
+				48AFE3403B664AFD9E8D09B0 /* EmergencyLocationService.swift in Sources */,
+				401AA19DACF746E9A248AF62 /* PDFReportGenerator.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		010000000000000000000022 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A032C0107D9940BDA4D236C4 /* ForeverFitTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		010000000000000000000025 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 010000000000000000000010 /* ForeverFit */;
+			targetProxy = 010000000000000000000026 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		010000000000000000000031 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		010000000000000000000032 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_NO_COMMON_BLOCKS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+			};
+			name = Release;
+		};
+		010000000000000000000041 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "";
+				DEVELOPMENT_TEAM = DPW6RLZ3RW;
+				ENABLE_PREVIEWS = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = ForeverFit/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.sih2026.foreverfit;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		010000000000000000000042 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "";
+				DEVELOPMENT_TEAM = DPW6RLZ3RW;
+				ENABLE_PREVIEWS = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = ForeverFit/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.sih2026.foreverfit;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		010000000000000000000051 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.sih2026.foreverfit.ForeverFitTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ForeverFit.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/ForeverFit";
+			};
+			name = Debug;
+		};
+		010000000000000000000052 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.sih2026.foreverfit.ForeverFitTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ForeverFit.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/ForeverFit";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		010000000000000000000030 /* Build configuration list for PBXProject "ForeverFit" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				010000000000000000000031 /* Debug */,
+				010000000000000000000032 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		010000000000000000000040 /* Build configuration list for PBXNativeTarget "ForeverFit" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				010000000000000000000041 /* Debug */,
+				010000000000000000000042 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		010000000000000000000050 /* Build configuration list for PBXNativeTarget "ForeverFitTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				010000000000000000000051 /* Debug */,
+				010000000000000000000052 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 010000000000000000000001 /* Project object */;
+}
