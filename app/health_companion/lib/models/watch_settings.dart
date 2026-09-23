@@ -42,6 +42,15 @@ class WatchSettings {
   final WatchDateFormat dateFormat;
   final bool showSeconds;
 
+  /// Developer/demo override: when true, body temp (DS18B20) is reported
+  /// and shown — on both the watch and the app — without requiring the
+  /// MAX30101 to also detect finger/wrist contact. Off by default: a
+  /// watch lying on a table would otherwise report a plausible-looking
+  /// but meaningless "body" temperature. While this is on, the app
+  /// suppresses the low/high body-temp WARNING outright rather than
+  /// trusting an unverified reading — see dashboard_screen.dart.
+  final bool ignoreBodyTempContactCheck;
+
   const WatchSettings({
     required this.selectedFace,
     required this.autoCycleEnabled,
@@ -49,6 +58,7 @@ class WatchSettings {
     required this.use24HourFormat,
     required this.dateFormat,
     required this.showSeconds,
+    required this.ignoreBodyTempContactCheck,
   });
 
   static const defaults = WatchSettings(
@@ -58,6 +68,7 @@ class WatchSettings {
     use24HourFormat: true,
     dateFormat: WatchDateFormat.weekdayShortWithYear,
     showSeconds: false,
+    ignoreBodyTempContactCheck: false,
   );
 
   WatchSettings copyWith({
@@ -67,6 +78,7 @@ class WatchSettings {
     bool? use24HourFormat,
     WatchDateFormat? dateFormat,
     bool? showSeconds,
+    bool? ignoreBodyTempContactCheck,
   }) =>
       WatchSettings(
         selectedFace: selectedFace ?? this.selectedFace,
@@ -76,5 +88,7 @@ class WatchSettings {
         use24HourFormat: use24HourFormat ?? this.use24HourFormat,
         dateFormat: dateFormat ?? this.dateFormat,
         showSeconds: showSeconds ?? this.showSeconds,
+        ignoreBodyTempContactCheck:
+            ignoreBodyTempContactCheck ?? this.ignoreBodyTempContactCheck,
       );
 }

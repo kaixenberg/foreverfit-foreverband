@@ -8,7 +8,7 @@
 │  MAX30101 (HR/SpO2)     │                   │  - BLE central                │
 │  MPU6050 (accel/gyro)   │                   │  - on-device inference (CNN)  │
 │  BME280 (env)           │                   │  - local storage (Hive)       │
-│  MAX30205 (stub)        │                   │  - offline maps               │
+│  DS18B20 (body temp)    │                   │  - offline maps               │
 │  0.96" OLED watchface   │                   │  - dashboard, alerts, SOS      │
 └────────────────────────┘                   └──────────────────────────────┘
                                                         │ optional, only when
@@ -39,7 +39,7 @@ of truth; the firmware (`firmware/health_companion/health_companion.ino`) and ap
 | `6e400003-...` | Environment | notify | ~1 Hz | `uint32 tMs; float ambientTempC; float humidity; float pressureHPa;` (16 bytes) |
 | `6e400004-...` | Motion | notify | ~20 Hz | `uint32 tMs; float ax,ay,az; float gx,gy,gz;` (28 bytes) |
 | `6e400005-...` | Time sync | write | on connect + every 5 min | `uint8 hour,minute,second,day,month; uint16 year; uint8 weekday(0=Sun)` (8 bytes) — see "Watch faces + time sync" below |
-| `6e400006-...` | Watch settings | write | on connect + on change | `uint8 selectedFace; uint8 autoCycleEnabled; uint16 autoCycleIntervalSec; uint8 use24HourFormat; uint8 dateFormat; uint8 showSeconds;` (7 bytes) — see "Watch customization" below |
+| `6e400006-...` | Watch settings | write | on connect + on change | `uint8 selectedFace; uint8 autoCycleEnabled; uint16 autoCycleIntervalSec; uint8 use24HourFormat; uint8 dateFormat; uint8 showSeconds; uint8 ignoreBodyTempContactCheck;` (8 bytes) — see "Watch customization" below |
 
 Motion is notified faster than the others because fall-detection needs
 enough samples per window (~40–60 samples over 2–3s) to see the
@@ -48,15 +48,17 @@ free-fall-then-impact signature.
 **Known limitations to fix as this evolves:**
 - SpO2 is a rough, uncalibrated AC/DC ratio estimate (`110 - 25*R`), not a
   clinically valid reading — fine for a relative risk signal, not diagnosis.
-- Body temperature is a stubbed simulation (`readBodyTempC()` in
-  `health_companion.ino`) because the MAX30205 on hand doesn't work. Swap in
-  a real driver call there if it's replaced.
-- **HR/SpO2 are also spoofed by default** (`USE_DUMMY_HR_SPO2` in
+- Body temperature is now a real reading — a DS18B20 on its own 1-Wire GPIO
+  (`readBodyTempC()` in `health_companion.ino`), after the MAX30205 on hand
+  turned out not to work. Non-blocking: conversion (~750ms) is pipelined
+  across the ~1Hz vitals-notify cadence instead of stalling `loop()`, which
+  also has to service BLE motion notifies at ~20Hz for fall detection.
+- **HR/SpO2 are spoofed by default** (`USE_DUMMY_HR_SPO2` in
   `health_companion.ino`, on by default) — a smooth random-walk around a
-  healthy resting range (65-85 bpm, 96-99% SpO2), same style as the body-
-  temp stub, in place of the real MAX30101 beat-detection algorithm's
-  output. For demo reliability: real skin-contact quality/ambient light
-  can make the real algorithm noisy on stage, and this trades that away
+  healthy resting range (65-85 bpm, 96-99% SpO2) in place of the real
+  MAX30101 beat-detection algorithm's output. For demo reliability: real
+  skin-contact quality/ambient light can make the real algorithm noisy on
+  stage, and this trades that away
   for a guaranteed "looks like a healthy wearable" reading. **The real
   algorithm itself is untouched and still bench-tested** — only the two
   output variables (`currentBpm`/`currentSpo2`) get overridden in place,
@@ -80,33 +82,57 @@ composite wellness score. Fix: `BleService._onVitals()` now only calls
 `DashboardScreen` shows "no finger" instead of a bpm/percent value and
 skips the HR/SpO2 warning checks entirely in that state.
 
-**Body temperature now follows the same rule.** It used to be reported
-unconditionally (a jittering stub value regardless of contact), which
-didn't match how a real integrated sensor package behaves — no skin
-contact should mean no temperature reading either, the same as HR/SpO2.
-`notifyVitals()` now only calls `readBodyTempC()` while `fingerPresent`
-is true, sending 0 otherwise. Every place on the Dart side that already
-gated its heart-rate/SpO2 check on `fingerPresent` had to get the exact
-same fix for body temp — a 0°C reading would otherwise read as a false
-hypothermia signal the moment a finger came off, the very bias bug
-`fingerPresent` was originally introduced to prevent:
-- `dashboard_screen.dart`: `bodyTempWarn` and `heatStressWarn` gated on
-  `hasFingerReading` (weren't before), Body temp card/wellness-factor
-  text now show "no finger"/"not scored right now" the same way Heart
-  rate and SpO2 already did.
-- `insight_engine.dart`: the "Low/Elevated body temperature" rule that
-  feeds the Insights card and its notifications was a standalone
-  top-level check (`vitals != null`, not `hasFingerReading`) — moved
-  inside the same `if (hasFingerReading)` block heart rate/SpO2 already
-  used, instead of living outside it.
-- `emergency_summary_builder.dart`: the *live* body-temp check that
-  decides whether to mention it in an emergency call's AI-generated
-  summary had the identical bug — a 0°C reading could have been read out
-  as "body temperature: 0.0 degrees Celsius" during a real call. Fixed
-  the same way. (`_abnormalDurationText`'s walk over *historical*
-  records didn't need this fix — `BleService._onVitals()` never persists
-  a no-finger sample to `vitals_history` at all, so there's no 0°C
-  record to walk into in the first place.)
+**Body temperature is gated on `fingerPresent`, same signal as HR/SpO2 —
+plus its own developer override and a settle-time gate.** It briefly
+wasn't (decoupled entirely from finger contact so a real DS18B20 reading
+wouldn't disappear just because the separate MAX30101/SpO2 sensor was
+down), but that let a watch lying on a table report a plausible-looking,
+completely meaningless "body" temperature and warn on it. `fingerPresent`
+is the only signal this firmware has for "is the watch actually on a
+wrist" — the DS18B20 itself can't tell — so body temp rides on it again
+by default, with two additions to keep the earlier failure mode (a broken
+SpO2 sensor silently killing body temp too) from recurring:
+- **`ignoreBodyTempContactCheck`** (`WatchSettingsPacket`'s last byte,
+  `WatchSettings.ignoreBodyTempContactCheck` on the Dart side) — a
+  developer/demo toggle, off by default, exposed on
+  `DeveloperDemoScreen`. When on: `health_companion.ino`'s
+  `notifyVitals()`/`drawSecondaryFace()` report/show body temp regardless
+  of `fingerPresent` (gated only on `ds18b20Ok`). Pushed to the wearable
+  the same way every other watch setting is — `WatchSettingsStore` ->
+  `BleService.syncWatchSettings()` -> the write-only
+  `CHAR_WATCH_SETTINGS_UUID` characteristic.
+  On the app side, `hasBodyTempReading` (`vitals.bodyTempC != 0`) is used
+  purely for *displaying* a value (dashboard card, AI chat context) —
+  that part stays independent of contact, same as before. But *warning*
+  on that value (`bodyTempWarn` in `dashboard_screen.dart`/
+  `insight_engine.dart`/`emergency_summary_builder.dart`) additionally
+  requires `bodyTempWarnEligible`: contact confirmed (or the toggle is
+  on) AND `bodyTempEquilibrationWindow` (1 minute, `health_thresholds.dart`)
+  has passed since `BleService.connectedAt`. So turning the toggle on
+  brings body temp *back* independent of contact for display purposes,
+  but — since contact can no longer be used to sanity-check it —
+  `bodyTempWarnEligible` is unconditionally false whenever the toggle is
+  on, i.e. the low/high body-temp warning (and the heat-stress-combination
+  warning, which also reads raw `bodyTempC`) never fires while it's on.
+- **`bodyTempEquilibrationWindow`** (1 minute) — the DS18B20 needs time
+  after the wearable connects to reach thermal equilibrium with the
+  wrist; a reading taken right at connect time tends to still read closer
+  to ambient/room temperature, which would otherwise flag as a false "low
+  body temperature" warning. Applies even with the contact check bypassed
+  (folded into `bodyTempWarnEligible`, which both `dashboard_screen.dart`
+  and `insight_engine.dart` compute the same way — kept in sync so the
+  two never disagree about whether a given reading is warn-worthy).
+- `ble_service.dart`: `_onVitals()` persists a vitals record when
+  *either* `fingerPresent` or `bodyTempC != 0` is true (not `fingerPresent`
+  alone) — still needed because the toggle can make `bodyTempC` real while
+  `fingerPresent` is false. `history_store.dart`'s
+  `heartRateHistory()`/`spo2History()`/`bodyTempHistory()` each filter
+  their own metric's 0 back out, so a record with one signal zeroed
+  doesn't plot a fake dip on the other chart.
+- `emergency_summary_builder.dart`'s `_abnormalDurationText` (the walk
+  over *historical* records) only checks the body-temp range when
+  `bodyTemp != 0` — a missing/zero `bodyTempC` used to default to `0`,
+  which is `< bodyTempLowC` and so always read as "abnormally low."
 
 ## On-device fall-detection CNN (implemented, currently phone-only)
 
@@ -1565,6 +1591,9 @@ over the new `6e400006-...` characteristic (BLE protocol table above).
   --fqbn esp32:esp32:esp32s3 --warnings all` — succeeds with no new
   warnings or errors versus the pre-existing baseline (same four
   library-internal warnings noted elsewhere in this doc).
+  - **Update**: `WatchSettingsPacket` grew an 8th byte,
+    `ignoreBodyTempContactCheck`, later — see "Body temperature is gated
+    on `fingerPresent`" above for what it does.
 
 ## On-device AI assistant (implemented, opt-in "wow" feature)
 
@@ -1845,9 +1874,11 @@ token is required).
     answered it had no such access (a good sign: it wasn't hallucinating
     a capability it didn't have), which the user then asked to actually
     add. `_trend()` pulls `HistoryStore.heartRateHistory()`/
-    `spo2History()`/`bodyTempHistory()` (already finger-present-only
-    real readings — `BleService` never persists a no-contact zero to
-    history in the first place, so there's no noise to filter here),
+    `spo2History()`/`bodyTempHistory()` — each now filters its own
+    metric's 0/no-reading samples back out itself (a stored record can
+    have one signal zeroed while the other is real, e.g. body temp
+    recorded with the developer contact-check override on but no finger
+    contact — see "Body temperature is gated on `fingerPresent`" above),
     filters to `healthContextTrendWindow` (6 hours — a demo-session
     length, not "all history"), and reports one avg/range/count clause
     per metric. Still a bounded *summary*, not a dump: three short

@@ -8,6 +8,7 @@ import '../models/insight.dart';
 import '../services/baseline_service.dart';
 import '../storage/health_log_store.dart';
 import '../storage/metrics_store.dart';
+import '../storage/watch_settings_store.dart';
 import 'health_thresholds.dart';
 
 /// Computes the current set of rule-based suggestions/warnings from live
@@ -21,11 +22,28 @@ List<Insight> computeInsights({
   required Activity? currentActivity,
   required HealthLogStore healthLog,
   required MetricsStore metrics,
+  required WatchSettingsStore watchSettings,
 }) {
   final insights = <Insight>[];
 
   final vitals = ble.latestVitals;
   final hasFingerReading = vitals != null && vitals.fingerPresent;
+  // Body temp comes from the DS18B20 on its own 1-Wire GPIO, independent of
+  // the MAX30101's finger contact — its own "no reading" gate is 0°C
+  // (sensor unavailable, see readBodyTempC() in health_companion.ino)
+  // rather than hasFingerReading.
+  final hasBodyTempReading = vitals != null && vitals.bodyTempC != 0;
+  // Only warn on body temp when contact is confirmed (or the developer
+  // override is off) and the DS18B20 has had time to reach thermal
+  // equilibrium since connecting — see dashboard_screen.dart for the same
+  // gate, kept in sync so the Dashboard card and this Insight never
+  // disagree about whether a given reading is warn-worthy.
+  final bodyTempPastEquilibrium = ble.connectedAt != null &&
+      DateTime.now().difference(ble.connectedAt!) >=
+          bodyTempEquilibrationWindow;
+  final bodyTempWarnEligible = hasBodyTempReading &&
+      !watchSettings.settings.ignoreBodyTempContactCheck &&
+      bodyTempPastEquilibrium;
 
   // --- Vitals / wellness -------------------------------------------------
   if (hasFingerReading) {
@@ -66,25 +84,21 @@ List<Insight> computeInsights({
         icon: Icons.bloodtype,
       ));
     }
+  }
 
-    // Same "no finger -> no reading" rule as heart rate/SpO2 above — the
-    // firmware only reports bodyTempC while it also has skin contact
-    // (see health_companion.ino), so this must live inside the
-    // hasFingerReading block too, not check `vitals != null` alone
-    // (0°C would otherwise read as a false "Low body temperature").
-    if (vitals.bodyTempC > bodyTempHighC || vitals.bodyTempC < bodyTempLowC) {
-      insights.add(Insight(
-        id: 'vitals.bodyTemp.range',
-        title: vitals.bodyTempC > bodyTempHighC
-            ? 'Elevated body temperature'
-            : 'Low body temperature',
-        message: '${vitals.bodyTempC.toStringAsFixed(1)}°C is outside the '
-            'normal range ($bodyTempLowC–$bodyTempHighC°C).',
-        severity: InsightSeverity.warning,
-        category: InsightCategory.vitals,
-        icon: Icons.thermostat,
-      ));
-    }
+  if (bodyTempWarnEligible &&
+      (vitals.bodyTempC > bodyTempHighC || vitals.bodyTempC < bodyTempLowC)) {
+    insights.add(Insight(
+      id: 'vitals.bodyTemp.range',
+      title: vitals.bodyTempC > bodyTempHighC
+          ? 'Elevated body temperature'
+          : 'Low body temperature',
+      message: '${vitals.bodyTempC.toStringAsFixed(1)}°C is outside the '
+          'normal range ($bodyTempLowC–$bodyTempHighC°C).',
+      severity: InsightSeverity.warning,
+      category: InsightCategory.vitals,
+      icon: Icons.thermostat,
+    ));
   }
 
   final bp = healthLog.latestBloodPressure;

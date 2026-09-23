@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../ble/ble_service.dart';
 import '../../disaster/hazard_type.dart';
 import '../../domain/demo_escalation_trigger.dart';
 import '../../domain/emergency_workflow_service.dart';
 import '../../storage/emergency_contact_store.dart';
+import '../../storage/watch_settings_store.dart';
 import '../imminent_warning_screen.dart';
 
 /// Test mode + on-demand previews for both full-screen alert flows —
@@ -42,16 +44,54 @@ class DeveloperDemoScreen extends StatelessWidget {
     }
   }
 
+  Future<void> _setIgnoreBodyTempContactCheck(
+      BuildContext context, bool value) async {
+    final store = context.read<WatchSettingsStore>();
+    await store.update(
+        store.settings.copyWith(ignoreBodyTempContactCheck: value));
+    if (!context.mounted) return;
+    await context.read<BleService>().syncWatchSettings();
+  }
+
   @override
   Widget build(BuildContext context) {
     final contactStore = context.watch<EmergencyContactStore>();
     final workflow = context.watch<EmergencyWorkflowService>();
+    final watchSettings = context.watch<WatchSettingsStore>().settings;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Developer / demo')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          Text('Body-temp contact check',
+              style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 4),
+          Text(
+            watchSettings.ignoreBodyTempContactCheck
+                ? 'OFF — body temp is reported without confirming '
+                    'finger/wrist contact first, e.g. when the SpO2 sensor '
+                    'is unavailable. The low/high body-temp warning is '
+                    'disabled while this is on, since an unverified reading '
+                    "could just be the watch lying on a table — you'll "
+                    'still see the raw number, just no warning from it.'
+                : 'ON (default) — body temp only counts as a real reading '
+                    'once the MAX30101 also detects finger/wrist contact, '
+                    'same signal HR/SpO2 already use, plus a 1-minute '
+                    "settle time after connecting for the DS18B20 to reach "
+                    "the wrist's temperature. Prevents a false low/high "
+                    'body-temp warning from a watch that isn\'t being worn.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          SwitchListTile(
+            title: const Text('Ignore body-temp contact check'),
+            subtitle: const Text(
+                'Also disables the low/high body-temp warning while on.'),
+            value: watchSettings.ignoreBodyTempContactCheck,
+            onChanged: (value) =>
+                _setIgnoreBodyTempContactCheck(context, value),
+          ),
+          const SizedBox(height: 24),
           Text('Test mode', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 4),
           Text(

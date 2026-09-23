@@ -35,6 +35,8 @@ class WatchSettingsStore extends ChangeNotifier {
         orElse: () => WatchDateFormat.weekdayShortWithYear,
       ),
       showSeconds: saved['showSeconds'] as bool? ?? false,
+      ignoreBodyTempContactCheck:
+          saved['ignoreBodyTempContactCheck'] as bool? ?? false,
     );
   }
 
@@ -51,6 +53,7 @@ class WatchSettingsStore extends ChangeNotifier {
       'use24HourFormat': settings.use24HourFormat,
       'dateFormat': settings.dateFormat.name,
       'showSeconds': settings.showSeconds,
+      'ignoreBodyTempContactCheck': settings.ignoreBodyTempContactCheck,
     });
     notifyListeners();
   }

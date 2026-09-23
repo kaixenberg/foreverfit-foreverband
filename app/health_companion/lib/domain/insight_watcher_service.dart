@@ -11,6 +11,7 @@ import '../services/notification_service.dart';
 import '../storage/app_settings_store.dart';
 import '../storage/health_log_store.dart';
 import '../storage/metrics_store.dart';
+import '../storage/watch_settings_store.dart';
 import 'insight_engine.dart';
 
 /// Recomputes [computeInsights] whenever any input provider changes, plus on
@@ -30,6 +31,7 @@ class InsightWatcherService extends ChangeNotifier {
     required this.metrics,
     required this.notifications,
     required this.appSettings,
+    required this.watchSettings,
   });
 
   final BleService ble;
@@ -40,6 +42,7 @@ class InsightWatcherService extends ChangeNotifier {
   final MetricsStore metrics;
   final NotificationService notifications;
   final AppSettingsStore appSettings;
+  final WatchSettingsStore watchSettings;
 
   static const _periodicInterval = Duration(minutes: 15);
   static const _notifyCooldown = Duration(hours: 1);
@@ -57,6 +60,7 @@ class InsightWatcherService extends ChangeNotifier {
     healthLog.addListener(_recompute);
     metrics.addListener(_recompute);
     appSettings.addListener(_recompute);
+    watchSettings.addListener(_recompute);
     _timer = Timer.periodic(_periodicInterval, (_) => _recompute());
     _recompute();
   }
@@ -69,6 +73,7 @@ class InsightWatcherService extends ChangeNotifier {
       currentActivity: activityClassifier.current,
       healthLog: healthLog,
       metrics: metrics,
+      watchSettings: watchSettings,
     );
     // Filtered by category before it's stored OR notified on — a
     // disabled category should disappear from the Dashboard's Insights
@@ -103,6 +108,7 @@ class InsightWatcherService extends ChangeNotifier {
     healthLog.removeListener(_recompute);
     metrics.removeListener(_recompute);
     appSettings.removeListener(_recompute);
+    watchSettings.removeListener(_recompute);
     super.dispose();
   }
 }

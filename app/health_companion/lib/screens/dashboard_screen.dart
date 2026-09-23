@@ -18,6 +18,7 @@ import '../storage/app_settings_store.dart';
 import '../storage/health_log_store.dart';
 import '../storage/metrics_store.dart';
 import '../storage/user_profile_store.dart';
+import '../storage/watch_settings_store.dart';
 import '../theme/app_theme.dart';
 import '../utils/heat_index.dart';
 import '../widgets/ai_chat_bubble.dart';
@@ -67,6 +68,7 @@ int? _wellnessScore({
 WellnessSnapshot _buildWellnessSnapshot({
   required int? score,
   required bool hasFingerReading,
+  required bool hasBodyTempReading,
   required double heartRate,
   required int heartRateCeiling,
   required bool heartRateWarn,
@@ -96,8 +98,8 @@ WellnessSnapshot _buildWellnessSnapshot({
     WellnessFactor(
       label: 'Body temperature',
       warn: bodyTempWarn,
-      detail: !hasFingerReading
-          ? 'No finger detected — not scored right now.'
+      detail: !hasBodyTempReading
+          ? 'No body-temp reading right now.'
           : '${bodyTemp.toStringAsFixed(1)}°C (normal range 35.5–37.8°C).',
     ),
     WellnessFactor(
@@ -141,6 +143,7 @@ class DashboardScreen extends StatelessWidget {
     final metrics = context.watch<MetricsStore>();
     final healthLog = context.watch<HealthLogStore>();
     final appSettings = context.watch<AppSettingsStore>();
+    final watchSettings = context.watch<WatchSettingsStore>().settings;
     final userProfile = context.watch<UserProfileStore>();
     final isMaleProfile = userProfile.sex == 'Male';
     final cycleStart = healthLog.latestCycleStart;
@@ -162,16 +165,30 @@ class DashboardScreen extends StatelessWidget {
     // OLED already shows "no finger", so the app needs to too, rather
     // than reading a 0 as a genuine (and alarming) vital sign.
     final hasFingerReading = vitals != null && vitals.fingerPresent;
+    // Body temp comes from the DS18B20 on its own 1-Wire GPIO, independent
+    // of the MAX30101's finger contact — it has its own "no reading" gate
+    // (0 = sensor unavailable, see readBodyTempC() in health_companion.ino)
+    // rather than riding on hasFingerReading.
+    final hasBodyTempReading = vitals != null && bodyTemp != 0;
+    // Body temp is only trustworthy enough to WARN on (as opposed to just
+    // display) when: contact is confirmed (or the developer override below
+    // is off) and the DS18B20 has had time to reach thermal equilibrium
+    // with the wrist since connecting — see bodyTempEquilibrationWindow.
+    // Both gates exist because a watch lying on a table can still report a
+    // plausible-looking "body" temperature.
+    final bodyTempPastEquilibrium = ble.connectedAt != null &&
+        DateTime.now().difference(ble.connectedAt!) >=
+            bodyTempEquilibrationWindow;
+    final bodyTempWarnEligible = hasBodyTempReading &&
+        !watchSettings.ignoreBodyTempContactCheck &&
+        bodyTempPastEquilibrium;
     final ceiling = heartRateCeiling(currentActivity);
     final heartRateWarn = hasFingerReading &&
         (heartRate < heartRateFloor ||
             heartRate > ceiling ||
             baseline.isAnomalous(heartRate));
     final spo2Warn = hasFingerReading && spo2 < spo2FloorPercent && spo2 > 0;
-    // Same "no finger -> no reading" gate as HR/SpO2: the firmware now only
-    // populates bodyTempC while it also has skin contact (see
-    // health_companion.ino), so a 0 here means no reading, not hypothermia.
-    final bodyTempWarn = hasFingerReading &&
+    final bodyTempWarn = bodyTempWarnEligible &&
         (bodyTemp > bodyTempHighC || bodyTemp < bodyTempLowC);
 
     // Which source wins when both are available is a Settings choice
@@ -198,7 +215,7 @@ class DashboardScreen extends StatelessWidget {
             HeatRisk.danger;
     final heatStressWarn = resolvedAmbientTemp != null &&
         resolvedHumidity != null &&
-        hasFingerReading &&
+        bodyTempWarnEligible &&
         isHeatStressRisk(
           ambientC: resolvedAmbientTemp,
           humidityPercent: resolvedHumidity,
@@ -215,6 +232,7 @@ class DashboardScreen extends StatelessWidget {
     final wellnessSnapshot = _buildWellnessSnapshot(
       score: wellnessScore,
       hasFingerReading: hasFingerReading,
+      hasBodyTempReading: hasBodyTempReading,
       heartRate: heartRate,
       heartRateCeiling: ceiling,
       heartRateWarn: heartRateWarn,
@@ -324,13 +342,13 @@ class DashboardScreen extends StatelessWidget {
                   ),
                   MetricCard(
                     label: 'Body temp',
-                    value: hasFingerReading
+                    value: hasBodyTempReading
                         ? formatTemperatureC(bodyTemp, unitSystem)
                             .value
                             .toStringAsFixed(1)
                         : '--',
-                    unit: vitals != null && !hasFingerReading
-                        ? 'no finger'
+                    unit: vitals != null && !hasBodyTempReading
+                        ? 'no reading'
                         : formatTemperatureC(bodyTemp, unitSystem).unit,
                     icon: Icons.thermostat,
                     warn: bodyTempWarn,

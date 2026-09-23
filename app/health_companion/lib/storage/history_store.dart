@@ -29,10 +29,14 @@ class HistoryStore {
 
   /// Timestamped heart-rate history — backs HeartRateHistoryScreen's chart,
   /// same shape as every other metric's history rather than a bespoke
-  /// sparkline just for this one.
+  /// sparkline just for this one. Filters out 0 (no finger contact at that
+  /// sample — a record can now be stored for a body-temp-only reading, see
+  /// BleService._onVitals) rather than plotting a fake dip to zero.
   List<MetricPoint> heartRateHistory({int limit = 200}) => [
         for (final entry in recentVitals(limit: limit))
-          if (DateTime.tryParse(entry['receivedAt'] as String? ?? '') != null)
+          if (DateTime.tryParse(entry['receivedAt'] as String? ?? '') !=
+                  null &&
+              (entry['heartRate'] as num).toDouble() > 0)
             MetricPoint(
               at: DateTime.parse(entry['receivedAt'] as String),
               value: (entry['heartRate'] as num).toDouble(),
@@ -42,7 +46,9 @@ class HistoryStore {
   /// Same shape as [heartRateHistory] — backs SpO2HistoryScreen's chart.
   List<MetricPoint> spo2History({int limit = 200}) => [
         for (final entry in recentVitals(limit: limit))
-          if (DateTime.tryParse(entry['receivedAt'] as String? ?? '') != null)
+          if (DateTime.tryParse(entry['receivedAt'] as String? ?? '') !=
+                  null &&
+              (entry['spo2'] as num).toDouble() > 0)
             MetricPoint(
               at: DateTime.parse(entry['receivedAt'] as String),
               value: (entry['spo2'] as num).toDouble(),
@@ -50,9 +56,12 @@ class HistoryStore {
       ];
 
   /// Same shape as [heartRateHistory] — backs BodyTempHistoryScreen's chart.
+  /// Filters out 0 (DS18B20 unavailable at that sample) same as above.
   List<MetricPoint> bodyTempHistory({int limit = 200}) => [
         for (final entry in recentVitals(limit: limit))
-          if (DateTime.tryParse(entry['receivedAt'] as String? ?? '') != null)
+          if (DateTime.tryParse(entry['receivedAt'] as String? ?? '') !=
+                  null &&
+              (entry['bodyTempC'] as num).toDouble() != 0)
             MetricPoint(
               at: DateTime.parse(entry['receivedAt'] as String),
               value: (entry['bodyTempC'] as num).toDouble(),

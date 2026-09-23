@@ -35,6 +35,14 @@ class BleService extends ChangeNotifier with WidgetsBindingObserver {
   MotionReading? latestMotion;
   String? lastError;
 
+  /// When the wearable last finished connecting — lets consumers (see
+  /// dashboard_screen.dart's body-temp equilibrium gate) tell "just
+  /// connected" from "connected a while ago." Set on every successful
+  /// connect, deliberately never cleared on disconnect (same convention
+  /// as latestVitals/latestEnv above — this app shows the last-known
+  /// state rather than blanking it out while disconnected).
+  DateTime? connectedAt;
+
   BluetoothCharacteristic? _timeChar;
   Timer? _timeSyncTimer;
   BluetoothCharacteristic? _watchSettingsChar;
@@ -247,6 +255,7 @@ class BleService extends ChangeNotifier with WidgetsBindingObserver {
       }
 
       status = ConnectionStatus.connected;
+      connectedAt = DateTime.now();
 
       // Lets the OLED show a real clock/date with no RTC or network access
       // of its own — one write now, then a periodic re-sync so a long-
@@ -317,11 +326,17 @@ class BleService extends ChangeNotifier with WidgetsBindingObserver {
     final reading = HealthCompanionProtocol.parseVitals(bytes);
     if (reading == null) return;
     latestVitals = reading;
-    // Don't persist a no-finger reading — it's not a real HR/SpO2 sample,
-    // and would otherwise sit in history as a 0 that later consumers
-    // (the sparkline, BaselineService's rolling stats) would need to know
-    // to filter back out.
-    if (reading.fingerPresent) _historyStore.addVitals(reading);
+    // Persist whenever there's at least one real reading in the packet —
+    // HR/SpO2 (gated on finger contact) or body temp (gated on its own
+    // DS18B20 reading, independent of finger contact, see
+    // readBodyTempC() in health_companion.ino). A record with one signal
+    // zeroed is expected now (e.g. no finger but a valid body temp); the
+    // 0/1 history consumers (sparklines, BaselineService) already filter
+    // their own metric back out rather than assuming every stored record
+    // has every field.
+    if (reading.fingerPresent || reading.bodyTempC != 0) {
+      _historyStore.addVitals(reading);
+    }
     notifyListeners();
   }
 

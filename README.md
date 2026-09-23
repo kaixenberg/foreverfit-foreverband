@@ -17,9 +17,10 @@ heuristics, offline maps, and SOS.
   SpO2 numbers themselves are spoofed to a healthy resting range by
   default for demo reliability — `USE_DUMMY_HR_SPO2` in
   `health_companion.ino`, flip to 0 for the real bench-tested algorithm)
-- MAX30205 — body temperature (not working on this build; firmware uses a
-  stubbed value, see `readBodyTempC()` in `health_companion.ino` — only
-  reported while a finger is present, same as HR/SpO2)
+- DS18B20 — body temperature, on its own 1-Wire GPIO (replaced the
+  MAX30205, which never worked on this build), see `readBodyTempC()` in
+  `health_companion.ino` — only reported while a finger is present, same
+  as HR/SpO2
 - MPU6050 — accelerometer & gyroscope (**dead on this breadboard build** —
   confirmed via I2C scan; app's fall detector currently runs on phone-only
   motion data instead, see `ARCHITECTURE.md`)

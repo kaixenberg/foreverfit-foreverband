@@ -2,13 +2,13 @@
 //
 // Reads MAX30101 (HR/SpO2 — real finger-presence detection, optionally
 // dummy/spoofed BPM+SpO2 values, see USE_DUMMY_HR_SPO2), MPU6050
-// (accel/gyro), BME280 (env), a stubbed MAX30205 (body temp — real
-// sensor not working on this build, only reported while a finger is
-// present, same as HR/SpO2), drives two OLED watch faces (BOOT button
-// toggles between them — see BOOT_BUTTON_PIN), and streams everything to
-// the phone over BLE. The phone also writes the current time back over
-// BLE (see CHAR_TIME_UUID) so the primary watch face can show a real
-// clock/date without an RTC or network access of its own.
+// (accel/gyro), BME280 (env), a DS18B20 on a 1-Wire bus (body temp — the
+// MAX30205 this replaced never worked on this build; only reported while
+// a finger is present, same as HR/SpO2), drives two OLED watch faces
+// (BOOT button toggles between them — see BOOT_BUTTON_PIN), and streams
+// everything to the phone over BLE. The phone also writes the current
+// time back over BLE (see CHAR_TIME_UUID) so the primary watch face can
+// show a real clock/date without an RTC or network access of its own.
 //
 // Wire payload structs below MUST stay byte-for-byte in sync with
 // app/health_companion/lib/ble/protocol.dart — see ARCHITECTURE.md for the
@@ -23,6 +23,8 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 #include <MAX30105.h>
+#include <OneWire.h>
+#include <DallasTemperature.h>
 
 // ---------------------------------------------------------------------------
 // Wiring config — adjust these to match your actual wiring.
@@ -33,6 +35,10 @@
 #define OLED_HEIGHT 64
 #define OLED_I2C_ADDR 0x3C
 #define BME280_I2C_ADDR 0x76
+
+// DS18B20 body-temp probe — single-wire bus, needs its own GPIO (not on
+// the I2C bus with everything else).
+#define ONE_WIRE_PIN 4
 
 // GPIO0 — the ESP32-S3 DevKit's built-in BOOT button. Only used at power-on
 // to enter flash mode; free to read as a normal button once the sketch is
@@ -125,6 +131,12 @@ struct __attribute__((packed)) WatchSettingsPacket {
   uint8_t use24HourFormat;     // 0/1
   uint8_t dateFormat;          // 0..3, see formatDate() below
   uint8_t showSeconds;         // 0/1
+  // Developer/demo override — bypasses the fingerPresent contact check
+  // that otherwise gates body temp (see readBodyTempC() below). Off by
+  // default: body temp normally only counts as a real reading while the
+  // MAX30101 also detects contact, since it's the only way this firmware
+  // has to tell "on a wrist" from "lying on a table."
+  uint8_t ignoreBodyTempContactCheck; // 0/1
 };
 
 // ---------------------------------------------------------------------------
@@ -134,6 +146,8 @@ Adafruit_BME280 bme;
 Adafruit_MPU6050 mpu;
 Adafruit_SSD1306 display(OLED_WIDTH, OLED_HEIGHT, &Wire, -1);
 MAX30105 particleSensor;
+OneWire oneWire(ONE_WIRE_PIN);
+DallasTemperature ds18b20(&oneWire);
 
 NimBLEServer* bleServer = nullptr;
 NimBLECharacteristic* vitalsChar = nullptr;
@@ -147,6 +161,7 @@ bool bmeOk = false;
 bool mpuOk = false;
 bool oledOk = false;
 bool maxOk = false;
+bool ds18b20Ok = false;
 
 // --- Time sync (see TimeSyncPacket above) and watch-face state ---
 bool timeSynced = false;
@@ -170,6 +185,7 @@ uint32_t lastFaceCycleMs = 0;
 bool use24HourFormat = true;
 uint8_t dateFormatSetting = 1; // 1 = weekdayShortWithYear, see formatDate()
 bool showSecondsSetting = false;
+bool ignoreBodyTempContactCheck = false;
 
 // --- HR + SpO2 via DC removal, AC low-pass filtering, and per-beat peak
 // detection. Bench-tested against a standalone reference sketch before
@@ -216,13 +232,25 @@ float lastBodyTempC = 36.8;
 uint32_t lastVitalsNotify = 0, lastEnvNotify = 0, lastMotionNotify = 0, lastOledUpdate = 0;
 
 // ---------------------------------------------------------------------------
-// MAX30205 stub — real sensor doesn't work on this build. Swap this function
-// for a real driver call if/when the sensor is replaced.
+// DS18B20 body temp (replaced the MAX30205, which never worked on this
+// build). Conversion takes ~750ms at the default 12-bit resolution, and
+// setupSensors() enables setWaitForConversion(false), so this pipelines the
+// read across calls instead of blocking loop() (which also has to service
+// BLE motion notifies at ~20Hz for fall detection): each call returns the
+// PREVIOUS conversion's result, then immediately kicks off the next one.
+// notifyVitals() only calls this once a second (VITALS_INTERVAL_MS), well
+// past the ~750ms conversion time, so the result is always ready.
 // ---------------------------------------------------------------------------
 float readBodyTempC() {
-  static float lastVal = 36.8;
-  lastVal += (random(-10, 11) / 100.0f); // +/- 0.1C jitter
-  lastVal = constrain(lastVal, 36.3f, 37.3f);
+  static float lastVal = 36.8f;
+  static bool conversionStarted = false;
+
+  if (conversionStarted) {
+    float t = ds18b20.getTempCByIndex(0);
+    if (t != DEVICE_DISCONNECTED_C) lastVal = t;
+  }
+  ds18b20.requestTemperatures();
+  conversionStarted = true;
   return lastVal;
 }
 
@@ -346,12 +374,14 @@ class WatchSettingsCallbacks : public NimBLECharacteristicCallbacks {
     use24HourFormat = pkt.use24HourFormat != 0;
     dateFormatSetting = pkt.dateFormat;
     showSecondsSetting = pkt.showSeconds != 0;
+    ignoreBodyTempContactCheck = pkt.ignoreBodyTempContactCheck != 0;
     lastFaceCycleMs = millis();
 
     Serial.printf("[WATCH] settings: face=%d autoCycle=%d/%us 24h=%d "
-                  "dateFmt=%d seconds=%d\n",
+                  "dateFmt=%d seconds=%d ignoreBodyTempContact=%d\n",
                   pkt.selectedFace, autoCycleEnabled, autoCycleIntervalSec,
-                  use24HourFormat, dateFormatSetting, showSecondsSetting);
+                  use24HourFormat, dateFormatSetting, showSecondsSetting,
+                  ignoreBodyTempContactCheck);
   }
 };
 
@@ -476,6 +506,12 @@ void setupSensors() {
     particleSensor.setup(0x1F, 8, 2, 100, 411, 4096);
   }
   Serial.printf("[MAX30101] init %s\n", maxOk ? "OK" : "FAILED");
+
+  pinMode(ONE_WIRE_PIN, INPUT_PULLUP);
+  ds18b20.begin();
+  ds18b20.setWaitForConversion(false); // non-blocking — see readBodyTempC()
+  ds18b20Ok = ds18b20.getDeviceCount() > 0;
+  Serial.printf("[DS18B20] init %s\n", ds18b20Ok ? "OK" : "FAILED");
 
   oledOk = display.begin(SSD1306_SWITCHCAPVCC, OLED_I2C_ADDR);
   if (oledOk) {
@@ -642,12 +678,16 @@ void notifyVitals() {
   pkt.tMs = millis();
   pkt.heartRate = currentBpm;
   pkt.spo2 = currentSpo2;
-  // Only report body temp alongside HR/SpO2, i.e. while there's actual
-  // skin contact — a real integrated wearable sensor package wouldn't
-  // give you a temperature reading without contact either, and the app
-  // side already treats 0 here the same way it treats 0 bpm/SpO2: "no
-  // reading," not a real (and alarming) value — see dashboard_screen.dart.
-  lastBodyTempC = fingerPresent ? readBodyTempC() : 0;
+  // Body temp is gated on the MAX30101's finger-presence detection, same
+  // as HR/SpO2 — it's the only signal this firmware has for "is the watch
+  // actually on a wrist," and a DS18B20 sitting on a table would otherwise
+  // report a plausible-looking but meaningless "body" temperature.
+  // ignoreBodyTempContactCheck (see WatchSettingsPacket) is a
+  // developer/demo override for when that sensor is unavailable/broken;
+  // the app disables the low/high-temp WARNING outright while it's on,
+  // rather than trusting an unverified reading — see dashboard_screen.dart.
+  bool bodyTempContactOk = fingerPresent || ignoreBodyTempContactCheck;
+  lastBodyTempC = (ds18b20Ok && bodyTempContactOk) ? readBodyTempC() : 0;
   pkt.bodyTempC = lastBodyTempC;
   pkt.fingerPresent = fingerPresent ? 1 : 0;
   vitalsChar->setValue((uint8_t*)&pkt, sizeof(pkt));
@@ -801,7 +841,6 @@ void drawSecondaryFace() {
   if (!fingerPresent) {
     display.println("HR: -- (no finger)");
     display.println("SpO2: --");
-    display.println("Body: --");
   } else {
     // Rolling averages need a few beats before they're a stable reading —
     // show a loading indicator until each has enough history. Skipped
@@ -817,6 +856,15 @@ void drawSecondaryFace() {
     } else {
       display.printf("SpO2: %.0f %%\n", currentSpo2);
     }
+  }
+  // Body temp has its own contact gate (see notifyVitals()) — same
+  // fingerPresent/ignoreBodyTempContactCheck logic, own line, own message,
+  // not nested under the HR/SpO2 finger check above.
+  if (!ds18b20Ok) {
+    display.println("Body: sensor unavailable");
+  } else if (!fingerPresent && !ignoreBodyTempContactCheck) {
+    display.println("Body: -- (no contact)");
+  } else {
     display.printf("Body: %.1f C\n", lastBodyTempC);
   }
   if (bmeOk) {

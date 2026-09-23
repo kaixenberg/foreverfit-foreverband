@@ -49,18 +49,28 @@ String buildHealthContext({
 
   final vitals = ble.latestVitals;
   final hasFingerReading = vitals != null && vitals.fingerPresent;
-  if (hasFingerReading) {
-    final baselineText = baseline.heartRateMean != null
-        ? ' (personal baseline avg ${baseline.heartRateMean!.toStringAsFixed(0)} bpm)'
-        : '';
-    lines.add(
-      'Live vitals right now: heart rate ${vitals.heartRate.toStringAsFixed(0)} bpm$baselineText, '
-      'SpO2 ${vitals.spo2.toStringAsFixed(0)}%, '
-      'body temperature ${vitals.bodyTempC.toStringAsFixed(1)}°C.',
-    );
+  // Body temp comes from the DS18B20 on its own 1-Wire GPIO, independent of
+  // the MAX30101's finger contact — its own "no reading" gate is 0°C
+  // (sensor unavailable, see readBodyTempC() in health_companion.ino)
+  // rather than hasFingerReading.
+  final hasBodyTempReading = vitals != null && vitals.bodyTempC != 0;
+  if (hasFingerReading || hasBodyTempReading) {
+    final segments = <String>[];
+    if (hasFingerReading) {
+      final baselineText = baseline.heartRateMean != null
+          ? ' (personal baseline avg ${baseline.heartRateMean!.toStringAsFixed(0)} bpm)'
+          : '';
+      segments.add(
+          'heart rate ${vitals.heartRate.toStringAsFixed(0)} bpm$baselineText');
+      segments.add('SpO2 ${vitals.spo2.toStringAsFixed(0)}%');
+    }
+    if (hasBodyTempReading) {
+      segments.add('body temperature ${vitals.bodyTempC.toStringAsFixed(1)}°C');
+    }
+    lines.add('Live vitals right now: ${segments.join(', ')}.');
   } else if (ble.status == ConnectionStatus.connected) {
     lines.add(
-      'Wearable connected but no finger/skin contact detected right now — no live vitals reading.',
+      'Wearable connected but no finger/skin contact and no body-temp reading right now — no live vitals reading.',
     );
   } else {
     lines.add('No wearable connected right now — no live vitals reading.');

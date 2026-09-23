@@ -2,6 +2,7 @@ import '../ble/ble_service.dart';
 import '../services/baseline_service.dart';
 import '../storage/health_log_store.dart';
 import '../storage/history_store.dart';
+import '../storage/watch_settings_store.dart';
 import 'emergency_location.dart';
 import 'health_thresholds.dart';
 
@@ -48,11 +49,27 @@ EmergencySummary buildEmergencySummary({
   required HistoryStore historyStore,
   required HealthLogStore healthLog,
   required BaselineService baseline,
+  required WatchSettingsStore watchSettings,
   required EmergencyLocation location,
   required String triggerReason,
 }) {
   final vitals = ble.latestVitals;
   final hasFingerReading = vitals != null && vitals.fingerPresent;
+  // Body temp comes from the DS18B20 on its own 1-Wire GPIO, independent of
+  // the MAX30101's finger contact — its own "no reading" gate is 0°C
+  // (sensor unavailable, see readBodyTempC() in health_companion.ino)
+  // rather than hasFingerReading.
+  final hasBodyTempReading = vitals != null && vitals.bodyTempC != 0;
+  // Same warn-eligibility gate as dashboard_screen.dart/insight_engine.dart
+  // — an emergency call is exactly the wrong place to read out an
+  // unverified "body temperature" claim from a watch that might not even
+  // be on a wrist.
+  final bodyTempPastEquilibrium = ble.connectedAt != null &&
+      DateTime.now().difference(ble.connectedAt!) >=
+          bodyTempEquilibrationWindow;
+  final bodyTempWarnEligible = hasBodyTempReading &&
+      !watchSettings.settings.ignoreBodyTempContactCheck &&
+      bodyTempPastEquilibrium;
   final readings = <EmergencyReading>[];
 
   if (hasFingerReading) {
@@ -73,18 +90,14 @@ EmergencySummary buildEmergencySummary({
         valueText: '${vitals.spo2.toStringAsFixed(0)} percent',
       ));
     }
+  }
 
-    // Same "no finger -> no reading" rule as heart rate/SpO2 above — the
-    // firmware only reports bodyTempC while it also has skin contact, so
-    // this must live inside the hasFingerReading block too (0°C would
-    // otherwise read as a false "low body temperature" claim read out
-    // during an actual emergency call).
-    if (vitals.bodyTempC > bodyTempHighC || vitals.bodyTempC < bodyTempLowC) {
-      readings.add(EmergencyReading(
-        label: 'body temperature',
-        valueText: '${vitals.bodyTempC.toStringAsFixed(1)} degrees Celsius',
-      ));
-    }
+  if (bodyTempWarnEligible &&
+      (vitals.bodyTempC > bodyTempHighC || vitals.bodyTempC < bodyTempLowC)) {
+    readings.add(EmergencyReading(
+      label: 'body temperature',
+      valueText: '${vitals.bodyTempC.toStringAsFixed(1)} degrees Celsius',
+    ));
   }
 
   final bp = healthLog.latestBloodPressure;
@@ -135,8 +148,8 @@ String? _abnormalDurationText(List<Map> vitalsRecords) {
     final abnormal = hr < heartRateFloor ||
         hr > heartRateCeiling(null) ||
         (spo2 > 0 && spo2 < spo2FloorPercent) ||
-        bodyTemp > bodyTempHighC ||
-        bodyTemp < bodyTempLowC;
+        (bodyTemp != 0 &&
+            (bodyTemp > bodyTempHighC || bodyTemp < bodyTempLowC));
     if (!abnormal) break;
     earliestAbnormal = at;
   }

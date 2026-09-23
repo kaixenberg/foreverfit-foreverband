@@ -154,6 +154,7 @@ class HealthCompanionApp extends StatelessWidget {
             final ble = context.read<BleService>();
             final healthLog = context.read<HealthLogStore>();
             final baseline = context.read<BaselineService>();
+            final watchSettings = context.read<WatchSettingsStore>();
             return EmergencyWorkflowService(
               telephony: context.read<TelephonyService>(),
               tts: context.read<TtsService>(),
@@ -165,6 +166,7 @@ class HealthCompanionApp extends StatelessWidget {
                 historyStore: historyStore,
                 healthLog: healthLog,
                 baseline: baseline,
+                watchSettings: watchSettings,
                 location: location,
                 triggerReason: triggerReason,
               ),
@@ -223,6 +225,7 @@ class HealthCompanionApp extends StatelessWidget {
             metrics: context.read<MetricsStore>(),
             notifications: context.read<NotificationService>(),
             appSettings: context.read<AppSettingsStore>(),
+            watchSettings: context.read<WatchSettingsStore>(),
           )..start(),
         ),
       ],

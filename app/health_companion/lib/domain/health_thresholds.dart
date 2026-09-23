@@ -6,6 +6,15 @@ library;
 
 import '../ml/activity_classifier_service.dart';
 
+/// Body temp is suppressed as a WARNING signal (though still shown as a
+/// value) for this long after the wearable connects — the DS18B20 needs
+/// time to reach thermal equilibrium with the wrist, so a reading taken
+/// right at connect time tends to still be closer to ambient/room temp
+/// than a genuine skin-temperature reading, which would otherwise read as
+/// a false "low body temperature" warning. See dashboard_screen.dart,
+/// insight_engine.dart, emergency_summary_builder.dart.
+const bodyTempEquilibrationWindow = Duration(minutes: 1);
+
 /// Heart-rate ceiling above which a reading is flagged, conditioned on
 /// what the user is currently doing — a fixed threshold can't tell
 /// "elevated HR because you're running" from "elevated HR while sitting
