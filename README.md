@@ -236,13 +236,19 @@ tiles + a static state-level hazard baseline) and prefers live data
 - [x] Health log — every item that used to be a stub is real now: blood
       pressure (dual-line systolic/diastolic chart), blood glucose,
       insulin (dose + type), sleep (all four using the same
-      MetricHistoryScreen chart), Medications (a list manager with
-      mark-dose-taken and its own doses-per-day adherence chart), and
-      Medical ID (a saved blood-type/allergies/conditions profile — no
-      chart, since there's no such thing as an "average blood type").
-      `HealthLogScreen` and its Settings entry are both gone — nothing
-      left for an intermediate stub list to point to — see
-      ARCHITECTURE.md
+      MetricHistoryScreen chart), Medications, and Medical ID (a saved
+      blood-type/allergies/conditions profile — no chart, since there's
+      no such thing as an "average blood type"). `HealthLogScreen` and
+      its Settings entry are both gone — nothing left for an
+      intermediate stub list to point to — see ARCHITECTURE.md
+- [x] Medications overhaul: type/notes/active-paused, daily dose-time
+      schedules with notifications fired by an in-app clock poll (an
+      AlarmManager-based version was fully implemented and thoroughly
+      on-device debugged first, but silently never fired on the test
+      MIUI device even after fixing two separate MIUI app-ops
+      restrictions — see ARCHITECTURE.md), search/sort/filter, an
+      explicit per-item "Edit" action, and long-press multi-select
+      delete — see ARCHITECTURE.md's "Medications overhaul"
 - [x] Menstrual cycle tracking: period start/end date, flow intensity,
       and notes, with a chart (cycle length as the primary series,
       period length as a secondary one — the same two-series

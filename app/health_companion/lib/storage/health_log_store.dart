@@ -4,20 +4,106 @@ import 'package:hive_flutter/hive_flutter.dart';
 import '../models/metric_point.dart';
 import '../models/stored_entry.dart';
 
-/// One tracked medication's schedule info — not time-series data, so it
-/// lives as a small list of records rather than timestamped entries.
+/// Fixed medication-form categories — deliberately a closed set (not
+/// free text) so the Medications screen can filter/group by it.
+/// "Unspecified" is the default for anything typed before this field
+/// existed, not a real category someone would pick.
+enum MedicationType {
+  pill,
+  capsule,
+  drops,
+  liquid,
+  injection,
+  topical,
+  unspecified,
+}
+
+extension MedicationTypeLabel on MedicationType {
+  String get label => switch (this) {
+        MedicationType.pill => 'Pill(s)',
+        MedicationType.capsule => 'Capsule(s)',
+        MedicationType.drops => 'Drops',
+        MedicationType.liquid => 'Liquid',
+        MedicationType.injection => 'Injection',
+        MedicationType.topical => 'Topical/Cream',
+        MedicationType.unspecified => 'Unspecified',
+      };
+}
+
+/// The dose-amount units offered per medication type — the Unit dropdown
+/// on the add/edit form is coupled to whichever type is currently
+/// selected rather than being one global freeform list, so it can't
+/// offer nonsense combinations like "5 drops" for a Pill(s) entry.
+/// First entry in each list is that type's default when the type
+/// changes and the previously-selected unit doesn't apply any more.
+const medicationUnitsByType = <MedicationType, List<String>>{
+  MedicationType.pill: ['pill(s)', 'mg'],
+  MedicationType.capsule: ['capsule(s)', 'mg'],
+  MedicationType.drops: ['drops'],
+  MedicationType.liquid: ['ml', 'mg'],
+  MedicationType.injection: ['ml', 'mg', 'IU'],
+  MedicationType.topical: ['application(s)'],
+  MedicationType.unspecified: ['dose(s)'],
+};
+
+/// One time-of-day a medication is due — daily, not tied to a specific
+/// calendar date. A medication can have several (e.g. "twice daily" is
+/// two of these) rather than one freeform frequency string, so each dose
+/// time can actually be scheduled as its own reminder — see
+/// MedicationReminderService.
+class MedicationSchedule {
+  final int hour; // 0-23
+  final int minute; // 0-59
+
+  const MedicationSchedule({required this.hour, required this.minute});
+
+  Map<String, dynamic> toMap() => {'hour': hour, 'minute': minute};
+
+  factory MedicationSchedule.fromMap(Map map) => MedicationSchedule(
+        hour: (map['hour'] as num?)?.toInt() ?? 0,
+        minute: (map['minute'] as num?)?.toInt() ?? 0,
+      );
+
+  String get label {
+    final h = hour.toString().padLeft(2, '0');
+    final m = minute.toString().padLeft(2, '0');
+    return '$h:$m';
+  }
+}
+
+/// One tracked medication — not time-series data, so it lives as a small
+/// list of records (this class) rather than timestamped entries. `key` is
+/// its Hive box key, generated once at creation and stable across edits
+/// (see HealthLogStore.saveMedication) — also what dose-taken logging and
+/// reminder scheduling key off of.
 class Medication {
   final String key;
   final String name;
-  final String dosage;
-  final String frequency;
+  final String amount;
+  final String unit;
+  final MedicationType type;
+  final bool isActive;
+  final String notes;
+  final List<MedicationSchedule> schedules;
 
   const Medication({
     required this.key,
     required this.name,
-    required this.dosage,
-    required this.frequency,
+    required this.amount,
+    required this.unit,
+    required this.type,
+    required this.isActive,
+    required this.notes,
+    required this.schedules,
   });
+
+  /// Combined "amount unit" display (e.g. "500 mg", "2 drops") — kept as
+  /// one computed string so callers that just want a human-readable
+  /// dosage line (the reminder notification body, the list subtitle)
+  /// don't need to know about the amount/unit split themselves. `unit`
+  /// empty only happens for a pre-migration record that predates the
+  /// amount/unit split — see `_medicationFromBox`.
+  String get dosage => unit.isEmpty ? amount : '$amount $unit';
 }
 
 /// The static "in case of emergency" profile — blood type, allergies,
@@ -204,24 +290,87 @@ class HealthLogStore extends ChangeNotifier {
   // --- Medications (a list, not time-series) + dose-taken log --------
 
   List<Medication> get medications => [
-        for (final key in _medicationsBox.keys)
-          Medication(
-            key: key as String,
-            name: _medicationsBox.get(key)!['name'] as String,
-            dosage: _medicationsBox.get(key)!['dosage'] as String,
-            frequency: _medicationsBox.get(key)!['frequency'] as String,
-          ),
+        for (final key in _medicationsBox.keys) _medicationFromBox(key),
       ];
 
-  Future<void> addMedication({
+  Medication _medicationFromBox(dynamic key) {
+    final map = _medicationsBox.get(key)!;
+    // 'frequency' was this field's old name, before dosage times became
+    // structured MedicationSchedules — folded into notes on read so
+    // pre-overhaul entries don't just silently lose that text.
+    final legacyFrequency = map['frequency'] as String?;
+    final notes = (map['notes'] as String?) ??
+        (legacyFrequency != null && legacyFrequency.isNotEmpty
+            ? legacyFrequency
+            : '');
+    // 'dosage' was a single freeform string before it split into
+    // amount+unit (with a type-coupled unit list) — a record written
+    // before that split keeps its old text as `amount` with `unit` left
+    // empty (Medication.dosage displays fine either way) rather than
+    // trying to guess how to split "500mg" apart.
+    final legacyDosage = map['dosage'] as String?;
+    final amount = (map['amount'] as String?) ?? legacyDosage ?? '';
+    final unit = (map['unit'] as String?) ?? '';
+    return Medication(
+      key: key as String,
+      name: map['name'] as String,
+      amount: amount,
+      unit: unit,
+      type: MedicationType.values.firstWhere(
+        (t) => t.name == map['type'],
+        orElse: () => MedicationType.unspecified,
+      ),
+      isActive: map['isActive'] as bool? ?? true,
+      notes: notes,
+      schedules: [
+        for (final s in (map['schedules'] as List?) ?? const [])
+          MedicationSchedule.fromMap(s as Map),
+      ],
+    );
+  }
+
+  /// Creates a new medication (`key` omitted) or overwrites an existing
+  /// one in place (`key` from a prior save) — same key means dose-taken
+  /// history and scheduled reminders both carry over rather than
+  /// orphaning. Returns the key either way, since callers (see
+  /// MedicationReminderService) need it right after creation to schedule
+  /// reminders without a second read.
+  Future<String> saveMedication({
+    String? key,
     required String name,
-    required String dosage,
-    required String frequency,
+    required String amount,
+    required String unit,
+    required MedicationType type,
+    required bool isActive,
+    required String notes,
+    required List<MedicationSchedule> schedules,
   }) async {
-    final key = DateTime.now().microsecondsSinceEpoch.toString();
-    await _medicationsBox
-        .put(key, {'name': name, 'dosage': dosage, 'frequency': frequency});
+    final resolvedKey = key ?? DateTime.now().microsecondsSinceEpoch.toString();
+    await _medicationsBox.put(resolvedKey, {
+      'name': name,
+      'amount': amount,
+      'unit': unit,
+      'type': type.name,
+      'isActive': isActive,
+      'notes': notes,
+      'schedules': [for (final s in schedules) s.toMap()],
+    });
     notifyListeners();
+    return resolvedKey;
+  }
+
+  Future<void> setMedicationActive(String key, bool isActive) async {
+    final current = _medicationFromBox(key);
+    await saveMedication(
+      key: key,
+      name: current.name,
+      amount: current.amount,
+      unit: current.unit,
+      type: current.type,
+      isActive: isActive,
+      notes: current.notes,
+      schedules: current.schedules,
+    );
   }
 
   Future<void> removeMedication(String key) async {

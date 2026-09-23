@@ -781,13 +781,14 @@ pattern at all:
   (rapid/long-acting/intermediate/mixed — a category, not a number, so
   it's captured but not charted) via `showInsulinDialog()`.
 - **Medications is a list, not a metric** — `MedicationsScreen`
-  (`health_log_screens.dart`) manages tracked medications (name/dosage/
-  frequency) and lets the user mark a dose taken. The one genuinely
-  chartable thing about medications is *adherence*, not the medications
-  themselves, so "doses taken per day" gets the same
-  `MetricHistoryScreen` treatment as everything else, reached via an
-  app-bar action on `MedicationsScreen` rather than being its main
-  focus.
+  (`health_log_screens.dart`) manages tracked medications and lets the
+  user mark a dose taken. The one genuinely chartable thing about
+  medications is *adherence*, not the medications themselves, so "doses
+  taken per day" gets the same `MetricHistoryScreen` treatment as
+  everything else, reached via an app-bar action on `MedicationsScreen`
+  rather than being its main focus. See "Medications overhaul" below for
+  the full model/UI/reminder rework — this bullet describes the
+  screen's shape more than its current feature set.
 - **Medical ID is a static profile, not time-series data** — there's no
   "average blood type." The underlying `MedicalIdProfile`/`saveMedicalId`
   API (still in `health_log_store.dart`) is a plain saved form (blood
@@ -801,6 +802,146 @@ pattern at all:
   `_PagedCardGrid` as everything else — `HealthLogScreen` and its
   Settings entry are both gone; there's nothing left for an intermediate
   "more tracking" list to point to.
+
+## Medications overhaul (implemented)
+
+The original `Medication` model was three free-text fields (name,
+dosage, a freeform "frequency" string like "Twice daily") and a flat
+list with no search/sort/filter, no active/paused concept, and no real
+reminder — `insight_engine.dart`'s existing "no doses logged today" rule
+is a passive, low-priority nudge checked on a 15-minute recompute cycle,
+not a notification at a specific time. Overhauled after being handed a
+different personal project's medication-tracking `ViewModel` (Kotlin,
+Room/Hilt) as a feature-shape reference; adapted to this app's actual
+architecture (Provider/`ChangeNotifier`/Hive, no per-screen ViewModel
+layer) rather than ported line-for-line.
+
+- **`Medication`** (`health_log_store.dart`) gained `type`
+  (`MedicationType` — pill/capsule/drops/liquid/injection/topical/
+  unspecified, a closed set so the list can filter by it), `isActive`
+  (pause/resume without deleting — and without losing dose-taken
+  history or having to re-enter everything to resume), `notes`, and
+  `schedules` (`List<MedicationSchedule>`, each just an hour+minute —
+  daily dose times, not tied to a calendar date). The old freeform
+  `dosage` string later split into `amount` + `unit`, with `unit`
+  offered from a per-type list (`medicationUnitsByType` — e.g. Pill(s)
+  offers `pill(s)`/`mg`, Drops offers only `drops`) rather than one
+  global freeform unit field, so the form can't produce a nonsense
+  combination like "5 drops" on a Pill(s) entry; `Medication.dosage` is
+  now a computed `'$amount $unit'` getter kept around because most
+  callers (the reminder body, the list subtitle) just want one
+  human-readable string and don't need the split. Reading an
+  older record without a `type`/`schedules`/`isActive`/`amount`/`unit`
+  key falls back to sensible defaults (`unspecified`, empty, active,
+  the old flat `dosage` text as `amount` with an empty `unit`) rather
+  than crashing or silently dropping data — see `_medicationFromBox`.
+  `saveMedication()` replaces the old `addMedication()`: same call
+  creates (no `key`) or overwrites in place (existing `key`), so an edit
+  keeps its dose-taken history and reminders tied to the same record
+  instead of becoming a new one.
+- **`MedicationsScreen`** (`health_log_screens.dart`) is now search +
+  sort (most/fewest doses per day, name A-Z/Z-A) + filter (all/active/
+  paused/each type, as a horizontal chip row) + long-press multi-select
+  with a contextual "N selected" app bar (select-all, bulk delete with
+  a confirm dialog). Per-item actions: a prominent "mark dose taken"
+  button (unchanged from before), and a kebab menu with an explicit
+  "Edit" item plus pause/resume and delete; tapping the card also opens
+  the edit form directly (the kebab's "Edit" item exists so that's
+  discoverable without relying on an unlabeled whole-card tap being
+  obvious as the edit affordance). `MedicationEditScreen` (new file)
+  handles both add and edit, shown via `showDialog` as a floating panel
+  rather than a full-screen route — restyled to match a screenshot
+  reference from a different personal project's medication tracker
+  (name field, a type dropdown, an amount+unit row where the unit list
+  is coupled to the currently-selected type, notes, then a "+ Add time"
+  schedule section, Cancel/Save). Name, type, amount, unit, and at
+  least one dose time are all mandatory (only notes is optional) —
+  enforced by disabling Save (`onPressed: null`) until
+  `_isValid` is true, rather than letting a save attempt through and
+  pointing out what's missing afterward; the required-field set is
+  recomputed on every keystroke/schedule change via listeners on the
+  name/amount controllers plus `setState` on schedule add/remove.
+  Active/paused is deliberately NOT exposed there, same as the
+  reference project — it's a list-level action, and a new medication
+  always starts active.
+- **`MedicationReminderService`** (new,
+  `lib/services/medication_reminder_service.dart`) fires a notification
+  when a medication's dose time is reached. Registered as a `Provider`
+  in `main.dart` with `lazy: false` (nothing in the widget tree reads
+  it, so it would never construct otherwise), started once at app
+  launch alongside `InsightWatcherService`.
+  - **It polls the clock every 20s instead of scheduling an OS alarm —
+    this was NOT the first design, and the first one is worth recording
+    because of how thoroughly it was debugged before being abandoned.**
+    The original implementation used `flutter_local_notifications`'
+    `zonedSchedule()` (`AndroidScheduleMode.inexactAllowWhileIdle` +
+    `matchDateTimeComponents: DateTimeComponents.time` for a daily
+    repeat, deliberately not requesting `SCHEDULE_EXACT_ALARM` — same
+    "don't ask for special access a normal app doesn't need" stance as
+    `showEmergencyAlert`) plus `timezone`/`flutter_timezone` for correct
+    wall-clock scheduling across DST. On the actual test device (a MIUI/
+    Xiaomi phone) it silently never fired. Real on-device debugging via
+    `adb`/`dumpsys` at every layer — not guessing — confirmed: the Dart
+    `zonedSchedule()` call succeeded; the native Android alarm fired at
+    exactly the right wall-clock time (`dumpsys power`/`dumpsys alarm`
+    showed the `*alarm*` wakelock and the broadcast delivered straight
+    to `flutter_local_notifications`' `ScheduledNotificationReceiver`);
+    the receiver ran to completion and even successfully scheduled its
+    own next-day occurrence (proving no crash). The notification itself
+    still never posted — no exception, no log line, nothing `adb`
+    without root could see. Two distinct MIUI-specific app-ops
+    restrictions were found and fixed along the way (`cmd appops get`
+    showing a custom `MIUIOP` for Autostart, then a second one stuck in
+    an `"ask"` state that can't actually prompt from a background
+    receiver with no UI to prompt on) — neither one was the actual fix.
+    Whatever was left blocking it happens silently inside MIUI's
+    `NotificationManagerService` fork, with no `adb`-queryable state
+    found after exhausting every standard mechanism (permissions,
+    app-ops, `deviceidle` whitelist, channel dump, notification
+    archive). Effectively undebuggable further from outside Xiaomi's own
+    ROM. The entire alarm-based pipeline was textbook-correct and still
+    didn't work — a strong signal to stop trusting AlarmManager-based
+    delivery on this class of device rather than keep patching a
+    mechanism whose failure mode is invisible.
+  - **What replaced it**: `MedicationReminderService` keeps a
+    `Timer.periodic` (20s) that re-reads `HealthLogStore.medications`
+    fresh on every tick and compares each active medication's
+    `MedicationSchedule.hour/minute` against `DateTime.now()`. A match
+    fires `NotificationService.showMedicationReminder()` — a plain
+    immediate `.show()`, the exact call `InsightWatcherService` has used
+    reliably all along (confirmed via the notification archive: insight
+    notifications from this device DO show up; scheduled-alarm ones
+    never did). No `AlarmManager`, no background broadcast receiver,
+    nothing in MIUI's battery/notification management left to silently
+    intercept. `timezone`/`flutter_timezone` were removed entirely —
+    `DateTime.now()` is already device-local wall-clock time, no IANA
+    lookup needed once nothing is calling `zonedSchedule` anymore.
+  - **The honest trade-off**: this only fires while the app's Dart
+    isolate is alive (open, or recently backgrounded before Android
+    kills the process) — it will not wake the phone from a fully killed
+    state the way a real OS alarm would have. Given the alarm-based
+    version was supposed to work in exactly that killed-app case and
+    silently didn't on the actual test hardware, an approach that
+    reliably fires whenever the app is running is a real improvement
+    over one that promised more than this device was actually honoring.
+    `_firedToday` (a `Set<String>` of `'$medicationKey#$scheduleIndex'`)
+    stops the same dose time from re-notifying on every 20s tick for the
+    rest of that minute; it clears when the calendar date rolls over.
+  - **Reminder ids are deterministic, not sequential** —
+    `NotificationService.medicationReminderId(medicationKey,
+    scheduleIndex)` hashes the pair into a fixed id, offset well above
+    `showInsight`'s per-session auto-incrementing counter and the fixed
+    `5001` fall-alert id so none of the three id spaces can collide.
+    Firing again with the same id (e.g. a stray double-tick) just
+    replaces the notification instead of stacking duplicates.
+  - **Respects the existing "Tracking reminders" notification
+    toggle** (`AppSettingsStore.notifyReminders`, `WarningChoicesScreen`)
+    — the poll is a no-op while it's off, same category hydration
+    reminders already use.
+  - `DeveloperDemoScreen` has a "Send test medication reminder now"
+    button — fires `showMedicationReminder()` immediately on the same
+    channel, useful as a quick sanity check that this channel actually
+    posts on a given device without waiting for a real dose time.
 
 ## Menstrual cycle tracking (implemented)
 

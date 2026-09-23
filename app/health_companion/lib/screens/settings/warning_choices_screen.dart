@@ -41,7 +41,8 @@ class WarningChoicesScreen extends StatelessWidget {
           ),
           SwitchListTile(
             title: const Text('Tracking reminders'),
-            subtitle: const Text('Hydration and medication reminders.'),
+            subtitle: const Text('Hydration nudges, and scheduled '
+                'medication dose-time reminders.'),
             value: settings.notifyReminders,
             onChanged: (v) => settings.setNotifyReminders(v),
           ),

@@ -22,6 +22,7 @@ import 'sensors/phone_motion_service.dart';
 import 'services/baseline_service.dart';
 import 'services/battery_optimization_service.dart';
 import 'services/display_mode_service.dart';
+import 'services/medication_reminder_service.dart';
 import 'services/notification_service.dart';
 import 'services/step_counter_service.dart';
 import 'services/telephony_service.dart';
@@ -215,6 +216,20 @@ class HealthCompanionApp extends StatelessWidget {
           )..init(),
         ),
         Provider<NotificationService>(create: (_) => NotificationService()),
+        Provider<MedicationReminderService>(
+          // lazy: false — nothing in the widget tree ever reads this
+          // provider (it's a pure background service, no UI consumer),
+          // so with Provider's default lazy:true its create callback
+          // (and therefore start()/rescheduleAll()) would simply never
+          // run and no reminder would ever get scheduled.
+          lazy: false,
+          create: (context) => MedicationReminderService(
+            healthLog: context.read<HealthLogStore>(),
+            notifications: context.read<NotificationService>(),
+            appSettings: context.read<AppSettingsStore>(),
+          )..start(),
+          dispose: (_, service) => service.dispose(),
+        ),
         ChangeNotifierProvider(
           create: (context) => InsightWatcherService(
             ble: context.read<BleService>(),

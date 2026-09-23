@@ -5,6 +5,7 @@ import '../../ble/ble_service.dart';
 import '../../disaster/hazard_type.dart';
 import '../../domain/demo_escalation_trigger.dart';
 import '../../domain/emergency_workflow_service.dart';
+import '../../services/notification_service.dart';
 import '../../storage/emergency_contact_store.dart';
 import '../../storage/watch_settings_store.dart';
 import '../imminent_warning_screen.dart';
@@ -47,8 +48,8 @@ class DeveloperDemoScreen extends StatelessWidget {
   Future<void> _setIgnoreBodyTempContactCheck(
       BuildContext context, bool value) async {
     final store = context.read<WatchSettingsStore>();
-    await store.update(
-        store.settings.copyWith(ignoreBodyTempContactCheck: value));
+    await store
+        .update(store.settings.copyWith(ignoreBodyTempContactCheck: value));
     if (!context.mounted) return;
     await context.read<BleService>().syncWatchSettings();
   }
@@ -90,6 +91,25 @@ class DeveloperDemoScreen extends StatelessWidget {
             value: watchSettings.ignoreBodyTempContactCheck,
             onChanged: (value) =>
                 _setIgnoreBodyTempContactCheck(context, value),
+          ),
+          const SizedBox(height: 12),
+          FilledButton.tonal(
+            onPressed: () =>
+                context.read<NotificationService>().showMedicationReminder(
+                      id: NotificationService.medicationReminderIdBase - 1,
+                      title: 'Test medication reminder',
+                      body: "If you see this, medication reminders can post — "
+                          "MedicationReminderService's own 20s clock poll (see "
+                          'its class doc) drives real ones the same way.',
+                    ),
+            child: const Text('Send test medication reminder now'),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Fires immediately on the same channel a real dose-time '
+            'reminder uses — a quick sanity check that notifications from '
+            'this channel actually post on this device/OS build.',
+            style: Theme.of(context).textTheme.bodySmall,
           ),
           const SizedBox(height: 24),
           Text('Test mode', style: Theme.of(context).textTheme.titleMedium),

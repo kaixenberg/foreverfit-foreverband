@@ -31,15 +31,51 @@ class NotificationService {
   static final _emergencyVibrationPattern =
       Int64List.fromList([0, 1000, 500, 1000, 500, 1000]);
 
+  static const _medicationChannelId = 'health_companion_medication';
+  static const _medicationChannelName = 'Medication reminders';
+  static const _medicationChannelDescription =
+      "Reminders for a medication's dose times";
+
+  /// Medication reminder ids all live at and above this — far above
+  /// `showInsight`'s per-session auto-incrementing counter (starts at 0)
+  /// and `_alertNotificationId`'s fixed 5001, so the three id spaces
+  /// can't collide. Reusing the same id for a given (medication, dose
+  /// time) pair (see `MedicationReminderService`) just means a repeat
+  /// firing replaces the previous notification instead of stacking
+  /// duplicates — there's no "pending/scheduled" set to track any more,
+  /// see the class doc below for why.
+  static const medicationReminderIdBase = 1000000;
+
+  static int medicationReminderId(String medicationKey, int scheduleIndex) {
+    final hash = Object.hash(medicationKey, scheduleIndex) & 0x0fffffff;
+    return medicationReminderIdBase + hash;
+  }
+
   /// [onNotificationResponse] fires when the user taps the notification
   /// body or one of its actions — passed through from `initialize()` so a
   /// caller running in its own isolate (the background fall-detection
   /// task handler creates its own `NotificationService` instance — see
   /// `lib/background/fall_detection_task_handler.dart`) can react to it
   /// directly, without needing a separate top-level background callback.
+  ///
+  /// Idempotent and race-safe: more than one owner now calls this on the
+  /// same shared instance at app startup (`InsightWatcherService`,
+  /// `MedicationReminderService`), both from `MultiProvider` create
+  /// callbacks that can run in either order — caching the Future rather
+  /// than guarding with a plain bool means a second caller that arrives
+  /// before the first `_plugin.initialize()` has finished awaits that
+  /// same call instead of racing a second one against it.
+  Future<void>? _initFuture;
+
   Future<void> init({
     DidReceiveNotificationResponseCallback? onNotificationResponse,
-  }) async {
+  }) {
+    return _initFuture ??= _doInit(onNotificationResponse);
+  }
+
+  Future<void> _doInit(
+    DidReceiveNotificationResponseCallback? onNotificationResponse,
+  ) async {
     const androidSettings =
         AndroidInitializationSettings('@mipmap/ic_launcher');
     await _plugin.initialize(
@@ -123,4 +159,32 @@ class NotificationService {
   }
 
   Future<void> cancelNotification(int id) => _plugin.cancel(id: id);
+
+  /// Fires a medication-dose-time reminder right now — see
+  /// `MedicationReminderService`, which is what decides *when* "now" is
+  /// the right time to call this (a plain immediate `.show()`, not
+  /// `zonedSchedule`/AlarmManager — see that class's doc for why). Reused
+  /// for both a real dose-time firing and the "send test reminder now"
+  /// debug button (same [id]/channel either way, see `medicationReminderId`
+  /// and `DeveloperDemoScreen`).
+  Future<void> showMedicationReminder({
+    required int id,
+    required String title,
+    required String body,
+  }) async {
+    await _plugin.show(
+      id: id,
+      title: title,
+      body: body,
+      notificationDetails: const NotificationDetails(
+        android: AndroidNotificationDetails(
+          _medicationChannelId,
+          _medicationChannelName,
+          channelDescription: _medicationChannelDescription,
+          importance: Importance.high,
+          priority: Priority.high,
+        ),
+      ),
+    );
+  }
 }
