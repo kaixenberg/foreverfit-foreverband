@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import 'ai_chat/ai_chat_service.dart';
@@ -50,6 +51,14 @@ final _displayMode = DisplayModeService();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Locks the app to portrait regardless of the device's own auto-rotate
+  // setting — SystemChrome's preferred-orientations list overrides
+  // system auto-rotate for this app specifically rather than needing the
+  // user to turn auto-rotate off system-wide. None of this app's UI
+  // (dashboard, full-screen SOS/warning gates, the emergency-call
+  // screen) is designed for landscape, so an unlocked rotation would
+  // just be a broken layout, not a real feature.
+  await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   // Android only defaults new frames to the display's *default* refresh
   // mode (60Hz on most phones) unless an app explicitly asks for a
   // higher one — Flutter's engine happily renders faster, but nothing
