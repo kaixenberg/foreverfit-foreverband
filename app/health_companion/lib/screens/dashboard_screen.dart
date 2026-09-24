@@ -67,6 +67,7 @@ int? _wellnessScore({
 
 WellnessSnapshot _buildWellnessSnapshot({
   required int? score,
+  required bool connected,
   required bool hasFingerReading,
   required bool hasBodyTempReading,
   required double heartRate,
@@ -76,13 +77,16 @@ WellnessSnapshot _buildWellnessSnapshot({
   required bool spo2Warn,
   required double bodyTemp,
   required bool bodyTempWarn,
+  required bool ambientDataAvailable,
   required bool ambientWarn,
+  required bool heatStressDataAvailable,
   required bool heatStressWarn,
 }) {
   final factors = <WellnessFactor>[
     WellnessFactor(
       label: 'Heart rate',
       warn: heartRateWarn,
+      scored: hasFingerReading,
       detail: !hasFingerReading
           ? 'No finger detected — not scored right now.'
           : '${heartRate.toStringAsFixed(0)} bpm (normal range up to '
@@ -91,6 +95,7 @@ WellnessSnapshot _buildWellnessSnapshot({
     WellnessFactor(
       label: 'SpO2',
       warn: spo2Warn,
+      scored: hasFingerReading,
       detail: !hasFingerReading
           ? 'No finger detected — not scored right now.'
           : '${spo2.toStringAsFixed(0)}% (below 92% is flagged).',
@@ -98,6 +103,7 @@ WellnessSnapshot _buildWellnessSnapshot({
     WellnessFactor(
       label: 'Body temperature',
       warn: bodyTempWarn,
+      scored: hasBodyTempReading,
       detail: !hasBodyTempReading
           ? 'No body-temp reading right now.'
           : '${bodyTemp.toStringAsFixed(1)}°C (normal range 35.5–37.8°C).',
@@ -105,19 +111,25 @@ WellnessSnapshot _buildWellnessSnapshot({
     WellnessFactor(
       label: 'Ambient heat index',
       warn: ambientWarn,
-      detail: ambientWarn
-          ? 'Feels-like temperature has reached NOAA "danger" level.'
-          : 'Within a safe range.',
+      scored: ambientDataAvailable,
+      detail: !ambientDataAvailable
+          ? 'No ambient reading right now.'
+          : ambientWarn
+              ? 'Feels-like temperature has reached NOAA "danger" level.'
+              : 'Within a safe range.',
     ),
     WellnessFactor(
       label: 'Heat-stress combination',
       warn: heatStressWarn,
-      detail: heatStressWarn
-          ? 'High heat index together with an elevated body temperature.'
-          : 'No combined heat-stress signal right now.',
+      scored: heatStressDataAvailable,
+      detail: !heatStressDataAvailable
+          ? 'Not enough data to check right now.'
+          : heatStressWarn
+              ? 'High heat index together with an elevated body temperature.'
+              : 'No combined heat-stress signal right now.',
     ),
   ];
-  return WellnessSnapshot(score: score, factors: factors);
+  return WellnessSnapshot(score: score, factors: factors, connected: connected);
 }
 
 class DashboardScreen extends StatelessWidget {
@@ -221,8 +233,23 @@ class DashboardScreen extends StatelessWidget {
           humidityPercent: resolvedHumidity,
           bodyTempC: bodyTemp,
         );
+    // "Vitals" for scoring purposes requires confirmed skin contact
+    // (hasFingerReading), not just any non-zero reading. Body temp alone
+    // isn't proof the watch is worn — an off-wrist DS18B20 happily
+    // reports a plausible ambient temperature (e.g. 29.6°C sitting on a
+    // table), and bodyTempWarnEligible can also be true purely because
+    // the developer contact-check override is on. A connected-but-unworn
+    // watch also still sends packets at all (heartRate/spo2 zeroed — see
+    // notifyVitals() in health_companion.ino), which must not be scored
+    // as "100, all clear". Also requires `connected`: latestVitals is
+    // deliberately kept around after a disconnect (see
+    // BleService.latestVitals) so other parts of the dashboard can show
+    // a last-known reading, but the wellness score specifically should
+    // disappear rather than keep showing a stale figure once the watch
+    // is gone.
+    final hasVitals = connected && hasFingerReading;
     final wellnessScore = _wellnessScore(
-      hasVitals: vitals != null,
+      hasVitals: hasVitals,
       heartRateWarn: heartRateWarn,
       spo2Warn: spo2Warn,
       bodyTempWarn: bodyTempWarn,
@@ -231,6 +258,7 @@ class DashboardScreen extends StatelessWidget {
     );
     final wellnessSnapshot = _buildWellnessSnapshot(
       score: wellnessScore,
+      connected: connected,
       hasFingerReading: hasFingerReading,
       hasBodyTempReading: hasBodyTempReading,
       heartRate: heartRate,
@@ -240,7 +268,12 @@ class DashboardScreen extends StatelessWidget {
       spo2Warn: spo2Warn,
       bodyTemp: bodyTemp,
       bodyTempWarn: bodyTempWarn,
+      ambientDataAvailable:
+          resolvedAmbientTemp != null && resolvedHumidity != null,
       ambientWarn: ambientWarn,
+      heatStressDataAvailable: bodyTempWarnEligible &&
+          resolvedAmbientTemp != null &&
+          resolvedHumidity != null,
       heatStressWarn: heatStressWarn,
     );
 

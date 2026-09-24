@@ -6,8 +6,19 @@ class WellnessFactor {
   final bool warn;
   final String detail;
 
-  const WellnessFactor(
-      {required this.label, required this.warn, required this.detail});
+  /// Whether this signal currently has a trustworthy reading to judge —
+  /// false while e.g. there's no finger/wrist contact yet. `warn` is
+  /// always false when this is false (nothing to warn about), so the
+  /// detail screen needs this separately to avoid showing a reassuring
+  /// checkmark for a signal that isn't actually being measured.
+  final bool scored;
+
+  const WellnessFactor({
+    required this.label,
+    required this.warn,
+    required this.detail,
+    this.scored = true,
+  });
 }
 
 /// Snapshot backing both the Dashboard's Wellness card and its detail
@@ -17,11 +28,19 @@ class WellnessSnapshot {
   final int? score;
   final List<WellnessFactor> factors;
 
-  const WellnessSnapshot({required this.score, required this.factors});
+  /// Whether the wearable is currently BLE-connected — used only to pick
+  /// the right nudge when [score] is null: "connect it" vs. "wear it".
+  final bool connected;
+
+  const WellnessSnapshot({
+    required this.score,
+    required this.factors,
+    this.connected = false,
+  });
 
   String get headline {
     final s = score;
-    if (s == null) return 'Connect your wearable';
+    if (s == null) return connected ? 'Wear your wearable' : 'Connect your wearable';
     if (s >= 90) return 'All clear';
     if (s >= 70) return 'Doing fine';
     if (s >= 50) return 'Take it easy';
@@ -30,8 +49,11 @@ class WellnessSnapshot {
 
   String get summary {
     if (score == null) {
-      return 'Wellness needs live vitals from the wearable to compute — '
-          'connect it from the Dashboard to start scoring.';
+      return connected
+          ? 'Wellness needs skin contact to read vitals — put the '
+              'wearable on your wrist to start scoring.'
+          : 'Wellness needs live vitals from the wearable to compute — '
+              'connect it from the Dashboard to start scoring.';
     }
     final concerning = factors.where((f) => f.warn).toList();
     if (concerning.isEmpty) {

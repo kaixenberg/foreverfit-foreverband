@@ -97,17 +97,25 @@ class _FactorRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final color = factor.warn ? scheme.error : scheme.primary;
+    final IconData icon;
+    final Color color;
+    if (!factor.scored) {
+      icon = Icons.remove_circle_outline_rounded;
+      color = scheme.onSurfaceVariant;
+    } else if (factor.warn) {
+      icon = Icons.priority_high_rounded;
+      color = scheme.error;
+    } else {
+      icon = Icons.check_rounded;
+      color = scheme.primary;
+    }
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: Padding(
         padding: const EdgeInsets.all(14),
         child: Row(
           children: [
-            Icon(
-              factor.warn ? Icons.priority_high_rounded : Icons.check_rounded,
-              color: color,
-            ),
+            Icon(icon, color: color),
             const SizedBox(width: 12),
             Expanded(
               child: Column(

@@ -659,7 +659,16 @@ the full training-pipeline writeups.
   explainable to judges in a way a black-box score isn't. Starts at 100,
   deducts per concerning signal currently showing (HR -25, SpO2 -30, body
   temp -20, ambient heat index -10, heat-stress combination -15), shown
-  in the Dashboard's Wellness card.
+  in the Dashboard's Wellness card. Only scores at all
+  (`hasVitals = connected && hasFingerReading`) with confirmed wrist
+  contact — a connected-but-unworn watch still streams packets (zeroed
+  HR/SpO2, and the DS18B20 happily reports plausible-looking ambient
+  temperature off-wrist), and `latestVitals` is deliberately kept around
+  after a BLE disconnect for other cards to show a last-known reading, so
+  neither "packet arrived" nor "not disconnected" alone is proof the
+  score is trustworthy right now. `WellnessSnapshot.connected` picks the
+  right nudge for score == null: "wear it" if connected without contact,
+  "connect it" if not connected at all.
 - Deliberately not pursuing: an on-device LLM/chatbot layer. Heavy for a
   phone app on this timeline, and cuts against the offline-first,
   privacy-preserving pitch if it ever needs cloud inference.
@@ -690,9 +699,13 @@ scratch in Dart — no OpenVitals code was copied:
   heat-stress combination), each with its own detail text. Backed by
   `lib/models/wellness_snapshot.dart`, built once in `DashboardScreen`
   from the same warning flags that already feed the wellness-score
-  formula, so the card and the detail screen can never disagree. The
-  score-plus-reasoning *shape* of this screen is the one idea taken from
-  OpenVitals' Daily Readiness screen; the content, data, and code are
+  formula, so the card and the detail screen can never disagree. Each
+  `WellnessFactor` carries a `scored` flag distinct from `warn`, so a
+  signal with no trustworthy reading right now (no wrist contact, no
+  ambient data) renders a muted dash icon instead of a falsely
+  reassuring checkmark. The score-plus-reasoning *shape* of this screen
+  is the one idea taken from OpenVitals' Daily Readiness screen; the
+  content, data, and code are
   this app's own.
 
 ## Body & activity metrics (implemented, local storage — no Health Connect)
