@@ -6,15 +6,20 @@ same "verify the dataset directly before trusting it" discipline. See
 `ARCHITECTURE.md` at the repo root for the full design rationale; this
 file covers how to actually run them.
 
-**Currently active: phone-only** (`*_phone_only.py` scripts). The
-wearable's MPU6050 died on the breadboard build (confirmed via an I2C bus
-scan in firmware — see `health_companion.ino`'s `scanI2CBus()`), so the
-app currently runs a model trained on phone-only data instead of the
-original wrist+phone fusion. The wrist+phone scripts (without the
-`_phone_only` suffix) are kept as-is, ready to resume once the wearable's
-IMU is replaced — just point `fall_detector_service.dart` back at
-`fall_detector.tflite` and re-add the `BleService` motion buffer (see git
-history for that version).
+**Both models are active.** The wearable's original MPU6050 died on the
+breadboard build (confirmed via an I2C bus scan in firmware — see
+`health_companion.ino`'s `scanI2CBus()`), so the app ran phone-only
+(`*_phone_only.py` scripts/`fall_detector_phone_only.tflite`) for a
+while as the only option. A replacement MPU6050 has since been fitted,
+so the original wrist+phone model (`fall_detector.tflite`, already
+trained and bundled — the scripts without the `_phone_only` suffix)
+is back in the app too. `fall_detector_service.dart` now runs either
+one, switched live via `AppSettingsStore.fallDetectionSensorSource`
+(Settings → Fall detection → "Sensor source") — phone-only stays the
+default (works with no wearable connected at all), watch mode needs a
+live BLE connection to produce any readings and only runs in the
+foreground app (see that file's doc comment for why the background
+task handler always stays phone-only regardless of this setting).
 
 ## Why an isolated Python env
 
@@ -31,12 +36,12 @@ creates/reuses `ml/.venv` automatically from `pyproject.toml`.
 cd ml
 uv run python download_dataset.py               # fetches UMAFall via the Figshare API, no auth
 
-# Currently active — phone-only:
+# Phone-only:
 uv run python prepare_windows_phone_only.py      # -> ml/data/processed/windows_phone_only.npz
 uv run python train_fall_model_phone_only.py     # -> ml/data/fall_model_phone_only.keras
 uv run python convert_to_tflite_phone_only.py    # -> .../assets/models/fall_detector_phone_only.tflite
 
-# On hold until the wearable's IMU is replaced — wrist+phone fusion:
+# Wrist+phone fusion:
 uv run python prepare_windows.py    # -> ml/data/processed/windows.npz
 uv run python train_fall_model.py   # -> ml/data/fall_model.keras, prints eval metrics
 uv run python convert_to_tflite.py  # -> app/health_companion/assets/models/fall_detector.tflite
@@ -69,8 +74,12 @@ CNN, not a fabricated 10th trained input. See
 **Two unit conversions matter and are easy to get wrong** (`prepare_windows.py`
 handles both): the dataset's accelerometer values are in **G**, and its
 gyroscope values are in **deg/s** — both need converting to **m/s²** and
-**rad/s** respectively to match what `Adafruit_MPU6050` (firmware) and
-`sensors_plus` (phone) report natively. Skipping this wouldn't error out;
+**rad/s** respectively to match what the wearable's MPU6050 driver
+(firmware — see ARCHITECTURE.md's "Firmware: the replacement MPU6050
+was actually an MPU6500 in disguise" for why this is a small raw
+register driver rather than `Adafruit_MPU6050`, though the output units
+are unchanged) and `sensors_plus` (phone) report natively. Skipping this
+wouldn't error out;
 it would just quietly train a model on the wrong input scale that looks
 fine in evaluation and fails on real device data.
 
@@ -323,16 +332,17 @@ for t in [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9]:
     print(t, p, r)
 ```
 
-## Wrist+phone model (on hold)
+## Wrist+phone model (active — watch mode)
 
 Small 1D-CNN (~14k params, ~60KB as TFLite): `BatchNorm -> Conv1D(32) ->
 MaxPool -> Conv1D(64) -> MaxPool -> GlobalAveragePooling -> Dense(32) ->
 Dropout -> Dense(1, sigmoid)`. Input: a 3-second window (60 samples @
-20Hz) of the 9 fused channels. `BatchNormalization` learns its own
-scale/shift baked into the exported graph, so there are no separate
-normalization constants to keep in sync with the Dart side. The
-phone-only model above shares this exact architecture, just with 6 input
-channels instead of 9.
+20Hz) of the 9 fused channels
+`[wrist_ax, wrist_ay, wrist_az, wrist_gx, wrist_gy, wrist_gz, phone_ax,
+phone_ay, phone_az]`. `BatchNormalization` learns its own scale/shift
+baked into the exported graph, so there are no separate normalization
+constants to keep in sync with the Dart side. The phone-only model above
+shares this exact architecture, just with 6 input channels instead of 9.
 
 Split by **subject ID** (1-14 train, 15-17 val, 18-19 test), not by
 window — windows from the same trial are highly correlated, so a
@@ -340,14 +350,45 @@ window-level split would leak and overstate accuracy.
 
 Held-out test performance (subjects 18-19, never seen in training), with
 the impact-based labeling described above: 94% accuracy, 58% fall
-precision, 90% fall recall — recall improved substantially over the
-original whole-trial-labeled version, but precision dropped (more false
-alarms), a real tradeoff rather than a pure improvement. This version's
-trigger logic used a conservative combined rule (0.7 standalone, 0.4 with
-phone-gyro corroboration) since the phone's gyro wasn't a trained input
-then — see git history for `fall_detector_service.dart` at that point;
-that threshold choice should be revisited against the corrected labeling
-before this model is put back into the app.
+precision, 90% fall recall at the model's own default 0.5 cutoff —
+recall improved substantially over the original whole-trial-labeled
+version, but precision dropped (more false alarms), a real tradeoff
+rather than a pure improvement.
+
+**Threshold tuning, done properly once this model went back into the
+app.** The version above used a conservative combined rule (0.7
+standalone, 0.4 with phone-gyro corroboration) since the phone's gyro
+wasn't a trained input then, chosen without a real sweep — flagged in
+this file at the time as needing revisiting before reuse. Re-ran the
+same sweep methodology used for the phone-only model
+(`data/fall_model.keras` against the held-out subjects-18-19 windows,
+1896 windows, 7.75% fall-positive):
+
+```
+threshold  precision   recall   alerts   missed
+    0.30      55.2%    93.2%     248       10
+    0.40      56.5%    91.8%     239       12
+    0.50      57.6%    89.8%     229       15
+    0.60      57.7%    87.1%     222       19
+    0.70      59.0%    84.4%     210       23
+    0.80      60.7%    81.0%     196       28
+```
+
+Unlike the phone-only sweep, there's no cheap-recall "knee" here —
+precision stays flat (roughly 55-61%) across the whole range while
+recall falls off steadily, a genuine precision/recall tradeoff
+throughout rather than a clear sweet spot. Kept the model's own natural
+0.5 decision boundary (`FallInference.wristPhoneThreshold`) rather than
+picking an arbitrary point on an otherwise-flat curve, consistent with
+this project's stated priority: a missed fall has no recovery, a false
+alarm costs one "I'm OK" tap via the 10s countdown. No corroboration
+heuristic is gated on for this model either, same as phone-only (see
+`FallDetectorService`'s doc comment) — the phone-gyro corroboration the
+original 0.7/0.4 rule used was never validated against real held-out
+data, and the phone-only model's own two corroboration attempts (free-
+fall duration, then impact magnitude) were each disproven by real
+on-device testing, so none was re-attempted here without equivalent
+real-device evidence behind it.
 
 ## Retraining (fall detector)
 

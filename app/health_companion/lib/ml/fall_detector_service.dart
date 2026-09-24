@@ -2,39 +2,54 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../ble/ble_service.dart';
 import '../domain/emergency_workflow_service.dart';
 import '../sensors/phone_motion_service.dart';
+import '../storage/app_settings_store.dart';
 import 'fall_inference.dart';
 
 enum AlertSource { fall, manual }
 
-/// Runs the on-device fall-detection CNN on the phone's own motion alone.
+/// Runs the on-device fall-detection CNN — on the phone's own motion
+/// alone (default), or fused with the wearable's wrist-worn MPU6050 (see
+/// `AppSettingsStore.fallDetectionSensorSource`, toggled from the "Fall
+/// detection" Settings screen).
 ///
-/// Originally designed to fuse the wearable's wrist motion with the
-/// phone's accelerometer (see git history / ARCHITECTURE.md), but the
-/// wearable's MPU6050 died on the breadboard build — so this now runs on
-/// a model retrained on phone-only data: real UMAFall phone accelerometer
-/// + the co-located waist sensor's gyro as a physically-justified proxy
-/// for "phone gyro" (UMAFall's own phone has no gyroscope — see
-/// ml/prepare_windows_phone_only.py and ml/README.md for why). Both
-/// channels are properly trained now, so — unlike the wrist+phone
-/// version — no heuristic corroboration was needed at first. One was
-/// reintroduced later once real on-device testing found specific
-/// motions the CNN alone confidently misclassifies — see
-/// `_consecutiveTriggersToAlert`'s comment below for the full history.
-///
-/// Channel order (must match training exactly):
+/// **Phone mode**: a model retrained on phone-only data after the
+/// wearable's *original* MPU6050 died on the breadboard build — real
+/// UMAFall phone accelerometer + the co-located waist sensor's gyro as a
+/// physically-justified proxy for "phone gyro" (UMAFall's own phone has
+/// no gyroscope — see ml/prepare_windows_phone_only.py and
+/// ml/README.md). Both channels are properly trained, so no heuristic
+/// corroboration was needed at first; one was reintroduced later once
+/// real on-device testing found specific motions the CNN alone
+/// confidently misclassifies — see `_consecutiveTriggersToAlert`'s
+/// comment below for the full history. Channel order:
 ///   [phone_ax, phone_ay, phone_az, phone_gx, phone_gy, phone_gz]
 ///
-/// Revert to the wrist+phone model + BleService motion fusion once the
-/// wearable's IMU is replaced — see git history for that version.
+/// **Watch mode**: the original wrist+phone fusion design, unavailable
+/// while the wearable's MPU6050 was dead and reinstated once a
+/// replacement MPU6050 was fitted — fuses `BleService.latestMotion`
+/// (wrist accel+gyro, over BLE) with `PhoneMotionService.latest` (phone
+/// accel only — the training dataset's phone hardware had no
+/// gyroscope). Channel order (must match ml/prepare_windows.py exactly):
+///   [wrist_ax, wrist_ay, wrist_az, wrist_gx, wrist_gy, wrist_gz,
+///    phone_ax, phone_ay, phone_az]
+/// Only runs in the foreground app — `BleService`/the BLE connection
+/// live in the main isolate, so the background fall-detection task
+/// handler (a separate isolate/engine) always stays phone-only
+/// regardless of this toggle; see that file's doc comment.
 class FallDetectorService extends ChangeNotifier {
   FallDetectorService({
     required this.phoneMotionService,
+    required this.bleService,
+    required this.appSettings,
     required this.emergencyWorkflow,
   });
 
   final PhoneMotionService phoneMotionService;
+  final BleService bleService;
+  final AppSettingsStore appSettings;
   final EmergencyWorkflowService emergencyWorkflow;
 
   // Was briefly raised to 3 alongside FallInference's threshold bump
@@ -99,13 +114,18 @@ class FallDetectorService extends ChangeNotifier {
   // back the pickup/short-fall false-positive rate — accepted because
   // the 10s "I'm OK" countdown (`_emergencyCountdownSeconds` below) makes
   // a false positive cost one tap, not a real emergency call, while a
-  // missed real fall has no equivalent recovery.
+  // missed real fall has no equivalent recovery. Same reasoning applies
+  // to watch mode — its threshold (0.5, see FallInference.wristPhoneThreshold)
+  // is the only piece validated against real held-out data there too, and
+  // no corroboration heuristic has been (re-)tried for it, so none is
+  // wired in for it either.
 
-  final _inference = FallInference();
+  FallInference _inference = FallInference();
   Timer? _timer;
   Timer? _countdownTimer;
 
   int _consecutiveTriggers = 0;
+  int? _lastWristMotionDeviceTimeMs;
 
   double fallProbability = 0.0;
   String? lastError;
@@ -127,8 +147,24 @@ class FallDetectorService extends ChangeNotifier {
   /// detection" toggle reads this to show current state.
   bool isRunning = false;
 
+  /// Which sensor source the *currently running* session actually
+  /// started with — kept separate from `appSettings.fallDetectionSensorSource`
+  /// so `stop()` removes the right listener even if the setting changed
+  /// while detection was running (callers should `stop()` then `start()`
+  /// again to pick up a mid-session change — see FallDetectionScreen).
+  FallDetectionSensorSource? _runningSensorSource;
+
   Future<void> start() async {
     if (isRunning) return;
+    final sensorSource = appSettings.fallDetectionSensorSource;
+    _inference = sensorSource == FallDetectionSensorSource.watch
+        ? FallInference(
+            modelAsset: FallInference.wristPhoneModelAsset,
+            channelCount: 9,
+            threshold: FallInference.wristPhoneThreshold,
+          )
+        : FallInference();
+
     try {
       await _inference.load();
     } catch (e) {
@@ -137,10 +173,17 @@ class FallDetectorService extends ChangeNotifier {
       return;
     }
 
-    phoneMotionService.addListener(_onPhoneUpdate);
+    if (sensorSource == FallDetectionSensorSource.watch) {
+      _lastWristMotionDeviceTimeMs = null;
+      bleService.addListener(_onBleMotionUpdate);
+    } else {
+      phoneMotionService.addListener(_onPhoneUpdate);
+    }
+    _runningSensorSource = sensorSource;
     _timer = Timer.periodic(
         const Duration(milliseconds: 500), (_) => _runInference());
     isRunning = true;
+    lastError = null;
     notifyListeners();
   }
 
@@ -152,11 +195,16 @@ class FallDetectorService extends ChangeNotifier {
     if (!isRunning) return;
     _timer?.cancel();
     _timer = null;
-    phoneMotionService.removeListener(_onPhoneUpdate);
+    if (_runningSensorSource == FallDetectionSensorSource.watch) {
+      bleService.removeListener(_onBleMotionUpdate);
+    } else {
+      phoneMotionService.removeListener(_onPhoneUpdate);
+    }
     _inference.close();
     _consecutiveTriggers = 0;
     fallProbability = 0.0;
     isRunning = false;
+    _runningSensorSource = null;
     notifyListeners();
   }
 
@@ -170,7 +218,39 @@ class FallDetectorService extends ChangeNotifier {
       gx: sample.gx,
       gy: sample.gy,
       gz: sample.gz,
-    ));
+    ).channels);
+  }
+
+  /// `BleService` notifies on every packet type it receives (vitals/env/
+  /// motion/connection state), not just motion — so this only actually
+  /// buffers a new sample when `latestMotion` genuinely changed since
+  /// last time (`deviceTimeMs` is the firmware's own millis() timestamp
+  /// for that packet), rather than re-adding a stale reading on every
+  /// unrelated BleService update.
+  void _onBleMotionUpdate() {
+    final motion = bleService.latestMotion;
+    if (motion == null) return;
+    if (motion.deviceTimeMs == _lastWristMotionDeviceTimeMs) return;
+    _lastWristMotionDeviceTimeMs = motion.deviceTimeMs;
+
+    // Best-available concurrent phone accelerometer reading — not
+    // hardware-synchronized to the wrist sample's exact timestamp, but
+    // close enough at this sampling rate; the training data itself was
+    // resampled onto a common time grid rather than perfectly aligned
+    // either (see ml/prepare_windows.py). Falls back to 0 for the brief
+    // window before PhoneMotionService's first reading arrives.
+    final phone = phoneMotionService.latest;
+    _inference.addSample(WristPhoneMotionSample(
+      wristAx: motion.ax,
+      wristAy: motion.ay,
+      wristAz: motion.az,
+      wristGx: motion.gx,
+      wristGy: motion.gy,
+      wristGz: motion.gz,
+      phoneAx: phone?.ax ?? 0,
+      phoneAy: phone?.ay ?? 0,
+      phoneAz: phone?.az ?? 0,
+    ).channels);
   }
 
   void _runInference() {
@@ -178,7 +258,7 @@ class FallDetectorService extends ChangeNotifier {
     if (probability == null) return;
     fallProbability = probability;
 
-    final triggeredNow = fallProbability > FallInference.threshold;
+    final triggeredNow = fallProbability > _inference.threshold;
     _consecutiveTriggers = triggeredNow ? _consecutiveTriggers + 1 : 0;
     final freefallMs = _inference.longestFreefallRun().inMilliseconds;
     final peakImpactG = _inference.peakImpactGAfterFreefall();
@@ -190,23 +270,24 @@ class FallDetectorService extends ChangeNotifier {
     // interfere with the latched alert/countdown already in progress.
     //
     // Gated on the CNN + consecutive-count alone — the only piece
-    // actually validated against real held-out labeled data (92%/92%,
-    // see ml/README.md's "Threshold tuning"). Both corroboration
-    // heuristics tried on top of it (free-fall duration, then impact
-    // magnitude) failed against real on-device test data, and a fast
-    // pickup jerk can match or exceed a real fall on either signal — see
-    // this class's own doc comment and ml/README.md for the full
-    // evidence trail. `freefallMs`/`peakImpactG`/`hasImpact` are still
-    // logged below for visibility, just no longer gated on. Accepted
-    // tradeoff: pickup/short-fall false positives are back, but the 10s
-    // "I'm OK" countdown below means a false positive costs one tap, not
-    // a real emergency call — a missed real fall is the worse failure
-    // mode of the two.
+    // actually validated against real held-out labeled data for either
+    // mode (see ml/README.md's "Threshold tuning" / "Wrist+phone model").
+    // Both corroboration heuristics tried on top of the phone-only model
+    // (free-fall duration, then impact magnitude) failed against real
+    // on-device test data, and a fast pickup jerk can match or exceed a
+    // real fall on either signal — see this class's own doc comment and
+    // ml/README.md for the full evidence trail. `freefallMs`/
+    // `peakImpactG`/`hasImpact` are still logged below for visibility,
+    // just no longer gated on. Accepted tradeoff: pickup/short-fall false
+    // positives are back, but the 10s "I'm OK" countdown below means a
+    // false positive costs one tap, not a real emergency call — a missed
+    // real fall is the worse failure mode of the two.
     if (!alertActive && _consecutiveTriggers >= _consecutiveTriggersToAlert) {
       _startAlert(AlertSource.fall);
     }
 
-    debugPrint('[FallDetector] cnnProb=${fallProbability.toStringAsFixed(3)} '
+    debugPrint('[FallDetector] source=${_runningSensorSource?.name} '
+        'cnnProb=${fallProbability.toStringAsFixed(3)} '
         'triggeredNow=$triggeredNow consecutive=$_consecutiveTriggers '
         'freefallMs=$freefallMs peakImpactG=${peakImpactG.toStringAsFixed(2)} '
         'hasImpact=$hasImpact alertActive=$alertActive');
@@ -307,6 +388,7 @@ class FallDetectorService extends ChangeNotifier {
     _timer?.cancel();
     _countdownTimer?.cancel();
     phoneMotionService.removeListener(_onPhoneUpdate);
+    bleService.removeListener(_onBleMotionUpdate);
     _inference.close();
     super.dispose();
   }

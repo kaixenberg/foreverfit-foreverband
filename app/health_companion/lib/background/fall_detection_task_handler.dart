@@ -34,6 +34,15 @@ void fallDetectionTaskCallback() {
 /// design and its documented limitations (mandatory persistent
 /// monitoring notification, Hive multi-isolate coordination for the
 /// disaster check).
+///
+/// Always phone-only, regardless of Settings' "Fall detection sensor"
+/// toggle (see `FallDetectorService`'s watch mode) — this runs in its
+/// own background isolate/engine with no BLE connection or `BleService`
+/// instance of its own to read wrist motion from, so watch-mode
+/// detection can only run in the foreground app. Phone-only detection
+/// keeps running here regardless of the toggle as a background safety
+/// net rather than the app going dark on fall detection entirely
+/// whenever it's backgrounded in watch mode.
 class FallDetectionTaskHandler extends TaskHandler {
   // Kept in sync with FallDetectorService's identical constant — see its
   // comment for why this was briefly raised to 3, then reverted back to
@@ -100,7 +109,7 @@ class FallDetectionTaskHandler extends TaskHandler {
       gx: sample.gx,
       gy: sample.gy,
       gz: sample.gz,
-    ));
+    ).channels);
   }
 
   @override
@@ -113,7 +122,7 @@ class FallDetectionTaskHandler extends TaskHandler {
     if (_alertActive) return; // one alert at a time
     final probability = _inference.runIfReady();
     if (probability == null) return;
-    final triggeredNow = probability > FallInference.threshold;
+    final triggeredNow = probability > _inference.threshold;
     _consecutiveTriggers = triggeredNow ? _consecutiveTriggers + 1 : 0;
     if (_consecutiveTriggers >= _consecutiveTriggersToAlert) {
       unawaited(_startAlert());

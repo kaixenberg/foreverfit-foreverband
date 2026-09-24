@@ -2,9 +2,13 @@
 //
 // Reads MAX30101 (HR/SpO2 — real finger-presence detection, optionally
 // dummy/spoofed BPM+SpO2 values, see USE_DUMMY_HR_SPO2), MPU6050
-// (accel/gyro), BME280 (env), a DS18B20 on a 1-Wire bus (body temp — the
-// MAX30205 this replaced never worked on this build; only reported while
-// a finger is present, same as HR/SpO2), drives two OLED watch faces
+// (accel/gyro — on its own isolated I2C bus, `Wire1`/MPU_SDA/MPU_SCL,
+// not the main bus with everything else below, and read with a small
+// raw-register driver rather than Adafruit_MPU6050 — see `MPU_SDA`'s
+// and `mpuBegin()`'s comments for why), BME280 (env), a DS18B20 on a
+// 1-Wire bus (body temp — the MAX30205 this replaced never worked on
+// this build; only reported while a finger is present, same as
+// HR/SpO2), drives two OLED watch faces
 // (BOOT button toggles between them — see BOOT_BUTTON_PIN), and streams
 // everything to the phone over BLE. The phone also writes the current
 // time back over BLE (see CHAR_TIME_UUID) so the primary watch face can
@@ -17,14 +21,13 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <NimBLEDevice.h>
-#include <Adafruit_Sensor.h>
 #include <Adafruit_BME280.h>
-#include <Adafruit_MPU6050.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 #include <MAX30105.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
+#include <functional>
 
 // ---------------------------------------------------------------------------
 // Wiring config — adjust these to match your actual wiring.
@@ -35,6 +38,23 @@
 #define OLED_HEIGHT 64
 #define OLED_I2C_ADDR 0x3C
 #define BME280_I2C_ADDR 0x76
+
+// MPU6050 gets its own I2C bus (the ESP32-S3's second hardware I2C
+// peripheral, `Wire1`) instead of sharing SDA/SCL above with BME280/
+// MAX30101/OLED — isolating it from the other 3 devices was the first
+// thing tried while diagnosing a consistent (every attempt, not
+// intermittent) `Adafruit_MPU6050::begin()` failure. Turned out not to
+// be the actual cause (a live WHO_AM_I register readback on this exact
+// module — see `mpuBegin()` below — found 0x70, the MPU6500's chip ID,
+// not the real MPU6050's 0x68, which Adafruit_MPU6050 strictly checks
+// and rejects; the "MPU6050" module in hand is actually a rebadged
+// MPU6500, common in the cheap sensor market, register-compatible for
+// raw accel/gyro but reporting a different identity), but isolation is
+// harmless to keep regardless and rules out bus-sharing as a variable
+// for future debugging. Pick different pins here if 5/6 are already
+// used for something else on your specific board.
+#define MPU_SDA 5
+#define MPU_SCL 6
 
 // DS18B20 body-temp probe — single-wire bus, needs its own GPIO (not on
 // the I2C bus with everything else).
@@ -143,7 +163,6 @@ struct __attribute__((packed)) WatchSettingsPacket {
 // Globals
 // ---------------------------------------------------------------------------
 Adafruit_BME280 bme;
-Adafruit_MPU6050 mpu;
 Adafruit_SSD1306 display(OLED_WIDTH, OLED_HEIGHT, &Wire, -1);
 MAX30105 particleSensor;
 OneWire oneWire(ONE_WIRE_PIN);
@@ -467,37 +486,159 @@ void setupBle() {
 // can tell wiring/power/address problems apart from a genuinely dead
 // sensor without guessing.
 // ---------------------------------------------------------------------------
-void scanI2CBus() {
-  Serial.println("[I2C] Scanning bus...");
+void scanI2CBus(TwoWire& wire, const char* label) {
+  Serial.printf("[I2C] Scanning %s bus...\n", label);
   int found = 0;
   for (uint8_t addr = 0x08; addr < 0x78; addr++) {
-    Wire.beginTransmission(addr);
-    if (Wire.endTransmission() == 0) {
-      Serial.printf("[I2C]   device found at 0x%02X\n", addr);
+    wire.beginTransmission(addr);
+    if (wire.endTransmission() == 0) {
+      Serial.printf("[I2C]   %s: device found at 0x%02X\n", label, addr);
       found++;
     }
   }
-  Serial.printf("[I2C] Scan complete, %d device(s) found\n", found);
+  Serial.printf("[I2C] %s scan complete, %d device(s) found\n", label, found);
+}
+
+// ---------------------------------------------------------------------------
+// Retries a sensor's own init() a few times with a short delay between
+// attempts — a single bad I2C transaction during setup doesn't have to
+// be fatal. Originally added while diagnosing an MPU6050 init failure
+// that turned out to be a consistent chip-identity mismatch, not an
+// intermittent bus problem (see `MPU_SDA`'s and `mpuBegin()`'s
+// comments) — a retry loop was never actually going to fix that
+// specific issue (consistent failures don't get better on attempt 2),
+// but it's a harmless, standard mitigation to keep for any sensor's
+// occasional bad transaction, and is still exercised by MAX30101 below
+// (separately known-broken hardware right now, unrelated to any of
+// this).
+// ---------------------------------------------------------------------------
+bool retrySensorInit(const char* label, int maxAttempts,
+                      std::function<bool()> init) {
+  for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+    if (init()) {
+      if (attempt > 1) {
+        Serial.printf("[%s] init OK on attempt %d/%d\n", label, attempt,
+                      maxAttempts);
+      }
+      return true;
+    }
+    if (attempt < maxAttempts) delay(50);
+  }
+  return false;
+}
+
+// ---------------------------------------------------------------------------
+// Raw MPU6050/6500-register driver — replaces Adafruit_MPU6050 here.
+// That library's own begin() reads the WHO_AM_I register (0x75) and
+// rejects anything that doesn't read back exactly 0x68, the real
+// MPU6050's chip id. A live readback on this specific "MPU6050" module
+// found 0x70 instead — the MPU6500's id, not the MPU6050's. MPU6500 is
+// a newer, pin- and register-compatible successor for the core
+// accel/gyro registers used here (power management, range config, the
+// 14-byte accel+temp+gyro burst read starting at 0x3B) — it's a common
+// substitution in cheap breakout boards sold as "MPU6050" — so raw
+// register access (same approach as a standalone bench sketch that
+// worked fine talking to this exact module) reads it correctly; only
+// Adafruit's specific identity check was ever the problem, not the
+// chip, the wiring, or the bus.
+// ---------------------------------------------------------------------------
+#define MPU_I2C_ADDR 0x68
+#define MPU_REG_PWR_MGMT_1 0x6B
+#define MPU_REG_GYRO_CONFIG 0x1B
+#define MPU_REG_ACCEL_CONFIG 0x1C
+#define MPU_REG_ACCEL_XOUT_H 0x3B
+
+// ±4g / ±500 deg/s — matches this project's previous Adafruit_MPU6050
+// range config (MPU6050_RANGE_4_G / MPU6050_RANGE_500_DEG): wide enough
+// to avoid clipping on a real fall impact (this project has measured
+// post-impact spikes up to ~4g on the phone alone — see
+// fall_inference.dart) while keeping better resolution than a wider
+// range would. Sensitivity constants (LSB per unit) are the standard
+// MPU6050/6500 datasheet values for these exact range settings — not
+// something to guess if the range config below ever changes.
+#define MPU_ACCEL_LSB_PER_G 8192.0f
+#define MPU_GYRO_LSB_PER_DPS 65.5f
+#define MPU_GRAVITY_MS2 9.80665f
+
+bool mpuWriteReg(uint8_t reg, uint8_t value) {
+  Wire1.beginTransmission(MPU_I2C_ADDR);
+  Wire1.write(reg);
+  Wire1.write(value);
+  return Wire1.endTransmission() == 0;
+}
+
+// Wakes the sensor (it powers on in sleep mode) and sets the accel/gyro
+// ranges above. Deliberately does NOT check WHO_AM_I — see this
+// section's own comment for why that check is the wrong thing to do
+// for this specific module.
+bool mpuBegin() {
+  uint8_t whoAmI = 0;
+  Wire1.beginTransmission(MPU_I2C_ADDR);
+  Wire1.write(0x75); // WHO_AM_I — read and logged for visibility only,
+  Wire1.endTransmission(false); // never gates success/failure below.
+  if (Wire1.requestFrom((uint8_t)MPU_I2C_ADDR, (uint8_t)1) == 1) {
+    whoAmI = Wire1.read();
+  }
+  Serial.printf("[MPU6050] WHO_AM_I = 0x%02X (0x68 = genuine MPU6050, "
+                "0x70 = MPU6500 in a MPU6050-labeled module — either is "
+                "fine, this driver doesn't check it)\n",
+                whoAmI);
+
+  if (!mpuWriteReg(MPU_REG_PWR_MGMT_1, 0x00)) return false; // wake up
+  delay(10);
+  if (!mpuWriteReg(MPU_REG_ACCEL_CONFIG, 0x08)) return false; // ±4g
+  if (!mpuWriteReg(MPU_REG_GYRO_CONFIG, 0x08)) return false; // ±500 dps
+  return true;
+}
+
+// One burst read of the 14 contiguous accel+temp+gyro registers
+// starting at ACCEL_XOUT_H, converted to the same physical units
+// (m/s², rad/s) Adafruit_MPU6050/the training data use — a burst read
+// keeps all 6 values from the same instant, rather than 3 separate
+// transactions that could straddle a sample boundary. The 2 temperature
+// bytes in the middle of the burst are read and discarded; this
+// firmware's real body-temp reading comes from the DS18B20, not this
+// chip's built-in (uncalibrated, die-temperature) sensor.
+bool mpuReadMotion(float& ax, float& ay, float& az, float& gx, float& gy,
+                    float& gz) {
+  Wire1.beginTransmission(MPU_I2C_ADDR);
+  Wire1.write(MPU_REG_ACCEL_XOUT_H);
+  if (Wire1.endTransmission(false) != 0) return false;
+  if (Wire1.requestFrom((uint8_t)MPU_I2C_ADDR, (uint8_t)14) != 14) return false;
+
+  int16_t rawAx = (Wire1.read() << 8) | Wire1.read();
+  int16_t rawAy = (Wire1.read() << 8) | Wire1.read();
+  int16_t rawAz = (Wire1.read() << 8) | Wire1.read();
+  Wire1.read();
+  Wire1.read(); // discard temperature
+  int16_t rawGx = (Wire1.read() << 8) | Wire1.read();
+  int16_t rawGy = (Wire1.read() << 8) | Wire1.read();
+  int16_t rawGz = (Wire1.read() << 8) | Wire1.read();
+
+  ax = (rawAx / MPU_ACCEL_LSB_PER_G) * MPU_GRAVITY_MS2;
+  ay = (rawAy / MPU_ACCEL_LSB_PER_G) * MPU_GRAVITY_MS2;
+  az = (rawAz / MPU_ACCEL_LSB_PER_G) * MPU_GRAVITY_MS2;
+  gx = (rawGx / MPU_GYRO_LSB_PER_DPS) * (PI / 180.0f);
+  gy = (rawGy / MPU_GYRO_LSB_PER_DPS) * (PI / 180.0f);
+  gz = (rawGz / MPU_GYRO_LSB_PER_DPS) * (PI / 180.0f);
+  return true;
 }
 
 // ---------------------------------------------------------------------------
 // Sensor setup
 // ---------------------------------------------------------------------------
 void setupSensors() {
-  scanI2CBus();
+  scanI2CBus(Wire, "main");
+  scanI2CBus(Wire1, "MPU6050");
 
   bmeOk = bme.begin(BME280_I2C_ADDR, &Wire);
   Serial.printf("[BME280] init %s\n", bmeOk ? "OK" : "FAILED");
 
-  mpuOk = mpu.begin();
-  if (mpuOk) {
-    mpu.setAccelerometerRange(MPU6050_RANGE_4_G);
-    mpu.setGyroRange(MPU6050_RANGE_500_DEG);
-    mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
-  }
+  mpuOk = retrySensorInit("MPU6050", 5, [] { return mpuBegin(); });
   Serial.printf("[MPU6050] init %s\n", mpuOk ? "OK" : "FAILED");
 
-  maxOk = particleSensor.begin(Wire, I2C_SPEED_FAST);
+  maxOk = retrySensorInit("MAX30101", 5,
+                          [] { return particleSensor.begin(Wire, I2C_SPEED_FAST); });
   if (maxOk) {
     // ledMode=2 (Red+IR only, no Green); sampleAverage=8 for hardware-level
     // noise reduction; powerLevel=0x1F sets Red and IR to the SAME current
@@ -712,17 +853,25 @@ void notifyEnv() {
 
 void notifyMotion() {
   if (!mpuOk) return;
-  sensors_event_t accel, gyro, temp;
-  mpu.getEvent(&accel, &gyro, &temp);
+  // Read into plain locals, not directly into the packed MotionPacket's
+  // fields — GCC won't bind a reference to a field of a
+  // __attribute__((packed)) struct (a potentially-unaligned address),
+  // so mpuReadMotion() can't write straight into pkt.ax etc.
+  float ax, ay, az, gx, gy, gz;
+  // A failed burst read (a dropped/NACKed I2C transaction) skips this
+  // notify entirely rather than sending stale/zeroed values as if they
+  // were real — same "don't report a fake reading" stance as every
+  // other sensor in this firmware.
+  if (!mpuReadMotion(ax, ay, az, gx, gy, gz)) return;
 
   MotionPacket pkt;
   pkt.tMs = millis();
-  pkt.ax = accel.acceleration.x;
-  pkt.ay = accel.acceleration.y;
-  pkt.az = accel.acceleration.z;
-  pkt.gx = gyro.gyro.x;
-  pkt.gy = gyro.gyro.y;
-  pkt.gz = gyro.gyro.z;
+  pkt.ax = ax;
+  pkt.ay = ay;
+  pkt.az = az;
+  pkt.gx = gx;
+  pkt.gy = gy;
+  pkt.gz = gz;
   motionChar->setValue((uint8_t*)&pkt, sizeof(pkt));
   if (deviceConnected) motionChar->notify();
 }
@@ -891,10 +1040,11 @@ void setup() {
 
   Wire.begin(I2C_SDA, I2C_SCL);
   // Standard Mode (100kHz, the Wire library default) — reverted from Fast
-  // Mode (400kHz) because it's suspected of causing MPU6050 init to fail
-  // on this breadboard build: 4 I2C devices sharing one bus over jumper
+  // Mode (400kHz) because it's suspected of causing sensor init to fail
+  // on this breadboard build: 3 I2C devices sharing one bus over jumper
   // wires has marginal signal integrity at 400kHz. Revisit if/when this
   // moves to a proper PCB with short traces and correctly-sized pull-ups.
+  Wire1.begin(MPU_SDA, MPU_SCL); // MPU6050's own isolated bus — see its define above.
   randomSeed(analogRead(0));
 
   pinMode(BOOT_BUTTON_PIN, INPUT_PULLUP);

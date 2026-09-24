@@ -187,6 +187,8 @@ class HealthCompanionApp extends StatelessWidget {
           create: (context) {
             final service = FallDetectorService(
               phoneMotionService: context.read<PhoneMotionService>(),
+              bleService: context.read<BleService>(),
+              appSettings: context.read<AppSettingsStore>(),
               emergencyWorkflow: context.read<EmergencyWorkflowService>(),
             );
             if (context.read<AppSettingsStore>().fallDetectionEnabled) {

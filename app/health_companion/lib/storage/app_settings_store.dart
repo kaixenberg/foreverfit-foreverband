@@ -11,6 +11,15 @@ import '../models/insight.dart';
 /// this isn't a more general system yet).
 enum AmbientSourcePreference { preferWearable, preferOnline }
 
+/// Which motion sensor(s) the on-device fall-detection CNN runs on —
+/// the phone's own accelerometer/gyroscope alone, or the wearable's
+/// wrist-worn MPU6050 fused with the phone's accelerometer (the
+/// original wrist+phone design, unavailable while the wearable's first
+/// MPU6050 was dead — see ARCHITECTURE.md). Phone-only stays the
+/// default: it works with no wearable connected at all, and watch mode
+/// additionally requires a live BLE connection to produce any readings.
+enum FallDetectionSensorSource { phone, watch }
+
 /// App-wide preferences — units, appearance, sensor precedence, and
 /// notification-category opt-outs. One Hive box, one document, same
 /// single-document pattern as EmergencyContactStore. Deliberately
@@ -36,6 +45,12 @@ class AppSettingsStore extends ChangeNotifier {
   /// detection" screen exposes the toggle; `main.dart` reads this once
   /// at startup to decide whether to call `FallDetectorService.start()`.
   bool fallDetectionEnabled = true;
+
+  /// Which sensor(s) fall detection runs on — see
+  /// `FallDetectionSensorSource`'s own doc comment. Exposed on the same
+  /// "Fall detection" Settings screen as `fallDetectionEnabled` above.
+  FallDetectionSensorSource fallDetectionSensorSource =
+      FallDetectionSensorSource.phone;
 
   bool isCategoryEnabled(InsightCategory category) {
     switch (category) {
@@ -70,6 +85,10 @@ class AppSettingsStore extends ChangeNotifier {
     notifyHazards = saved['notifyHazards'] as bool? ?? true;
     notifyReminders = saved['notifyReminders'] as bool? ?? true;
     fallDetectionEnabled = saved['fallDetectionEnabled'] as bool? ?? true;
+    fallDetectionSensorSource = FallDetectionSensorSource.values.firstWhere(
+      (v) => v.name == saved['fallDetectionSensorSource'],
+      orElse: () => FallDetectionSensorSource.phone,
+    );
   }
 
   Future<void> setUnitSystem(UnitSystem value) async {
@@ -123,6 +142,13 @@ class AppSettingsStore extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> setFallDetectionSensorSource(
+      FallDetectionSensorSource value) async {
+    fallDetectionSensorSource = value;
+    await _persist();
+    notifyListeners();
+  }
+
   Future<void> _persist() async {
     await _box?.put(_key, {
       'unitSystem': unitSystem.name,
@@ -133,6 +159,7 @@ class AppSettingsStore extends ChangeNotifier {
       'notifyHazards': notifyHazards,
       'notifyReminders': notifyReminders,
       'fallDetectionEnabled': fallDetectionEnabled,
+      'fallDetectionSensorSource': fallDetectionSensorSource.name,
     });
   }
 }

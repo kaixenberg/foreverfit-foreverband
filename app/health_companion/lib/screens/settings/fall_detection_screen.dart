@@ -62,6 +62,45 @@ class FallDetectionScreen extends StatelessWidget {
             style: Theme.of(context).textTheme.bodySmall,
           ),
           const SizedBox(height: 24),
+          Text('Sensor source', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 4),
+          Text(
+            "Phone uses only your phone's own motion sensors. Watch fuses "
+            "the wearable's wrist motion with your phone's accelerometer "
+            '— needs a connected wearable to produce any readings, and '
+            'only runs while the app is open in the foreground; the '
+            'background monitor always stays phone-only regardless of '
+            'this setting (see ARCHITECTURE.md).',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 8),
+          RadioGroup<FallDetectionSensorSource>(
+            groupValue: appSettings.fallDetectionSensorSource,
+            onChanged: (value) async {
+              if (value == null) return;
+              await appSettings.setFallDetectionSensorSource(value);
+              // Live-switch a currently-running session onto the new
+              // sensor's model/config rather than leaving it running on
+              // the old one until the next app launch.
+              if (fallDetector.isRunning) {
+                fallDetector.stop();
+                await fallDetector.start();
+              }
+            },
+            child: const Column(
+              children: [
+                RadioListTile<FallDetectionSensorSource>(
+                  title: Text('Phone'),
+                  value: FallDetectionSensorSource.phone,
+                ),
+                RadioListTile<FallDetectionSensorSource>(
+                  title: Text('Watch (wrist + phone)'),
+                  value: FallDetectionSensorSource.watch,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
           Text('Try the demo', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 4),
           Text(

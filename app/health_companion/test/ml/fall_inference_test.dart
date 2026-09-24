@@ -15,7 +15,8 @@ void main() {
     final inference = FallInference();
     for (var i = 0; i < FallInference.windowLen + 10; i++) {
       inference.addSample(
-          const MotionSample(ax: 1, ay: 1, az: 1, gx: 0, gy: 0, gz: 0));
+          const MotionSample(ax: 1, ay: 1, az: 1, gx: 0, gy: 0, gz: 0)
+              .channels);
     }
     expect(inference.runIfReady(), isNull);
   });
@@ -24,7 +25,8 @@ void main() {
     final inference = FallInference();
     for (var i = 0; i < FallInference.windowLen * 3; i++) {
       inference.addSample(
-          MotionSample(ax: i.toDouble(), ay: 0, az: 0, gx: 0, gy: 0, gz: 0));
+          MotionSample(ax: i.toDouble(), ay: 0, az: 0, gx: 0, gy: 0, gz: 0)
+              .channels);
     }
     expect(inference.bufferLength, FallInference.windowLen);
   });
@@ -42,7 +44,7 @@ void main() {
     test('a buffer that never drops below 1g has no free-fall run', () {
       final inference = FallInference();
       for (var i = 0; i < FallInference.windowLen; i++) {
-        inference.addSample(atRest);
+        inference.addSample(atRest.channels);
       }
       expect(inference.longestFreefallRun(), Duration.zero);
     });
@@ -50,13 +52,13 @@ void main() {
     test('a contiguous near-weightless run is measured in wall-clock time', () {
       final inference = FallInference();
       for (var i = 0; i < 10; i++) {
-        inference.addSample(atRest);
+        inference.addSample(atRest.channels);
       }
       for (var i = 0; i < 14; i++) {
-        inference.addSample(weightless);
+        inference.addSample(weightless.channels);
       }
       for (var i = 0; i < 10; i++) {
-        inference.addSample(atRest);
+        inference.addSample(atRest.channels);
       }
       // 14 samples @ 50ms/sample = 700ms — an arbitrary round number
       // here now that duration is no longer the alert gate (see
@@ -68,13 +70,13 @@ void main() {
     test('reports the longest run, not the total weightless sample count', () {
       final inference = FallInference();
       for (var i = 0; i < 3; i++) {
-        inference.addSample(weightless);
+        inference.addSample(weightless.channels);
       }
       for (var i = 0; i < 5; i++) {
-        inference.addSample(atRest);
+        inference.addSample(atRest.channels);
       }
       for (var i = 0; i < 8; i++) {
-        inference.addSample(weightless);
+        inference.addSample(weightless.channels);
       }
       // Two separate weightless runs (3 and 8 samples) — the longer one
       // wins, they don't sum to 11.
@@ -93,7 +95,7 @@ void main() {
     test('no free-fall run in the buffer means no impact either', () {
       final inference = FallInference();
       for (var i = 0; i < FallInference.windowLen; i++) {
-        inference.addSample(atRest);
+        inference.addSample(atRest.channels);
       }
       expect(inference.peakImpactGAfterFreefall(), 0);
       expect(inference.hasPostFreefallImpact(), isFalse);
@@ -102,11 +104,11 @@ void main() {
     test('a hard spike right after a free-fall dip counts as an impact', () {
       final inference = FallInference();
       for (var i = 0; i < 10; i++) {
-        inference.addSample(weightless);
+        inference.addSample(weightless.channels);
       }
-      inference.addSample(hardImpact);
+      inference.addSample(hardImpact.channels);
       for (var i = 0; i < 10; i++) {
-        inference.addSample(atRest);
+        inference.addSample(atRest.channels);
       }
       expect(inference.peakImpactGAfterFreefall(), closeTo(3.06, 0.01));
       expect(inference.hasPostFreefallImpact(), isTrue);
@@ -116,11 +118,11 @@ void main() {
         () {
       final inference = FallInference();
       for (var i = 0; i < 10; i++) {
-        inference.addSample(weightless);
+        inference.addSample(weightless.channels);
       }
-      inference.addSample(gentleCatch);
+      inference.addSample(gentleCatch.channels);
       for (var i = 0; i < 10; i++) {
-        inference.addSample(atRest);
+        inference.addSample(atRest.channels);
       }
       expect(inference.peakImpactGAfterFreefall(), closeTo(1.22, 0.01));
       expect(inference.hasPostFreefallImpact(), isFalse);

@@ -134,7 +134,7 @@ SpO2 sensor silently killing body temp too) from recurring:
   `bodyTemp != 0` — a missing/zero `bodyTempC` used to default to `0`,
   which is `< bodyTempLowC` and so always read as "abnormally low."
 
-## On-device fall-detection CNN (implemented, currently phone-only)
+## On-device fall-detection CNN (implemented — phone and watch modes)
 
 **Update**: the wearable's MPU6050 died on the breadboard build (confirmed
 via an I2C bus scan added to `health_companion.ino` — `scanI2CBus()`
@@ -264,7 +264,106 @@ real call. Deliberately separate from the existing "Background
 permission" screen's own toggle, which controls only the background
 foreground-service variant.
 
-Original design, on hold: a small 1D-CNN fuses the wearable's wrist
+**Update: a replacement MPU6050 was fitted to the wearable, and the
+original wrist+phone design (below) is back in the app as a second
+mode, not just kept on file.** `AppSettingsStore.fallDetectionSensorSource`
+(`FallDetectionSensorSource.phone`/`.watch`, persisted, phone the
+default) picks which model `FallDetectorService` loads, exposed as a
+`RadioGroup` on the same "Fall detection" screen described above — Phone
+vs. "Watch (wrist + phone)". Switching it live (while detection is
+running) stops and restarts the service on the new config rather than
+waiting for the next app launch.
+- **`FallInference`** (`fall_inference.dart`) stopped being hardcoded to
+  the phone-only model — `modelAsset`/`channelCount`/`threshold` are now
+  constructor params (defaulting to the phone-only values, so the
+  background task handler's unparameterized `FallInference()` is
+  unchanged) instead of fixed statics. `longestFreefallRun`/
+  `peakImpactGAfterFreefall` read indices 0-2 of each buffered sample as
+  "the" accelerometer regardless of mode, which conveniently needs no
+  extra per-mode config: both channel orderings put an accelerometer
+  x/y/z first (phone accel for the 6-channel model, wrist accel for the
+  9-channel one — physically the more relevant "did the sensor
+  free-fall" signal for a wrist-worn IMU anyway).
+- **Watch mode fuses `BleService.latestMotion` (wrist, over BLE) with
+  `PhoneMotionService.latest` (phone)** in `FallDetectorService`,
+  triggered off the wrist stream's ~20Hz `MotionPacket` rate (guarded by
+  the packet's own `deviceTimeMs` so `BleService`'s shared
+  `notifyListeners()` — which also fires for unrelated vitals/env
+  updates — doesn't re-add a stale sample). Not hardware-synchronized to
+  the exact same instant, just the best-available concurrent phone
+  reading — matches how the training data itself was resampled onto a
+  common time grid rather than perfectly aligned (see
+  `ml/prepare_windows.py`).
+- **Only runs in the foreground.** `BleService`/the BLE connection live
+  in the main isolate; the background fall-detection task handler runs
+  in its own separate isolate/engine with no access to it, so it always
+  stays phone-only regardless of this setting — a background safety net
+  rather than the app going dark on fall detection entirely whenever
+  it's backgrounded in watch mode (see `FallDetectionTaskHandler`'s own
+  updated doc comment).
+- **Firmware: the replacement MPU6050 was actually an MPU6500 in
+  disguise — `Adafruit_MPU6050::begin()` was rejecting a perfectly
+  working chip, not failing to talk to a broken/miswired one.**
+  `begin()` consistently failed (every attempt, not intermittently)
+  once wired up on the shared bus with BME280/MAX30101/OLED, despite the
+  same chip reading real, correct accel/gyro data on a separate
+  standalone bench sketch that talks to it with raw register I/O (no
+  chip-identity check) — at a *higher* I2C clock speed, even. Two
+  mitigations were tried and ruled out in turn before finding the real
+  cause, each backed by a live re-test rather than assumption:
+  1. `retrySensorInit()` (a small retry-with-delay helper, also covers
+     MAX30101 — separately known-broken hardware, unrelated to this) —
+     the theory being a marginal breadboard bus tipping over an
+     occasional bad transaction. Ruled out: the failure stayed 100%
+     consistent across all 5 attempts, the wrong shape for a retry to
+     fix (a transient glitch would occasionally succeed on a later
+     attempt; this never did).
+  2. Moved MPU6050 onto the ESP32-S3's second hardware I2C peripheral
+     (`Wire1`, GPIO 5/6 — `MPU_SDA`/`MPU_SCL`), fully isolated from the
+     other 3 devices, on the theory of parallel pull-ups/cross-talk/
+     capacitance from bus sharing. Ruled out: `scanI2CBus()` (extended
+     to take a `TwoWire&`/label and scan once per bus) showed the chip
+     responding fine at `0x68` on its own isolated bus, and
+     `Adafruit_MPU6050::begin()` *still* failed — identically, alone on
+     a bus with nothing else on it.
+  3. **Actual cause, found by adding a live WHO_AM_I (register 0x75)
+     readback and flashing it to the real device**: the chip reports
+     `0x70`, not the real MPU6050's `0x68` — the MPU6500's chip id.
+     `Adafruit_MPU6050::begin()` reads this register and hard-rejects
+     anything that isn't exactly `0x68`
+     (`Adafruit_MPU6050.cpp`'s `begin()`: `if (chip_id.read() !=
+     MPU6050_DEVICE_ID) return false;`). The module bought and labeled
+     "MPU6050" is actually a rebadged MPU6500 — extremely common in the
+     cheap sensor market, register-compatible with the real MPU6050 for
+     power management and raw accel/gyro output (which is exactly why
+     both the bench sketch and the raw address probe above always
+     worked), just reporting a different identity. Fix: replaced
+     `Adafruit_MPU6050` for this sensor entirely with a small raw
+     register driver (`mpuBegin()`/`mpuReadMotion()` — wake via
+     `PWR_MGMT_1`, configure ±4g/±500dps range registers directly, one
+     14-byte burst read from `ACCEL_XOUT_H` converted to the same m/s²/
+     rad/s units the library produced) that never checks WHO_AM_I,
+     logging it once at boot purely for future-diagnostic visibility
+     instead. Confirmed against real physical values (not just a
+     non-error return) before calling it done: ~10 m/s² on the Z axis
+     and near-zero on X/Y/gyro while sitting still, matching gravity and
+     matching the bench sketch's own readings. The I2C-bus isolation
+     from step 2 was kept anyway (harmless, and rules out bus-sharing as
+     a variable for any future sensor issue) even though it wasn't the
+     actual fix.
+- **Threshold, swept properly this time.** The version of this model
+  shipped before the original MPU6050 died used an unvalidated 0.7/0.4
+  combined rule (see below) — re-ran the same real sweep methodology the
+  phone-only threshold used against the held-out test set. Unlike
+  phone-only, there's no cheap-recall "knee" (precision stays flat,
+  ~55-61%, across the whole 0.3-0.8 range) — kept the model's own
+  natural 0.5 boundary (`FallInference.wristPhoneThreshold`) rather than
+  picking an arbitrary point on a flat curve: 57.6% precision / 89.8%
+  recall. See `ml/README.md`'s "Wrist+phone model" section for the full
+  sweep table. No corroboration heuristic is gated on for watch mode
+  either, same reasoning as phone-only above.
+
+Original wrist+phone design: a small 1D-CNN fuses the wearable's wrist
 motion (streaming over BLE at 20Hz) with the phone's own accelerometer
 for a second, independent view of the same physical event — a wrist-only
 signal can't easily tell "arm swung hard" from "whole body fell," but a
@@ -283,10 +382,13 @@ synchronized phone signal resolves that ambiguity.
   dataset anywhere pairs wrist + phone-gyro for the same falls. Training a
   channel that's always zero would leave its weights at random
   initialization, worse than omitting it.
-- **The phone's real gyroscope isn't wasted**, though: a fast phone
-  rotation is itself physical evidence of a tumble, so it corroborates a
-  borderline CNN score via a rule-based check rather than a fabricated
-  trained input — see `fall_detector_service.dart`.
+- **The phone's real gyroscope isn't a trained input for this model**
+  (no dataset pairs wrist + phone-gyro, per above), and — unlike the
+  version of this model shipped before the original MPU6050 died —
+  isn't used as rule-based corroboration either any more. That combined-
+  rule approach was never validated against real held-out data; the
+  current watch mode gates on the CNN threshold/consecutive-count alone,
+  same as phone-only, for the same reason (see the "Update" above).
 - **Two unit mismatches** were found by inspecting raw values (not just
   docs) and corrected during training data prep: the dataset's
   accelerometer is in **G** and gyroscope in **deg/s**; `Adafruit_MPU6050`
@@ -298,9 +400,11 @@ synchronized phone signal resolves that ambiguity.
   1-2s) — see `ml/README.md` for how a live hardware test caught this the
   first time around. Held-out test performance (subjects never seen in
   training): 94% accuracy, 58% fall precision, 90% fall recall — a real,
-  honest result from a 19-subject dataset, not a clinical-grade guarantee,
-  and this version's threshold choice (below) predates the labeling fix
-  and should be revisited before this model is put back into the app.
+  honest result from a 19-subject dataset, not a clinical-grade
+  guarantee. The threshold used at the time predated the labeling fix
+  and was never properly swept — since revisited (0.5, see the "Update"
+  above and `ml/README.md`'s "Wrist+phone model" section for the full
+  sweep table) once this model went back into the app.
 - Full pipeline (`ml/download_dataset.py` → `prepare_windows.py` →
   `train_fall_model.py` → `convert_to_tflite.py`) and rationale in
   `ml/README.md`. Output: `app/health_companion/assets/models/fall_detector.tflite`.
