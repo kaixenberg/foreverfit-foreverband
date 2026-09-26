@@ -10,6 +10,77 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full system design, BLE
 protocol spec, and the roadmap for ML-based anomaly detection, disaster
 heuristics, offline maps, and SOS.
 
+## Screenshots
+
+Real screens from the Android build running on a physical phone (full-size
+images in [`docs/screenshots/`](docs/screenshots/)).
+
+<table>
+  <tr>
+    <td align="center" valign="top" width="33%">
+      <img src="docs/screenshots/01-dashboard.jpg" width="220" alt="Dashboard"><br>
+      <b>Dashboard</b><br>
+      <sub>Live insights (flood risk, hydration and medication reminders), the disaster-map card, and the vitals grid; the low body temperature is flagged in red</sub>
+    </td>
+    <td align="center" valign="top" width="33%">
+      <img src="docs/screenshots/02-disaster-map.jpg" width="220" alt="Disaster risk map"><br>
+      <b>Disaster risk map</b><br>
+      <sub>GPS-centred offline map with a heavy-rain warning, the state's seismic zone, cyclone/flood-prone flags, and live rain, wind and AQI</sub>
+    </td>
+    <td align="center" valign="top" width="33%">
+      <img src="docs/screenshots/03-wellness-detail.jpg" width="220" alt="Wellness breakdown"><br>
+      <b>Wellness breakdown</b><br>
+      <sub>The transparent wellness score, signal by signal; HR and SpO2 show "Still measuring" while the MAX30102 settles instead of a fake value</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" valign="top" width="33%">
+      <img src="docs/screenshots/04-weight-history.jpg" width="220" alt="Weight history"><br>
+      <b>Weight history</b><br>
+      <sub>Shared metric-history screen: time-period presets, custom range, avg/range/change summary, and chart with a trend line</sub>
+    </td>
+    <td align="center" valign="top" width="33%">
+      <img src="docs/screenshots/05-steps-history.jpg" width="220" alt="Steps history"><br>
+      <b>Steps history</b><br>
+      <sub>Daily step counts from the phone's hardware step counter over time</sub>
+    </td>
+    <td align="center" valign="top" width="33%">
+      <img src="docs/screenshots/06-body-fat-history.jpg" width="220" alt="Body fat history"><br>
+      <b>Body fat history</b><br>
+      <sub>Body fat derived from BMI, age and sex (Deurenberg formula), with statistics</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" valign="top" width="33%">
+      <img src="docs/screenshots/07-body-and-activity.jpg" width="220" alt="Wellness overview and body & activity"><br>
+      <b>Wellness overview and body & activity</b><br>
+      <sub>Activity from the on-device CNN, personal heart-rate baseline, steps, weight, height, BMI, body fat, and hydration</sub>
+    </td>
+    <td align="center" valign="top" width="33%">
+      <img src="docs/screenshots/08-health-log.jpg" width="220" alt="Health log"><br>
+      <b>Health log</b><br>
+      <sub>Blood pressure, blood glucose, insulin, sleep, medications, and the menstrual cycle card (greyed out for male profiles)</sub>
+    </td>
+    <td align="center" valign="top" width="33%">
+      <img src="docs/screenshots/09-ai-assistant.jpg" width="220" alt="Offline AI assistant"><br>
+      <b>Offline AI assistant</b><br>
+      <sub>On-device Gemma chat; nothing typed leaves the phone. Supports voice input, attachments, and edit-and-rerun</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" valign="top" width="33%">
+      <img src="docs/screenshots/10-watch-customization.jpg" width="220" alt="Watch customization"><br>
+      <b>Watch customization</b><br>
+      <sub>Choose the ForeverBand OLED face, auto-cycling, 12/24-hour time, seconds, and date format</sub>
+    </td>
+    <td align="center" valign="top" width="33%">
+      <img src="docs/screenshots/11-settings.jpg" width="220" alt="Settings"><br>
+      <b>Settings</b><br>
+      <sub>Profile & medical, units, data backup, wearable, AI assistant, sensor precedence, warnings, emergency, fall detection, permissions, and more</sub>
+    </td>
+  </tr>
+</table>
+
 ## Hardware
 
 - ESP32-S3 N16R8 dev board (16MB flash, 8MB octal PSRAM)
@@ -36,6 +107,7 @@ firmware/health_companion/   Arduino IDE sketch — the wearable firmware
 app/health_companion/        Flutter app — BLE client, dashboard, map, storage
 ml/                          Fall-detection model training pipeline (see ml/README.md)
 ARCHITECTURE.md              Full system design + protocol spec + roadmap
+docs/screenshots/            App screenshots used in this README
 ```
 
 ## Firmware setup
