@@ -5,7 +5,7 @@
 ```
 ┌────────────────────────┐        BLE        ┌──────────────────────────────┐
 │  ESP32-S3 wearable      │ ─── notify ───▶  │  Phone (Flutter app)          │
-│  MAX30101 (HR/SpO2)     │                   │  - BLE central                │
+│  MAX30102 (HR/SpO2)     │                   │  - BLE central                │
 │  MPU6050 (accel/gyro)   │                   │  - on-device inference (CNN)  │
 │  BME280 (env)           │                   │  - local storage (Hive)       │
 │  DS18B20 (body temp)    │                   │  - offline maps               │
@@ -35,7 +35,7 @@ of truth; the firmware (`firmware/health_companion/health_companion.ino`) and ap
 | UUID | Name | Direction | Rate | Layout |
 |---|---|---|---|---|
 | `6e400001-...` | Service | — | — | — |
-| `6e400002-...` | Vitals | notify | ~1 Hz | `uint32 tMs; float heartRate; float spo2; float bodyTempC; uint8 fingerPresent;` (17 bytes) |
+| `6e400002-...` | Vitals | notify | ~1 Hz | `uint32 tMs; float heartRate; float spo2; float bodyTempC; uint8 fingerPresent; uint8 ppgFlags;` (18 bytes; bit0 hrReady, bit1 spo2Ready, bit2 settling, bit3 saturated — see "MAX30102 PPG pipeline" below. The app still accepts 17-byte packets from older firmware, treating contact as ready) |
 | `6e400003-...` | Environment | notify | ~1 Hz | `uint32 tMs; float ambientTempC; float humidity; float pressureHPa;` (16 bytes) |
 | `6e400004-...` | Motion | notify | ~20 Hz | `uint32 tMs; float ax,ay,az; float gx,gy,gz;` (28 bytes) |
 | `6e400005-...` | Time sync | write | on connect + every 5 min | `uint8 hour,minute,second,day,month; uint16 year; uint8 weekday(0=Sun)` (8 bytes) — see "Watch faces + time sync" below |
@@ -46,31 +46,61 @@ enough samples per window (~40–60 samples over 2–3s) to see the
 free-fall-then-impact signature.
 
 **Known limitations to fix as this evolves:**
-- SpO2 is a rough, uncalibrated AC/DC ratio estimate (`110 - 25*R`), not a
-  clinically valid reading — fine for a relative risk signal, not diagnosis.
+- SpO2 is a ratio-of-ratios estimate on Maxim's reference-design curve
+  (`-45.06R² + 30.354R + 94.845`), **uncalibrated for this board** — fine
+  for a relative risk signal, not diagnosis.
 - Body temperature is now a real reading — a DS18B20 on its own 1-Wire GPIO
   (`readBodyTempC()` in `health_companion.ino`), after the MAX30205 on hand
   turned out not to work. Non-blocking: conversion (~750ms) is pipelined
   across the ~1Hz vitals-notify cadence instead of stalling `loop()`, which
   also has to service BLE motion notifies at ~20Hz for fall detection.
-- **HR/SpO2 are spoofed by default** (`USE_DUMMY_HR_SPO2` in
-  `health_companion.ino`, on by default) — a smooth random-walk around a
-  healthy resting range (65-85 bpm, 96-99% SpO2) in place of the real
-  MAX30101 beat-detection algorithm's output. For demo reliability: real
-  skin-contact quality/ambient light can make the real algorithm noisy on
-  stage, and this trades that away
-  for a guaranteed "looks like a healthy wearable" reading. **The real
-  algorithm itself is untouched and still bench-tested** — only the two
-  output variables (`currentBpm`/`currentSpo2`) get overridden in place,
-  right before anything reads them, so flipping `USE_DUMMY_HR_SPO2` to 0
-  goes straight back to the real sensor's output with no other change.
-  Finger-presence detection is real either way (still driven by the
-  actual IR DC baseline) — dummy mode fakes the *numbers*, not "is
-  someone wearing it."
+- **HR/SpO2 are real by default now** (`USE_DUMMY_HR_SPO2` = 0) since the
+  replacement MAX30102 and the v4 PPG pipeline below give mostly reliable
+  readings. The dummy mode is kept as a demo fallback: set it to 1 for a
+  smooth random walk around a healthy resting range (65-85 bpm, 96-99%
+  SpO2). It only overrides the two output values (and marks them ready)
+  while contact is detected — contact detection is real either way.
+
+**MAX30102 PPG pipeline** (`ppgProcessSample()`/`pollHeartRateSensor()` in
+`health_companion.ino`), ported from the bench-tuned standalone sketch
+`max30102_pulse_spo2_v4.ino`; its tuned constants live in the `PPG_*`
+block — change them in the sketch first, bench-verify, then copy across.
+- Sensor config: ~25 mA on Red and IR (equal, so the SpO2 ratio is
+  meaningful), 4-sample averaging, 400 Hz internal → **100 Hz** out,
+  18-bit, 16384 nA range.
+- Contact = raw IR ≥ 10000. On contact: detector reset, **2 s settle**
+  (fast DC tracking), then IR is DC-removed (~0.5 Hz high-pass) and
+  low-passed (~4.5 Hz); beats are rising crossings of an adaptive
+  threshold (half a decaying peak envelope, floor 20 counts) with a
+  refractory period (180 bpm cap), 45–180 bpm range, and outlier
+  rejection (>25% off the running average) unless 3 in a row (a real HR
+  change). SpO2 is computed per good beat from that beat's Red/IR
+  peak-to-peak over DC, R limited to 0.2–1.6.
+- **Nothing is reported until 4 good beats** (`PPG_READY_BEATS`), and HR
+  and SpO2 become ready independently. This is why the vitals packet
+  carries `ppgFlags`: `fingerPresent` alone no longer means "there's a
+  number" — the app shows "settling"/"measuring" (or "adjust fit" when
+  saturated) under the HR/SpO2 cards, and every consumer (warnings,
+  wellness score, insights, emergency summary, AI context, history) uses
+  `VitalsReading.hasHeartRate`/`hasSpo2` instead of `fingerPresent`.
+  The secondary watch face shows the same stages ("settling...",
+  "measuring 2/4", "PPG: too bright").
+- **Timing is counted in sensor samples, never `millis()`**, so BLE/OLED/
+  DS18B20 work in `loop()` can't distort beat intervals.
+- **Watch-specific additions** (the bench sketch only ran on a still
+  finger in a tight loop):
+  - The FIFO is read directly over I2C instead of via the SparkFun
+    library's `check()`, which buffers only 4 samples (40 ms at 100 Hz)
+    and silently overwrites older ones — shorter than one OLED refresh.
+    The chip's own FIFO holds 32 samples (320 ms), and its overflow
+    counter is read too: lost samples advance the sample clock and break
+    the beat interval being timed, so a gap can't produce a bogus BPM.
+  - Staleness: no good beat for 5 s (wrist motion, loose strap) drops
+    back to "measuring" instead of freezing the last average as if live.
 
 **`fingerPresent` flag (fixed a real bias bug)**: the firmware zeroes
-`heartRate`/`spo2` when the MAX30101 doesn't detect finger/wrist contact
-(`FINGER_PRESENT_IR_THRESHOLD`) — the OLED already showed "no finger" in
+`heartRate`/`spo2` when the MAX30102 doesn't detect finger/wrist contact
+(`PPG_FINGER_THRESHOLD`) — the OLED already showed "no finger" in
 that state, but the app had no way to tell "0 because no finger" from "an
 actual reading of 0" until this flag was added. Without it: the Dashboard
 showed a false "Heart rate" warning (0 < the 50bpm floor) whenever the
@@ -85,7 +115,7 @@ skips the HR/SpO2 warning checks entirely in that state.
 **Body temperature is gated on `fingerPresent`, same signal as HR/SpO2 —
 plus its own developer override and a settle-time gate.** It briefly
 wasn't (decoupled entirely from finger contact so a real DS18B20 reading
-wouldn't disappear just because the separate MAX30101/SpO2 sensor was
+wouldn't disappear just because the separate MAX30102/SpO2 sensor was
 down), but that let a watch lying on a table report a plausible-looking,
 completely meaningless "body" temperature and warn on it. `fingerPresent`
 is the only signal this firmware has for "is the watch actually on a
@@ -122,17 +152,20 @@ SpO2 sensor silently killing body temp too) from recurring:
   (folded into `bodyTempWarnEligible`, which both `dashboard_screen.dart`
   and `insight_engine.dart` compute the same way — kept in sync so the
   two never disagree about whether a given reading is warn-worthy).
-- `ble_service.dart`: `_onVitals()` persists a vitals record when
-  *either* `fingerPresent` or `bodyTempC != 0` is true (not `fingerPresent`
-  alone) — still needed because the toggle can make `bodyTempC` real while
-  `fingerPresent` is false. `history_store.dart`'s
+- `ble_service.dart`: `_onVitals()` persists a vitals record when a
+  *ready* HR or SpO2 exists (`hasHeartRate`/`hasSpo2`, not bare contact —
+  the PPG pipeline's settle/measure phase sends zeros) or `bodyTempC != 0`
+  — the latter still needed because the toggle can make `bodyTempC` real
+  while `fingerPresent` is false. `history_store.dart`'s
   `heartRateHistory()`/`spo2History()`/`bodyTempHistory()` each filter
   their own metric's 0 back out, so a record with one signal zeroed
   doesn't plot a fake dip on the other chart.
 - `emergency_summary_builder.dart`'s `_abnormalDurationText` (the walk
   over *historical* records) only checks the body-temp range when
   `bodyTemp != 0` — a missing/zero `bodyTempC` used to default to `0`,
-  which is `< bodyTempLowC` and so always read as "abnormally low."
+  which is `< bodyTempLowC` and so always read as "abnormally low." Same
+  fix for heart rate (`hr > 0`): a body-temp-only record has HR 0, which
+  is below the 50 bpm floor and used to read as "abnormally low" too.
 
 ## On-device fall-detection CNN (implemented — phone and watch modes)
 

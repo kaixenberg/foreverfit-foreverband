@@ -327,14 +327,14 @@ class BleService extends ChangeNotifier with WidgetsBindingObserver {
     if (reading == null) return;
     latestVitals = reading;
     // Persist whenever there's at least one real reading in the packet —
-    // HR/SpO2 (gated on finger contact) or body temp (gated on its own
-    // DS18B20 reading, independent of finger contact, see
-    // readBodyTempC() in health_companion.ino). A record with one signal
-    // zeroed is expected now (e.g. no finger but a valid body temp); the
-    // 0/1 history consumers (sparklines, BaselineService) already filter
-    // their own metric back out rather than assuming every stored record
-    // has every field.
-    if (reading.fingerPresent || reading.bodyTempC != 0) {
+    // a READY HR or SpO2 (contact alone isn't one: the PPG pipeline is
+    // still settling/measuring for the first few seconds of contact) or
+    // body temp (its own DS18B20 gate, see readBodyTempC() in
+    // health_companion.ino). A record with one signal zeroed is expected
+    // (e.g. SpO2 ready a beat after HR); history consumers (sparklines,
+    // BaselineService) already filter their own metric back out rather
+    // than assuming every stored record has every field.
+    if (reading.hasHeartRate || reading.hasSpo2 || reading.bodyTempC != 0) {
       _historyStore.addVitals(reading);
     }
     notifyListeners();

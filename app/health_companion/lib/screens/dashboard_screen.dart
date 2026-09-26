@@ -11,6 +11,7 @@ import '../domain/units.dart';
 import '../ml/activity_classifier_service.dart';
 import '../ml/fall_detector_service.dart';
 import '../models/insight.dart';
+import '../models/sensor_reading.dart';
 import '../models/wellness_snapshot.dart';
 import '../services/baseline_service.dart';
 import '../services/step_counter_service.dart';
@@ -65,10 +66,26 @@ int? _wellnessScore({
   return score.clamp(0, 100);
 }
 
+/// Unit/status text under the HR and SpO2 cards: "no finger" without
+/// contact, a measuring state while the PPG pipeline is still settling or
+/// counting beats (with a fit hint if the LEDs are saturating), otherwise
+/// the plain unit.
+String _ppgUnit(VitalsReading? vitals, String unit, {required bool ready}) {
+  if (vitals == null) return unit;
+  if (!vitals.fingerPresent) return 'no finger';
+  if (!ready) {
+    if (vitals.ppgSaturated) return 'adjust fit';
+    return vitals.ppgSettling ? 'settling' : 'measuring';
+  }
+  return unit;
+}
+
 WellnessSnapshot _buildWellnessSnapshot({
   required int? score,
   required bool connected,
   required bool hasFingerReading,
+  required bool hasHeartRate,
+  required bool hasSpo2,
   required bool hasBodyTempReading,
   required double heartRate,
   required int heartRateCeiling,
@@ -86,19 +103,23 @@ WellnessSnapshot _buildWellnessSnapshot({
     WellnessFactor(
       label: 'Heart rate',
       warn: heartRateWarn,
-      scored: hasFingerReading,
+      scored: hasHeartRate,
       detail: !hasFingerReading
           ? 'No finger detected — not scored right now.'
-          : '${heartRate.toStringAsFixed(0)} bpm (normal range up to '
+          : !hasHeartRate
+              ? 'Still measuring — hold still for a few seconds.'
+              : '${heartRate.toStringAsFixed(0)} bpm (normal range up to '
               '$heartRateCeiling for your current activity).',
     ),
     WellnessFactor(
       label: 'SpO2',
       warn: spo2Warn,
-      scored: hasFingerReading,
+      scored: hasSpo2,
       detail: !hasFingerReading
           ? 'No finger detected — not scored right now.'
-          : '${spo2.toStringAsFixed(0)}% (below 92% is flagged).',
+          : !hasSpo2
+              ? 'Still measuring — hold still for a few seconds.'
+              : '${spo2.toStringAsFixed(0)}% (below 92% is flagged).',
     ),
     WellnessFactor(
       label: 'Body temperature',
@@ -173,12 +194,18 @@ class DashboardScreen extends StatelessWidget {
     final heartRate = vitals?.heartRate ?? 0;
     final spo2 = vitals?.spo2 ?? 0;
     final bodyTemp = vitals?.bodyTempC ?? 0;
-    // The MAX30101 zeroes heartRate/spo2 when it can't see a finger — the
+    // The MAX30102 zeroes heartRate/spo2 when it can't see a finger — the
     // OLED already shows "no finger", so the app needs to too, rather
-    // than reading a 0 as a genuine (and alarming) vital sign.
+    // than reading a 0 as a genuine (and alarming) vital sign. Contact
+    // (hasFingerReading) and a usable value (hasHeartRate/hasSpo2) are
+    // separate: the firmware's PPG pipeline settles for ~2 s and needs 4
+    // good beats before it reports anything, and drops back to measuring
+    // if beats stop (wrist motion) — see VitalsReading.hrReady.
     final hasFingerReading = vitals != null && vitals.fingerPresent;
+    final hasHeartRate = vitals != null && vitals.hasHeartRate;
+    final hasSpo2 = vitals != null && vitals.hasSpo2;
     // Body temp comes from the DS18B20 on its own 1-Wire GPIO, independent
-    // of the MAX30101's finger contact — it has its own "no reading" gate
+    // of the MAX30102's finger contact — it has its own "no reading" gate
     // (0 = sensor unavailable, see readBodyTempC() in health_companion.ino)
     // rather than riding on hasFingerReading.
     final hasBodyTempReading = vitals != null && bodyTemp != 0;
@@ -195,11 +222,11 @@ class DashboardScreen extends StatelessWidget {
         !watchSettings.ignoreBodyTempContactCheck &&
         bodyTempPastEquilibrium;
     final ceiling = heartRateCeiling(currentActivity);
-    final heartRateWarn = hasFingerReading &&
+    final heartRateWarn = hasHeartRate &&
         (heartRate < heartRateFloor ||
             heartRate > ceiling ||
             baseline.isAnomalous(heartRate));
-    final spo2Warn = hasFingerReading && spo2 < spo2FloorPercent && spo2 > 0;
+    final spo2Warn = hasSpo2 && spo2 < spo2FloorPercent;
     final bodyTempWarn = bodyTempWarnEligible &&
         (bodyTemp > bodyTempHighC || bodyTemp < bodyTempLowC);
 
@@ -260,6 +287,8 @@ class DashboardScreen extends StatelessWidget {
       score: wellnessScore,
       connected: connected,
       hasFingerReading: hasFingerReading,
+      hasHeartRate: hasHeartRate,
+      hasSpo2: hasSpo2,
       hasBodyTempReading: hasBodyTempReading,
       heartRate: heartRate,
       heartRateCeiling: ceiling,
@@ -347,11 +376,8 @@ class DashboardScreen extends StatelessWidget {
                 children: [
                   MetricCard(
                     label: 'Heart rate',
-                    value:
-                        hasFingerReading ? heartRate.toStringAsFixed(0) : '--',
-                    unit: vitals != null && !hasFingerReading
-                        ? 'no finger'
-                        : 'bpm',
+                    value: hasHeartRate ? heartRate.toStringAsFixed(0) : '--',
+                    unit: _ppgUnit(vitals, 'bpm', ready: hasHeartRate),
                     icon: Icons.favorite,
                     warn: heartRateWarn,
                     accentColor: AppTheme.accentPink,
@@ -362,9 +388,8 @@ class DashboardScreen extends StatelessWidget {
                   ),
                   MetricCard(
                     label: 'SpO2',
-                    value: hasFingerReading ? spo2.toStringAsFixed(0) : '--',
-                    unit:
-                        vitals != null && !hasFingerReading ? 'no finger' : '%',
+                    value: hasSpo2 ? spo2.toStringAsFixed(0) : '--',
+                    unit: _ppgUnit(vitals, '%', ready: hasSpo2),
                     icon: Icons.bloodtype,
                     warn: spo2Warn,
                     accentColor: AppTheme.accentBlue,

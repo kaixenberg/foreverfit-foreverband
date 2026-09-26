@@ -21,8 +21,18 @@ class HealthCompanionProtocol {
   static const String deviceName = 'ForeverBand';
 
   /// VitalsPacket: uint32 tMs; float heartRate; float spo2; float bodyTempC;
-  /// uint8 fingerPresent;
+  /// uint8 fingerPresent; uint8 ppgFlags (see the ppgFlag* bits below).
+  /// 17 bytes = firmware from before the MAX30102 PPG pipeline (no flags
+  /// byte) — still accepted, treating contact as "ready" the way that
+  /// firmware did.
   static const int vitalsPacketLength = 17;
+  static const int vitalsPacketLengthWithPpgFlags = 18;
+
+  /// ppgFlags bits — MUST match PPG_FLAG_* in health_companion.ino.
+  static const int ppgFlagHrReady = 1 << 0;
+  static const int ppgFlagSpo2Ready = 1 << 1;
+  static const int ppgFlagSettling = 1 << 2;
+  static const int ppgFlagSaturated = 1 << 3;
 
   /// EnvPacket: uint32 tMs; float ambientTempC; float humidity; float pressureHPa;
   static const int envPacketLength = 16;
@@ -65,13 +75,20 @@ class HealthCompanionProtocol {
   static VitalsReading? parseVitals(List<int> bytes) {
     if (bytes.length < vitalsPacketLength) return null;
     final data = ByteData.sublistView(Uint8List.fromList(bytes));
+    final fingerPresent = data.getUint8(16) != 0;
+    final hasFlags = bytes.length >= vitalsPacketLengthWithPpgFlags;
+    final flags = hasFlags ? data.getUint8(17) : 0;
     return VitalsReading(
       deviceTimeMs: data.getUint32(0, Endian.little),
       receivedAt: DateTime.now(),
       heartRate: data.getFloat32(4, Endian.little),
       spo2: data.getFloat32(8, Endian.little),
       bodyTempC: data.getFloat32(12, Endian.little),
-      fingerPresent: data.getUint8(16) != 0,
+      fingerPresent: fingerPresent,
+      hrReady: hasFlags ? flags & ppgFlagHrReady != 0 : fingerPresent,
+      spo2Ready: hasFlags ? flags & ppgFlagSpo2Ready != 0 : fingerPresent,
+      ppgSettling: flags & ppgFlagSettling != 0,
+      ppgSaturated: flags & ppgFlagSaturated != 0,
     );
   }
 

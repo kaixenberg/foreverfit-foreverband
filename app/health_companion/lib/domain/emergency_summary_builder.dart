@@ -54,11 +54,10 @@ EmergencySummary buildEmergencySummary({
   required String triggerReason,
 }) {
   final vitals = ble.latestVitals;
-  final hasFingerReading = vitals != null && vitals.fingerPresent;
   // Body temp comes from the DS18B20 on its own 1-Wire GPIO, independent of
-  // the MAX30101's finger contact — its own "no reading" gate is 0°C
+  // the MAX30102's finger contact — its own "no reading" gate is 0°C
   // (sensor unavailable, see readBodyTempC() in health_companion.ino)
-  // rather than hasFingerReading.
+  // rather than finger contact.
   final hasBodyTempReading = vitals != null && vitals.bodyTempC != 0;
   // Same warn-eligibility gate as dashboard_screen.dart/insight_engine.dart
   // — an emergency call is exactly the wrong place to read out an
@@ -72,7 +71,10 @@ EmergencySummary buildEmergencySummary({
       bodyTempPastEquilibrium;
   final readings = <EmergencyReading>[];
 
-  if (hasFingerReading) {
+  // Only READY values — contact alone isn't a reading (the PPG pipeline
+  // settles and counts beats first), and a spoken emergency summary is the
+  // worst place to read out a half-measured number.
+  if (vitals != null && vitals.hasHeartRate) {
     final hr = vitals.heartRate;
     // No live activity context available at emergency-summary time — the
     // resting/"still" ceiling is the neutral default here, not a claim
@@ -84,7 +86,9 @@ EmergencySummary buildEmergencySummary({
         valueText: '${hr.toStringAsFixed(0)} beats per minute',
       ));
     }
-    if (vitals.spo2 > 0 && vitals.spo2 < spo2FloorPercent) {
+  }
+  if (vitals != null && vitals.hasSpo2) {
+    if (vitals.spo2 < spo2FloorPercent) {
       readings.add(EmergencyReading(
         label: 'oxygen saturation',
         valueText: '${vitals.spo2.toStringAsFixed(0)} percent',
@@ -145,8 +149,9 @@ String? _abnormalDurationText(List<Map> vitalsRecords) {
     final hr = (record['heartRate'] as num?)?.toDouble() ?? 0;
     final spo2 = (record['spo2'] as num?)?.toDouble() ?? 0;
     final bodyTemp = (record['bodyTempC'] as num?)?.toDouble() ?? 0;
-    final abnormal = hr < heartRateFloor ||
-        hr > heartRateCeiling(null) ||
+    // 0 = no HR in that record (e.g. a body-temp-only record), not a
+    // dangerously low heart rate.
+    final abnormal = (hr > 0 && (hr < heartRateFloor || hr > heartRateCeiling(null))) ||
         (spo2 > 0 && spo2 < spo2FloorPercent) ||
         (bodyTemp != 0 &&
             (bodyTemp > bodyTempHighC || bodyTemp < bodyTempLowC));

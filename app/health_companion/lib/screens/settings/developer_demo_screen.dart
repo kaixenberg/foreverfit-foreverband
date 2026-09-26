@@ -77,7 +77,7 @@ class DeveloperDemoScreen extends StatelessWidget {
                     "could just be the watch lying on a table — you'll "
                     'still see the raw number, just no warning from it.'
                 : 'ON (default) — body temp only counts as a real reading '
-                    'once the MAX30101 also detects finger/wrist contact, '
+                    'once the MAX30102 also detects finger/wrist contact, '
                     'same signal HR/SpO2 already use, plus a 1-minute '
                     "settle time after connecting for the DS18B20 to reach "
                     "the wrist's temperature. Prevents a false low/high "

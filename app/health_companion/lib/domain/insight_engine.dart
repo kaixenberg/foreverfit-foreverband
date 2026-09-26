@@ -27,11 +27,10 @@ List<Insight> computeInsights({
   final insights = <Insight>[];
 
   final vitals = ble.latestVitals;
-  final hasFingerReading = vitals != null && vitals.fingerPresent;
   // Body temp comes from the DS18B20 on its own 1-Wire GPIO, independent of
-  // the MAX30101's finger contact — its own "no reading" gate is 0°C
+  // the MAX30102's finger contact — its own "no reading" gate is 0°C
   // (sensor unavailable, see readBodyTempC() in health_companion.ino)
-  // rather than hasFingerReading.
+  // rather than finger contact.
   final hasBodyTempReading = vitals != null && vitals.bodyTempC != 0;
   // Only warn on body temp when contact is confirmed (or the developer
   // override is off) and the DS18B20 has had time to reach thermal
@@ -46,7 +45,9 @@ List<Insight> computeInsights({
       bodyTempPastEquilibrium;
 
   // --- Vitals / wellness -------------------------------------------------
-  if (hasFingerReading) {
+  // Contact alone isn't a reading — HR/SpO2 are only warn-worthy once the
+  // firmware's PPG pipeline has settled and counted enough beats.
+  if (vitals != null && vitals.hasHeartRate) {
     final heartRate = vitals.heartRate;
     final ceiling = heartRateCeiling(currentActivity);
     if (heartRate < heartRateFloor || heartRate > ceiling) {
@@ -72,8 +73,10 @@ List<Insight> computeInsights({
         icon: Icons.show_chart,
       ));
     }
+  }
 
-    if (vitals.spo2 > 0 && vitals.spo2 < spo2FloorPercent) {
+  if (vitals != null && vitals.hasSpo2) {
+    if (vitals.spo2 < spo2FloorPercent) {
       insights.add(Insight(
         id: 'vitals.spo2.low',
         title: 'Low SpO2',

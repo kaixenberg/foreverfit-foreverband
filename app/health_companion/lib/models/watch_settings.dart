@@ -44,7 +44,7 @@ class WatchSettings {
 
   /// Developer/demo override: when true, body temp (DS18B20) is reported
   /// and shown — on both the watch and the app — without requiring the
-  /// MAX30101 to also detect finger/wrist contact. Off by default: a
+  /// MAX30102 to also detect finger/wrist contact. Off by default: a
   /// watch lying on a table would otherwise report a plausible-looking
   /// but meaningless "body" temperature. While this is on, the app
   /// suppresses the low/high body-temp WARNING outright rather than

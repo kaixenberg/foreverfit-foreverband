@@ -13,20 +13,21 @@ heuristics, offline maps, and SOS.
 ## Hardware
 
 - ESP32-S3 N16R8 dev board (16MB flash, 8MB octal PSRAM)
-- MAX30101 — heart rate & SpO2 (real finger-presence detection; the BPM/
-  SpO2 numbers themselves are spoofed to a healthy resting range by
-  default for demo reliability — `USE_DUMMY_HR_SPO2` in
-  `health_companion.ino`, flip to 0 for the real bench-tested algorithm)
+- MAX30102 — heart rate & SpO2, real readings via a PPG pipeline ported
+  from the bench-tuned `max30102_pulse_spo2_v4.ino` sketch (2 s settle,
+  then 4 good beats before any value is reported — see ARCHITECTURE.md's
+  "MAX30102 PPG pipeline"); `USE_DUMMY_HR_SPO2` in `health_companion.ino`
+  (off by default) is kept as a demo fallback
 - DS18B20 — body temperature, on its own 1-Wire GPIO (replaced the
   MAX30205, which never worked on this build), see `readBodyTempC()` in
   `health_companion.ino` — only reported while a finger is present, same
   as HR/SpO2
-- MPU6050 — accelerometer & gyroscope (**dead on this breadboard build** —
-  confirmed via I2C scan; app's fall detector currently runs on phone-only
-  motion data instead, see `ARCHITECTURE.md`)
+- MPU6050 — accelerometer & gyroscope (replacement module is actually a
+  rebadged MPU6500, read with a small raw-register driver on its own I2C
+  bus, SDA → GPIO 5, SCL → GPIO 6 — see ARCHITECTURE.md)
 - BME280 — ambient temperature, humidity, pressure
 - 0.96" SSD1306 OLED display
-- I²C bus shared by all four sensors: SDA → GPIO 8, SCL → GPIO 9
+- Main I²C bus (MAX30102, BME280, OLED): SDA → GPIO 8, SCL → GPIO 9
 
 ## Repo layout
 
@@ -59,6 +60,7 @@ Built with **Arduino IDE** + **ESP32 Arduino Core 3.3.11**.
    - `Adafruit SSD1306`
    - `Adafruit GFX Library`
    - `SparkFun MAX3010x Pulse and Proximity Sensor Library`
+   - `OneWire` and `DallasTemperature` (DS18B20)
 3. Open `firmware/health_companion/health_companion.ino`. The wiring config
    block near the top (`I2C_SDA`, `I2C_SCL`, `OLED_I2C_ADDR`,
    `BME280_I2C_ADDR`) already matches the wiring above — only change it if
@@ -439,3 +441,13 @@ tiles + a static state-level hazard baseline) and prefers live data
       detection window spanning ~400ms of real time instead of the
       trained ~3000ms. Throttled to the intended rate. See
       ARCHITECTURE.md
+- [x] Real HR/SpO2 from a replacement MAX30102: the bench-tuned v4 PPG
+      pipeline is ported into the firmware (sample-clock timing, adaptive
+      beat threshold, outlier rejection, per-beat ratio-of-ratios SpO2),
+      plus two watch-specific fixes — direct FIFO reads with overflow
+      handling (the SparkFun library only buffers 40 ms) and a 5 s
+      staleness reset. The vitals packet gains a `ppgFlags` byte (HR/SpO2
+      ready, settling, saturated) so the app and the secondary watch face
+      show "settling"/"measuring" instead of a half-formed number, and
+      only ready values are warned on, scored, stored, or spoken — see
+      ARCHITECTURE.md's "MAX30102 PPG pipeline"

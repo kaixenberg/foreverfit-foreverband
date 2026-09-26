@@ -1,7 +1,8 @@
 // ForeverFit — "ForeverBand" wearable firmware (ESP32-S3)
 //
-// Reads MAX30101 (HR/SpO2 — real finger-presence detection, optionally
-// dummy/spoofed BPM+SpO2 values, see USE_DUMMY_HR_SPO2), MPU6050
+// Reads MAX30102 (HR/SpO2 — PPG pipeline ported from the bench-tuned
+// max30102_pulse_spo2_v4.ino sketch, see PPG_SAMPLE_RATE; optional
+// dummy values, see USE_DUMMY_HR_SPO2), MPU6050
 // (accel/gyro — on its own isolated I2C bus, `Wire1`/MPU_SDA/MPU_SCL,
 // not the main bus with everything else below, and read with a small
 // raw-register driver rather than Adafruit_MPU6050 — see `MPU_SDA`'s
@@ -41,7 +42,7 @@
 
 // MPU6050 gets its own I2C bus (the ESP32-S3's second hardware I2C
 // peripheral, `Wire1`) instead of sharing SDA/SCL above with BME280/
-// MAX30101/OLED — isolating it from the other 3 devices was the first
+// MAX30102/OLED — isolating it from the other 3 devices was the first
 // thing tried while diagnosing a consistent (every attempt, not
 // intermittent) `Adafruit_MPU6050::begin()` failure. Turned out not to
 // be the actual cause (a live WHO_AM_I register readback on this exact
@@ -66,22 +67,14 @@
 // here to toggle between the primary and secondary watch faces.
 #define BOOT_BUTTON_PIN 0
 
-// IR DC-baseline magnitude below which we treat the sensor as "no
-// finger/wrist contact". 50000 matches SparkFun/Maxim's own MAX3010x
-// reference examples; watch the "[HR] IRdc=..." serial debug line and
-// adjust this if your specific board's LED coupling runs noticeably higher
-// or lower at rest.
-#define FINGER_PRESENT_IR_THRESHOLD 50000
 
 // Spoofs HR/SpO2 to a plausible healthy resting range instead of the real
-// MAX30101 beat-detection output — for demo reliability, since skin
-// contact quality/ambient light can make the real algorithm noisy on
-// stage. Real finger-presence detection (FINGER_PRESENT_IR_THRESHOLD,
-// still driven by actual IR DC baseline) is UNCHANGED and still gates
-// this: no finger still means no reading, same as the real sensor path —
-// only the computed BPM/SpO2 numbers are fake, not "is someone wearing
-// it." Set to 0 to use the real bench-tested algorithm's output instead.
-#define USE_DUMMY_HR_SPO2 1
+// MAX30102 PPG output — a demo fallback for when skin contact/ambient
+// light make the real pipeline unusable on stage. Real contact detection
+// (PPG_FINGER_THRESHOLD) still gates it: no finger still means no reading;
+// only the BPM/SpO2 numbers are fake. Off now that the replacement
+// MAX30102 + the v4 pipeline give mostly reliable real readings.
+#define USE_DUMMY_HR_SPO2 0
 
 // ---------------------------------------------------------------------------
 // BLE — custom "ForeverBand" service: three notify characteristics plus two
@@ -108,12 +101,21 @@ struct __attribute__((packed)) VitalsPacket {
   float heartRate;
   float spo2;
   float bodyTempC;
-  uint8_t fingerPresent; // 0/1 — see FINGER_PRESENT_IR_THRESHOLD above.
+  uint8_t fingerPresent; // 0/1 — skin contact (PPG_FINGER_THRESHOLD).
                           // Without this the app can't tell "0 bpm because
                           // no finger" from an actual reading of 0, which
                           // both looks like a false medical warning and
                           // would bias any stats computed from history.
+  uint8_t ppgFlags;       // PPG_FLAG_* bits below. Contact alone isn't a
+                          // reading: the pipeline needs ~2 s to settle and
+                          // PPG_READY_BEATS good beats before HR/SpO2 mean
+                          // anything, and those are 0 until then.
 };
+
+const uint8_t PPG_FLAG_HR_READY = 1 << 0;
+const uint8_t PPG_FLAG_SPO2_READY = 1 << 1;
+const uint8_t PPG_FLAG_SETTLING = 1 << 2;
+const uint8_t PPG_FLAG_SATURATED = 1 << 3; // LED too bright for this fit/skin
 
 struct __attribute__((packed)) EnvPacket {
   uint32_t tMs;
@@ -154,7 +156,7 @@ struct __attribute__((packed)) WatchSettingsPacket {
   // Developer/demo override — bypasses the fingerPresent contact check
   // that otherwise gates body temp (see readBodyTempC() below). Off by
   // default: body temp normally only counts as a real reading while the
-  // MAX30101 also detects contact, since it's the only way this firmware
+  // MAX30102 also detects contact, since it's the only way this firmware
   // has to tell "on a wrist" from "lying on a table."
   uint8_t ignoreBodyTempContactCheck; // 0/1
 };
@@ -206,46 +208,97 @@ uint8_t dateFormatSetting = 1; // 1 = weekdayShortWithYear, see formatDate()
 bool showSecondsSetting = false;
 bool ignoreBodyTempContactCheck = false;
 
-// --- HR + SpO2 via DC removal, AC low-pass filtering, and per-beat peak
-// detection. Bench-tested against a standalone reference sketch before
-// being ported in here — see git history for the earlier, less reliable
-// zero-crossing + fixed-window approach this replaces. ---
-float irDC = 0, redDC = 0;
-bool dcInit = false;
-const float DC_ALPHA = 0.05;   // baseline (DC) tracking speed
-const float LP_ALPHA = 0.3;    // AC signal smoothing
+// --- HR + SpO2: MAX30102 PPG pipeline, ported from the bench-tuned
+// standalone sketch max30102_pulse_spo2_v4.ino. Timing is counted in SENSOR
+// SAMPLES (100 Hz from the chip's own clock), never millis(), so loop()
+// jitter from BLE/OLED/DS18B20 work can't distort beat intervals. The
+// constants below are that sketch's tuned values — change them there first,
+// bench-verify, then copy across. ---
+const float PPG_SAMPLE_RATE = 100.0;          // 400 Hz internal, averaged by 4
+const uint32_t PPG_FINGER_THRESHOLD = 10000;  // raw IR below this = no contact
+const uint32_t PPG_SATURATION_LEVEL = 250000; // 18-bit ADC max is 262143
+const float PPG_SETTLE_SECONDS = 2.0;         // DC baseline settles after contact
+const int PPG_READY_BEATS = 4;                // values only reported after this many good beats
 
-float irACFilt = 0, redACFilt = 0;
-float lastFilteredIr = 0;
-bool rising = false;
-uint32_t lastBeatTime = 0;
-const uint32_t MIN_BEAT_INTERVAL_MS = 300;  // caps at 200bpm, rejects double-triggers
-const uint32_t MAX_BEAT_INTERVAL_MS = 2000; // below 30bpm treat as no-beat
+const float PPG_DC_ALPHA_FAST = 0.05; // baseline tracking while settling
+const float PPG_DC_ALPHA      = 0.03; // afterwards (~0.5 Hz high-pass, follows drift)
+const float PPG_LP_ALPHA      = 0.25; // smoothing (low-pass ~4.5 Hz)
+const float PPG_ENV_DECAY     = 0.995; // how fast the peak envelope forgets old peaks
+const float PPG_MIN_AMPLITUDE = 20;    // absolute floor for the beat threshold (ADC counts)
 
-const int IBI_HISTORY = 2;
-uint32_t ibiHistory[IBI_HISTORY] = {0};
-int ibiIndex = 0;
-int ibiCount = 0;
+const float PPG_MIN_BPM = 45;
+const float PPG_MAX_BPM = 180;
+const uint32_t PPG_REFRACTORY_SAMPLES = (uint32_t)(PPG_SAMPLE_RATE * 60.0 / PPG_MAX_BPM);
 
-// Peak/trough of the filtered signal within the CURRENT beat cycle — ties
-// the AC amplitude used for SpO2 to a real physiological cycle rather than
-// a fixed time window that motion artifact can dominate.
-float irPeakVal = -1e9, irTroughVal = 1e9;
-float redPeakVal = -1e9, redTroughVal = 1e9;
+const float PPG_OUTLIER_FRACTION = 0.25; // beat >25% off the running average is suspect
+const int   PPG_MAX_REJECTS      = 3;    // ...unless it happens this many times in a row (real HR change)
 
-// Rough, UNCALIBRATED SpO2 estimate (standard ratio-of-ratios formula) —
-// fine as a relative risk signal, not a clinically valid reading.
-const int AMP_HISTORY = 5;
-float irAmpHistory[AMP_HISTORY] = {0};
-float redAmpHistory[AMP_HISTORY] = {0};
-float irDCAtBeat[AMP_HISTORY] = {0};
-float redDCAtBeat[AMP_HISTORY] = {0};
-int ampIndex = 0;
-int ampCount = 0;
+// Plausible range for the red/IR ratio-of-ratios R (anything outside is noise).
+const float PPG_R_MIN = 0.2;
+const float PPG_R_MAX = 1.6;
 
+// Watch-specific addition (not in the bench sketch, which only ever sat on
+// a still finger): if no GOOD beat has been accepted for this long — wrist
+// motion, loose strap — drop back to "measuring" instead of freezing the
+// last average on screen and in the app as if it were still live.
+const float PPG_STALE_SECONDS = 5.0;
+
+// One optical channel (IR or Red): DC baseline, filtered AC pulse, and the
+// AC peak-to-peak over the current beat (for SpO2's ratio-of-ratios).
+struct PpgChannel {
+  float dc = 0;
+  float lp = 0;
+  float maxV = -1e9;
+  float minV = 1e9;
+
+  void reset(float x) { dc = x; lp = 0; newWindow(); }
+
+  float update(float x, float alpha) {
+    dc += alpha * (x - dc);
+    float ac = dc - x;              // inverted: more blood = positive
+    lp += PPG_LP_ALPHA * (ac - lp);
+    return lp;
+  }
+
+  void track() {
+    if (lp > maxV) maxV = lp;
+    if (lp < minV) minV = lp;
+  }
+
+  float peakToPeak() { return maxV - minV; }
+  void newWindow() { maxV = -1e9; minV = 1e9; }
+};
+
+PpgChannel irCh, redCh;
+
+float ppgPrevSig = 0, ppgPeakEnv = 0;
+bool ppgArmed = false;
+bool ppgSettledAnnounced = false;
+uint32_t ppgSampleIndex = 0;
+uint32_t ppgLastBeatSample = 0;     // last threshold crossing (accepted or not)
+uint32_t ppgLastGoodBeatSample = 0; // last beat that actually fed the averages
+uint32_t ppgSettleUntil = 0;
+uint32_t ppgLastSaturatedSample = 0;
+bool ppgEverSaturated = false;
+uint32_t ppgLostSamples = 0;        // FIFO overflow count, for the debug line
+
+const int PPG_RATE_SIZE = 6;
+float ppgRates[PPG_RATE_SIZE];
+int ppgRateCount = 0, ppgRateSpot = 0, ppgRejectCount = 0;
+float ppgBpmAvg = 0;
+
+float ppgRValues[PPG_RATE_SIZE];
+int ppgRCount = 0, ppgRSpot = 0;
+float ppgSpo2 = 0;
+
+// Published results — what notifyVitals()/the OLED read. Only non-zero once
+// the matching *Ready flag is true; 0 always means "no value", never a
+// measured 0.
 float currentBpm = 0;
-float currentSpo2 = 0; // 0 = no reading yet / no contact, not a real SpO2 value
+float currentSpo2 = 0;
 bool fingerPresent = false;
+bool hrReady = false;
+bool spo2Ready = false;
 float lastBodyTempC = 36.8;
 
 uint32_t lastVitalsNotify = 0, lastEnvNotify = 0, lastMotionNotify = 0, lastOledUpdate = 0;
@@ -276,8 +329,8 @@ float readBodyTempC() {
 // ---------------------------------------------------------------------------
 // Dummy HR/SpO2 (see USE_DUMMY_HR_SPO2 above) — overrides currentBpm/
 // currentSpo2 in place, right before anything reads them, so neither the
-// real peak-detection algorithm above nor its FIFO draining (still needed
-// every loop to keep the sensor's buffer from overflowing) had to change
+// real PPG pipeline below nor its FIFO draining (still needed every loop
+// to keep the sensor's buffer from overflowing) had to change
 // at all. Same smooth-random-walk-around-a-baseline style as
 // readBodyTempC()'s existing stub. Only overrides while fingerPresent is
 // true — with no finger, the real algorithm has already zeroed both via
@@ -296,6 +349,7 @@ void applyDummyVitalsIfEnabled() {
 
   currentBpm = dummyBpm;
   currentSpo2 = dummySpo2;
+  hrReady = spo2Ready = true;
 }
 
 // ---------------------------------------------------------------------------
@@ -508,9 +562,7 @@ void scanI2CBus(TwoWire& wire, const char* label) {
 // comments) — a retry loop was never actually going to fix that
 // specific issue (consistent failures don't get better on attempt 2),
 // but it's a harmless, standard mitigation to keep for any sensor's
-// occasional bad transaction, and is still exercised by MAX30101 below
-// (separately known-broken hardware right now, unrelated to any of
-// this).
+// occasional bad transaction, and is still used for the MAX30102 below.
 // ---------------------------------------------------------------------------
 bool retrySensorInit(const char* label, int maxAttempts,
                       std::function<bool()> init) {
@@ -637,16 +689,19 @@ void setupSensors() {
   mpuOk = retrySensorInit("MPU6050", 5, [] { return mpuBegin(); });
   Serial.printf("[MPU6050] init %s\n", mpuOk ? "OK" : "FAILED");
 
-  maxOk = retrySensorInit("MAX30101", 5,
+  maxOk = retrySensorInit("MAX30102", 5,
                           [] { return particleSensor.begin(Wire, I2C_SPEED_FAST); });
   if (maxOk) {
-    // ledMode=2 (Red+IR only, no Green); sampleAverage=8 for hardware-level
-    // noise reduction; powerLevel=0x1F sets Red and IR to the SAME current
-    // so the redAc/redDc vs irAc/irDc ratio used for SpO2 is meaningful —
-    // bench-verified to sit in a good unclipped range on this hardware.
-    particleSensor.setup(0x1F, 8, 2, 100, 411, 4096);
+    // Same config as the bench-tuned v4 sketch: ~25 mA on Red and IR
+    // (equal currents keep SpO2's ratio-of-ratios meaningful), 4-sample
+    // averaging, Red+IR only, 400 Hz internal -> 100 Hz out
+    // (PPG_SAMPLE_RATE), 411 us / 18-bit, 16384 nA full scale. If the
+    // "[HR] ... SATURATED" debug line appears, lower Red separately with
+    // particleSensor.setPulseAmplitudeRed().
+    particleSensor.setup(0x7F, 4, 2, 400, 411, 16384);
+    particleSensor.setPulseAmplitudeGreen(0);
   }
-  Serial.printf("[MAX30101] init %s\n", maxOk ? "OK" : "FAILED");
+  Serial.printf("[MAX30102] init %s\n", maxOk ? "OK" : "FAILED");
 
   pinMode(ONE_WIRE_PIN, INPUT_PULLUP);
   ds18b20.begin();
@@ -668,146 +723,253 @@ void setupSensors() {
 }
 
 // ---------------------------------------------------------------------------
-// Turn accumulated beat/amplitude history into currentBpm / currentSpo2.
-// Called after each newly-accepted beat.
+// HR / SpO2 — MAX30102 PPG processing (see the PPG_* constants above).
 // ---------------------------------------------------------------------------
-void recomputeVitalsFromHistory() {
-  if (ibiCount > 0) {
-    uint32_t sum = 0;
-    for (int i = 0; i < ibiCount; i++) sum += ibiHistory[i];
-    float avgIbi = (float)sum / ibiCount;
-    currentBpm = 60000.0f / avgIbi;
+void ppgClearRates() {
+  ppgRateCount = ppgRateSpot = ppgRejectCount = 0;
+  ppgBpmAvg = 0;
+}
+
+void ppgClearSpo2() {
+  ppgRCount = ppgRSpot = 0;
+  ppgSpo2 = 0;
+}
+
+void ppgResetDetector() {
+  ppgPrevSig = ppgPeakEnv = 0;
+  ppgArmed = false;
+  ppgSettledAnnounced = false;
+  ppgLastBeatSample = 0;
+  ppgLastGoodBeatSample = 0;
+  ppgClearRates();
+  ppgClearSpo2();
+}
+
+void ppgAddRate(float r) {
+  ppgRates[ppgRateSpot] = r;
+  ppgRateSpot = (ppgRateSpot + 1) % PPG_RATE_SIZE;
+  if (ppgRateCount < PPG_RATE_SIZE) ppgRateCount++;
+  float sum = 0;
+  for (int i = 0; i < ppgRateCount; i++) sum += ppgRates[i];
+  ppgBpmAvg = sum / ppgRateCount;
+}
+
+// Ratio of ratios over the beat that just ended -> SpO2. Uses Maxim's
+// reference-design empirical curve — UNCALIBRATED for this board, so it's
+// a relative risk signal, not a clinical reading.
+void ppgUpdateSpo2() {
+  float irPP = irCh.peakToPeak();
+  float redPP = redCh.peakToPeak();
+  if (irPP <= 0 || redPP <= 0 || irCh.dc <= 0 || redCh.dc <= 0) return;
+
+  float R = (redPP / redCh.dc) / (irPP / irCh.dc);
+  if (R < PPG_R_MIN || R > PPG_R_MAX) return;
+
+  ppgRValues[ppgRSpot] = R;
+  ppgRSpot = (ppgRSpot + 1) % PPG_RATE_SIZE;
+  if (ppgRCount < PPG_RATE_SIZE) ppgRCount++;
+
+  float sum = 0;
+  for (int i = 0; i < ppgRCount; i++) sum += ppgRValues[i];
+  float rAvg = sum / ppgRCount;
+
+  ppgSpo2 = -45.060 * rAvg * rAvg + 30.354 * rAvg + 94.845;
+  ppgSpo2 = constrain(ppgSpo2, 0.0f, 100.0f);
+}
+
+bool ppgSettling() { return fingerPresent && ppgSampleIndex < ppgSettleUntil; }
+bool ppgSaturatedRecently() {
+  return ppgEverSaturated &&
+         ppgSampleIndex - ppgLastSaturatedSample < (uint32_t)PPG_SAMPLE_RATE;
+}
+
+// Invalidates the beat interval currently being timed, without touching the
+// averages — used after dropped samples, where the next interval would
+// otherwise span a gap of unknown shape.
+void ppgBreakBeatTiming() {
+  ppgLastBeatSample = 0;
+  ppgArmed = false;
+  irCh.newWindow();
+  redCh.newWindow();
+}
+
+void ppgProcessSample(uint32_t red, uint32_t ir) {
+  ppgSampleIndex++;
+
+  // ---------- Contact detection ----------
+  if (ir < PPG_FINGER_THRESHOLD) {
+    if (fingerPresent) {
+      fingerPresent = false;
+      ppgResetDetector();
+    }
+    return;
+  }
+  if (!fingerPresent) {
+    fingerPresent = true;
+    ppgResetDetector();
+    irCh.reset(ir);
+    redCh.reset(red);
+    ppgSettleUntil = ppgSampleIndex + (uint32_t)(PPG_SETTLE_SECONDS * PPG_SAMPLE_RATE);
   }
 
-  if (ampCount >= 1) {
-    float irAmpSum = 0, redAmpSum = 0, irDcSum = 0, redDcSum = 0;
-    for (int i = 0; i < ampCount; i++) {
-      irAmpSum += irAmpHistory[i];
-      redAmpSum += redAmpHistory[i];
-      irDcSum += irDCAtBeat[i];
-      redDcSum += redDCAtBeat[i];
-    }
-    float irAcAvg = irAmpSum / ampCount;
-    float redAcAvg = redAmpSum / ampCount;
-    float irDcAvg = irDcSum / ampCount;
-    float redDcAvg = redDcSum / ampCount;
+  if (ir > PPG_SATURATION_LEVEL || red > PPG_SATURATION_LEVEL) {
+    ppgEverSaturated = true;
+    ppgLastSaturatedSample = ppgSampleIndex;
+  }
 
-    // Guard against divide-by-noise on a too-weak or too-faint signal.
-    if (irAcAvg >= 3 && redAcAvg >= 3 && irDcAvg >= 1000 && redDcAvg >= 1000) {
-      float r = (redAcAvg / redDcAvg) / (irAcAvg / irDcAvg);
-      float spo2 = 110.0f - 25.0f * r;
-      currentSpo2 = constrain(spo2, 0.0f, 100.0f);
+  bool settling = ppgSampleIndex < ppgSettleUntil;
+  float alpha = settling ? PPG_DC_ALPHA_FAST : PPG_DC_ALPHA;
+
+  // ---------- Filtering ----------
+  float sig = irCh.update(ir, alpha); // IR drives beat detection
+  redCh.update(red, alpha);
+
+  if (settling) {
+    ppgPrevSig = sig;
+    return;
+  }
+  if (!ppgSettledAnnounced) {
+    ppgSettledAnnounced = true;
+    ppgLastGoodBeatSample = ppgSampleIndex; // start the staleness clock here
+    irCh.newWindow();
+    redCh.newWindow();
+  }
+
+  irCh.track();
+  redCh.track();
+
+  // ---------- Adaptive threshold ----------
+  ppgPeakEnv *= PPG_ENV_DECAY;
+  if (sig > ppgPeakEnv) ppgPeakEnv = sig;
+  float threshold = max(ppgPeakEnv * 0.5f, PPG_MIN_AMPLITUDE);
+
+  if (sig < 0) ppgArmed = true;
+
+  if (ppgArmed && ppgPrevSig < threshold && sig >= threshold) {
+    uint32_t since = ppgSampleIndex - ppgLastBeatSample;
+    if (ppgLastBeatSample == 0 || since >= PPG_REFRACTORY_SAMPLES) {
+      ppgArmed = false;
+      bool beat = false;
+
+      if (ppgLastBeatSample != 0) {
+        float instBpm = 60.0 * PPG_SAMPLE_RATE / since;
+        if (instBpm >= PPG_MIN_BPM && instBpm <= PPG_MAX_BPM) {
+          bool outlier = ppgRateCount >= 3 &&
+                         fabs(instBpm - ppgBpmAvg) > PPG_OUTLIER_FRACTION * ppgBpmAvg;
+          if (!outlier) {
+            ppgRejectCount = 0;
+            ppgAddRate(instBpm);
+            beat = true;
+          } else if (++ppgRejectCount >= PPG_MAX_REJECTS) {
+            // Several "outliers" in a row = the heart rate really changed.
+            ppgClearRates();
+            ppgAddRate(instBpm);
+            beat = true;
+          }
+        }
+      }
+
+      // One full beat window just ended: use it for SpO2 if the beat was good.
+      if (beat) {
+        ppgUpdateSpo2();
+        ppgLastGoodBeatSample = ppgSampleIndex;
+      }
+      irCh.newWindow();
+      redCh.newWindow();
+      ppgLastBeatSample = ppgSampleIndex;
     }
+  }
+  ppgPrevSig = sig;
+
+  // ---------- Staleness (watch-specific, see PPG_STALE_SECONDS) ----------
+  if (ppgSampleIndex - ppgLastGoodBeatSample >
+      (uint32_t)(PPG_STALE_SECONDS * PPG_SAMPLE_RATE)) {
+    ppgClearRates();
+    ppgClearSpo2();
+    ppgLastGoodBeatSample = ppgSampleIndex;
   }
 }
 
-void resetHrSpo2State() {
-  currentBpm = 0;
-  currentSpo2 = 0;
-  ibiCount = 0;
-  ibiIndex = 0;
-  ampCount = 0;
-  ampIndex = 0;
-  irACFilt = redACFilt = 0;
-  lastFilteredIr = 0;
-  rising = false;
-  lastBeatTime = 0;
-  irPeakVal = redPeakVal = -1e9;
-  irTroughVal = redTroughVal = 1e9;
+// Reads the MAX30102's FIFO directly instead of via MAX30105::check() —
+// the SparkFun library buffers only 4 samples (STORAGE_SIZE), i.e. 40 ms at
+// 100 Hz, and silently overwrites older ones, while this loop also does
+// OLED/DS18B20/BLE work that can take longer than that. The chip's own FIFO
+// holds 32 samples (320 ms), and its overflow counter says exactly how many
+// were lost if even that runs out, so beat timing can be protected.
+const uint8_t MAX3010X_ADDR = 0x57;
+const uint8_t REG_FIFO_WR_PTR = 0x04;
+const uint8_t REG_FIFO_OVF = 0x05;
+const uint8_t REG_FIFO_RD_PTR = 0x06;
+const uint8_t REG_FIFO_DATA = 0x07;
+const int PPG_BYTES_PER_SAMPLE = 6; // Red (3 bytes) then IR (3 bytes), ledMode 2
+
+bool max3010xReadReg(uint8_t reg, uint8_t& out) {
+  Wire.beginTransmission(MAX3010X_ADDR);
+  Wire.write(reg);
+  if (Wire.endTransmission(false) != 0) return false;
+  if (Wire.requestFrom(MAX3010X_ADDR, (uint8_t)1) != 1) return false;
+  out = Wire.read();
+  return true;
 }
 
-// ---------------------------------------------------------------------------
-// HR / SpO2 sampling — drains the sensor's FIFO every loop iteration so no
-// samples are dropped. DC-removal + peak detection adapted from a
-// bench-tested reference sketch (06_hr_spo2_fast_readout.ino).
-// ---------------------------------------------------------------------------
+// One 3-byte, MSB-first FIFO value. Separate statements on purpose: the
+// order operands of `|` are evaluated in is unspecified in C++, so three
+// Wire.read() calls in one expression could assemble bytes out of order.
+uint32_t readFifo18Bit() {
+  uint32_t v = (uint32_t)Wire.read() << 16;
+  v |= (uint32_t)Wire.read() << 8;
+  v |= (uint32_t)Wire.read();
+  return v & 0x3FFFF;
+}
+
 void pollHeartRateSensor() {
   if (!maxOk) return;
 
-  particleSensor.check();
-
-  while (particleSensor.available()) {
-    long irRaw = particleSensor.getFIFOIR();
-    long redRaw = particleSensor.getFIFORed();
-    particleSensor.nextSample();
-
-    // --- DC tracking (slow EMA = baseline) ---
-    if (!dcInit) {
-      irDC = irRaw;
-      redDC = redRaw;
-      dcInit = true;
-    }
-    irDC += (irRaw - irDC) * DC_ALPHA;
-    redDC += (redRaw - redDC) * DC_ALPHA;
-
-    fingerPresent = irDC >= FINGER_PRESENT_IR_THRESHOLD;
-    if (!fingerPresent) {
-      resetHrSpo2State();
-      continue;
-    }
-
-    float irACraw = irRaw - irDC;
-    float redACraw = redRaw - redDC;
-
-    // --- Light smoothing on the AC component to reduce sample noise ---
-    irACFilt += (irACraw - irACFilt) * LP_ALPHA;
-    redACFilt += (redACraw - redACFilt) * LP_ALPHA;
-
-    // --- track peak/trough of THIS beat cycle for both channels (for SpO2) ---
-    if (irACFilt > irPeakVal) irPeakVal = irACFilt;
-    if (irACFilt < irTroughVal) irTroughVal = irACFilt;
-    if (redACFilt > redPeakVal) redPeakVal = redACFilt;
-    if (redACFilt < redTroughVal) redTroughVal = redACFilt;
-
-    // --- Peak detection on filtered IR AC signal ---
-    float delta = irACFilt - lastFilteredIr;
-    if (delta > 0 && !rising) {
-      rising = true;
-    } else if (delta < 0 && rising) {
-      // Local max just occurred -> potential beat.
-      rising = false;
-      uint32_t now = millis();
-      uint32_t interval = now - lastBeatTime;
-
-      if (lastFilteredIr > 5) { // reject near-flat/noise-only cycles
-        if (interval >= MIN_BEAT_INTERVAL_MS && interval <= MAX_BEAT_INTERVAL_MS &&
-            lastBeatTime != 0) {
-          ibiHistory[ibiIndex] = interval;
-          ibiIndex = (ibiIndex + 1) % IBI_HISTORY;
-          if (ibiCount < IBI_HISTORY) ibiCount++;
-
-          float irAmpThisBeat = irPeakVal - irTroughVal;
-          float redAmpThisBeat = redPeakVal - redTroughVal;
-          // A real single-beat AC swing on a DC baseline of this magnitude
-          // is typically tens to low-thousands, not tens of thousands.
-          if (irAmpThisBeat > 0 && irAmpThisBeat < 20000 && redAmpThisBeat > 0 &&
-              redAmpThisBeat < 20000) {
-            irAmpHistory[ampIndex] = irAmpThisBeat;
-            redAmpHistory[ampIndex] = redAmpThisBeat;
-            irDCAtBeat[ampIndex] = irDC;
-            redDCAtBeat[ampIndex] = redDC;
-            ampIndex = (ampIndex + 1) % AMP_HISTORY;
-            if (ampCount < AMP_HISTORY) ampCount++;
-          }
-
-          recomputeVitalsFromHistory();
-        }
-        lastBeatTime = now;
-      }
-      irPeakVal = -1e9;
-      irTroughVal = 1e9;
-      redPeakVal = -1e9;
-      redTroughVal = 1e9;
-    }
-    lastFilteredIr = irACFilt;
+  uint8_t wr, ovf, rd;
+  if (!max3010xReadReg(REG_FIFO_WR_PTR, wr) || !max3010xReadReg(REG_FIFO_OVF, ovf) ||
+      !max3010xReadReg(REG_FIFO_RD_PTR, rd)) {
+    return;
   }
+  int count = (wr - rd) & 0x1F;
+  if (ovf > 0) {
+    // FIFO filled up and rolled over: all 32 slots hold samples (WR == RD
+    // reads as 0 in that case) and `ovf` newer-than-read ones were lost.
+    if (count == 0) count = 32;
+    ppgLostSamples += ovf;
+    ppgSampleIndex += ovf; // keep sample-clock time honest across the gap
+    ppgBreakBeatTiming();
+  }
+
+  while (count > 0) {
+    int chunk = min(count, 21); // 21 * 6 = 126 bytes, under the 128-byte Wire buffer
+    Wire.beginTransmission(MAX3010X_ADDR);
+    Wire.write(REG_FIFO_DATA);
+    if (Wire.endTransmission(false) != 0) return;
+    int bytes = chunk * PPG_BYTES_PER_SAMPLE;
+    if (Wire.requestFrom(MAX3010X_ADDR, (uint8_t)bytes) != bytes) return;
+    for (int i = 0; i < chunk; i++) {
+      uint32_t red = readFifo18Bit();
+      uint32_t ir = readFifo18Bit();
+      ppgProcessSample(red, ir);
+    }
+    count -= chunk;
+  }
+
+  hrReady = fingerPresent && ppgRateCount >= PPG_READY_BEATS;
+  spo2Ready = fingerPresent && ppgRCount >= PPG_READY_BEATS;
+  currentBpm = hrReady ? ppgBpmAvg : 0;
+  currentSpo2 = spo2Ready ? ppgSpo2 : 0;
 
   static uint32_t lastDebugMs = 0;
   uint32_t nowDbg = millis();
-  if (nowDbg - lastDebugMs >= 500) {
+  if (nowDbg - lastDebugMs >= 1000) {
     lastDebugMs = nowDbg;
-    Serial.printf("[HR] IRdc=%.0f Reddc=%.0f finger=%s BPM=%.0f SpO2=%.0f\n", irDC,
-                  redDC, fingerPresent ? "yes" : "no", currentBpm, currentSpo2);
+    Serial.printf("[HR] IRdc=%.0f Reddc=%.0f finger=%s %s beats=%d/%d BPM=%.1f SpO2=%.1f%s lost=%lu\n",
+                  irCh.dc, redCh.dc, fingerPresent ? "yes" : "no",
+                  ppgSettling() ? "settling" : (hrReady ? "ready" : "measuring"),
+                  ppgRateCount, PPG_READY_BEATS, currentBpm, currentSpo2,
+                  ppgSaturatedRecently() ? " SATURATED(lower LED current)" : "",
+                  (unsigned long)ppgLostSamples);
   }
 }
 
@@ -819,7 +981,7 @@ void notifyVitals() {
   pkt.tMs = millis();
   pkt.heartRate = currentBpm;
   pkt.spo2 = currentSpo2;
-  // Body temp is gated on the MAX30101's finger-presence detection, same
+  // Body temp is gated on the MAX30102's finger-presence detection, same
   // as HR/SpO2 — it's the only signal this firmware has for "is the watch
   // actually on a wrist," and a DS18B20 sitting on a table would otherwise
   // report a plausible-looking but meaningless "body" temperature.
@@ -831,6 +993,10 @@ void notifyVitals() {
   lastBodyTempC = (ds18b20Ok && bodyTempContactOk) ? readBodyTempC() : 0;
   pkt.bodyTempC = lastBodyTempC;
   pkt.fingerPresent = fingerPresent ? 1 : 0;
+  pkt.ppgFlags = (hrReady ? PPG_FLAG_HR_READY : 0) |
+                 (spo2Ready ? PPG_FLAG_SPO2_READY : 0) |
+                 (ppgSettling() ? PPG_FLAG_SETTLING : 0) |
+                 (ppgSaturatedRecently() ? PPG_FLAG_SATURATED : 0);
   vitalsChar->setValue((uint8_t*)&pkt, sizeof(pkt));
   if (deviceConnected) vitalsChar->notify();
 }
@@ -987,25 +1153,28 @@ void drawSecondaryFace() {
   display.printf("BLE: %s\n", deviceConnected ? "connected" : "advertising");
   display.println();
 
+  // HR/SpO2 need contact, ~2 s of settling, then PPG_READY_BEATS good
+  // beats before they mean anything — show which stage it's in rather than
+  // a bare "--" or a half-formed number. Hold still while it measures.
   if (!fingerPresent) {
     display.println("HR: -- (no finger)");
     display.println("SpO2: --");
+  } else if (ppgSettling()) {
+    display.println("HR: settling...");
+    display.println("SpO2: hold still");
   } else {
-    // Rolling averages need a few beats before they're a stable reading —
-    // show a loading indicator until each has enough history. Skipped
-    // entirely in dummy mode (USE_DUMMY_HR_SPO2), which has a value from
-    // the first loop iteration with a finger present.
-    if (!USE_DUMMY_HR_SPO2 && ibiCount < IBI_HISTORY) {
-      display.println("HR: ... bpm");
-    } else {
+    if (hrReady) {
       display.printf("HR: %.0f bpm\n", currentBpm);
-    }
-    if (!USE_DUMMY_HR_SPO2 && ampCount < AMP_HISTORY) {
-      display.println("SpO2: ... %");
     } else {
+      display.printf("HR: measuring %d/%d\n", ppgRateCount, PPG_READY_BEATS);
+    }
+    if (spo2Ready) {
       display.printf("SpO2: %.0f %%\n", currentSpo2);
+    } else {
+      display.println("SpO2: ... %");
     }
   }
+  if (ppgSaturatedRecently()) display.println("PPG: too bright");
   // Body temp has its own contact gate (see notifyVitals()) — same
   // fingerPresent/ignoreBodyTempContactCheck logic, own line, own message,
   // not nested under the HR/SpO2 finger check above.
