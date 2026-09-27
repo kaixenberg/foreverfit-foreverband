@@ -32,19 +32,45 @@ public struct EmergencySummary {
 public struct EmergencySummaryBuilder {
     public static func build(
         vitals: VitalsReading?,
+        connectedAt: Date? = nil,
+        watchSettings: WatchSettings = WatchSettings.defaults,
         baseline: BaselineService,
         location: EmergencyLocation,
         triggerReason: String
     ) -> EmergencySummary {
         var readings: [EmergencyReading] = []
 
-        if let v = vitals, v.fingerPresent {
-            if v.heartRate < HealthThresholds.heartRateFloor || v.heartRate > HealthThresholds.restingHeartRateCeiling || baseline.isAnomalous(heartRate: v.heartRate) {
-                readings.append(EmergencyReading(label: "heart rate", valueText: "\(Int(v.heartRate)) beats per minute"))
+        // Body temp comes from the DS18B20 on its own 1-Wire GPIO, independent of
+        // the MAX30102's finger contact — its own "no reading" gate is 0°C
+        // rather than finger contact.
+        let hasBodyTempReading = vitals != nil && vitals!.bodyTempC != 0
+        let bodyTempPastEquilibrium: Bool
+        if let conn = connectedAt {
+            bodyTempPastEquilibrium = Date().timeIntervalSince(conn) >= HealthThresholds.bodyTempEquilibrationWindow
+        } else {
+            bodyTempPastEquilibrium = true
+        }
+        let bodyTempWarnEligible = hasBodyTempReading &&
+            !watchSettings.ignoreBodyTempContactCheck &&
+            bodyTempPastEquilibrium
+
+        // Only READY values — contact alone isn't a reading (the PPG pipeline
+        // settles and counts beats first), and a spoken emergency summary is the
+        // worst place to read out a half-measured number.
+        if let v = vitals, v.hasHeartRate {
+            let hr = v.heartRate
+            if hr < HealthThresholds.heartRateFloor || hr > HealthThresholds.restingHeartRateCeiling || baseline.isAnomalous(heartRate: hr) {
+                readings.append(EmergencyReading(label: "heart rate", valueText: "\(Int(hr)) beats per minute"))
             }
-            if v.spo2 > 0 && v.spo2 < HealthThresholds.spo2FloorPercent {
+        }
+
+        if let v = vitals, v.hasSpo2 {
+            if v.spo2 < HealthThresholds.spo2FloorPercent {
                 readings.append(EmergencyReading(label: "oxygen saturation", valueText: "\(Int(v.spo2)) percent"))
             }
+        }
+
+        if let v = vitals, bodyTempWarnEligible {
             if v.bodyTempC > HealthThresholds.bodyTempHighC || v.bodyTempC < HealthThresholds.bodyTempLowC {
                 readings.append(EmergencyReading(label: "body temperature", valueText: String(format: "%.1f degrees Celsius", v.bodyTempC)))
             }

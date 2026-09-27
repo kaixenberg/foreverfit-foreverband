@@ -11,6 +11,7 @@ public struct HealthThresholds {
 
     public static let bodyTempLowC: Float = 35.5
     public static let bodyTempHighC: Float = 37.8
+    public static let bodyTempEquilibrationWindow: TimeInterval = 60.0
 
     // Standard AHA hypertension thresholds (mmHg)
     public static let bpSystolicHighMmHg = 140
@@ -63,7 +64,11 @@ public struct HealthThresholds {
 
     public static func buildWellnessSnapshot(
         score: Int?,
+        connected: Bool,
         hasFingerReading: Bool,
+        hasHeartRate: Bool,
+        hasSpo2: Bool,
+        hasBodyTempReading: Bool,
         heartRate: Float,
         heartRateCeiling: Float,
         heartRateWarn: Bool,
@@ -71,7 +76,9 @@ public struct HealthThresholds {
         spo2Warn: Bool,
         bodyTemp: Float,
         bodyTempWarn: Bool,
+        ambientDataAvailable: Bool,
         ambientWarn: Bool,
+        heatStressDataAvailable: Bool,
         heatStressWarn: Bool
     ) -> WellnessSnapshot {
         let factors: [WellnessFactor] = [
@@ -80,37 +87,50 @@ public struct HealthThresholds {
                 warn: heartRateWarn,
                 detail: !hasFingerReading
                     ? "No finger detected — not scored right now."
-                    : String(format: "%.0f bpm (normal range up to %.0f for current activity).", heartRate, heartRateCeiling)
+                    : !hasHeartRate
+                        ? "Still measuring — hold still for a few seconds."
+                        : String(format: "%.0f bpm (normal range up to %.0f for current activity).", heartRate, heartRateCeiling),
+                scored: hasHeartRate
             ),
             WellnessFactor(
                 label: "SpO2",
                 warn: spo2Warn,
                 detail: !hasFingerReading
                     ? "No finger detected — not scored right now."
-                    : String(format: "%.0f%% (below 92%% is flagged).", spo2)
+                    : !hasSpo2
+                        ? "Still measuring — hold still for a few seconds."
+                        : String(format: "%.0f%% (below 92%% is flagged).", spo2),
+                scored: hasSpo2
             ),
             WellnessFactor(
                 label: "Body temperature",
                 warn: bodyTempWarn,
-                detail: !hasFingerReading
-                    ? "No finger detected — not scored right now."
-                    : String(format: "%.1f°C (normal range 35.5–37.8°C).", bodyTemp)
+                detail: !hasBodyTempReading
+                    ? "No body-temp reading right now."
+                    : String(format: "%.1f°C (normal range 35.5–37.8°C).", bodyTemp),
+                scored: hasBodyTempReading
             ),
             WellnessFactor(
                 label: "Ambient heat index",
                 warn: ambientWarn,
-                detail: ambientWarn
-                    ? "Feels-like temperature has reached NOAA danger level."
-                    : "Within a safe range."
+                detail: !ambientDataAvailable
+                    ? "No ambient reading right now."
+                    : ambientWarn
+                        ? "Feels-like temperature has reached NOAA danger level."
+                        : "Within a safe range.",
+                scored: ambientDataAvailable
             ),
             WellnessFactor(
                 label: "Heat-stress combination",
                 warn: heatStressWarn,
-                detail: heatStressWarn
-                    ? "High heat index together with an elevated body temperature."
-                    : "No combined heat-stress signal right now."
+                detail: !heatStressDataAvailable
+                    ? "Not enough data to check right now."
+                    : heatStressWarn
+                        ? "High heat index together with an elevated body temperature."
+                        : "No combined heat-stress signal right now.",
+                scored: heatStressDataAvailable
             )
         ]
-        return WellnessSnapshot(score: score, factors: factors)
+        return WellnessSnapshot(score: score, factors: factors, connected: connected)
     }
 }

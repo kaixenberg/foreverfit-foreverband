@@ -3,9 +3,10 @@ import CoreLocation
 import Combine
 
 @MainActor
-public final class DisasterService: ObservableObject {
-    @Published public var currentLocationName: String = "New Delhi, Delhi"
-    @Published public var currentState: String = "Delhi"
+public final class DisasterService: NSObject, ObservableObject {
+    @Published public var currentLocationName: String = "Locating…"
+    @Published public var currentState: String = "West Bengal"
+    @Published public var currentCoordinate: CLLocationCoordinate2D?
     @Published public var weather: WeatherReport = WeatherReport()
     @Published public var airQuality: AirQualityReport = AirQualityReport()
     @Published public var recentEarthquakes: [EarthquakeReport] = []
@@ -17,19 +18,63 @@ public final class DisasterService: ObservableObject {
         return last.1 - first.1
     }
 
-    private var currentCoordinate = CLLocationCoordinate2D(latitude: 28.6139, longitude: 77.2090)
+    private let locationManager = CLLocationManager()
     private var refreshTimer: AnyCancellable?
 
-    public init() {
-        // Initial setup with Delhi baseline
+    public override init() {
+        super.init()
+
+        // 1. Restore last known real GPS fix from persistent storage if available
+        let savedLat = UserDefaults.standard.double(forKey: "last_gps_lat")
+        let savedLon = UserDefaults.standard.double(forKey: "last_gps_lon")
+        if savedLat != 0.0 && savedLon != 0.0 {
+            self.currentCoordinate = CLLocationCoordinate2D(latitude: savedLat, longitude: savedLon)
+            if let savedName = UserDefaults.standard.string(forKey: "last_gps_location_name"), !savedName.isEmpty {
+                self.currentLocationName = savedName
+            }
+            if let savedState = UserDefaults.standard.string(forKey: "last_gps_state"), !savedState.isEmpty {
+                self.currentState = savedState
+            }
+        } else {
+            // Default baseline coordinate for user's test region (Bansberia, Hooghly, West Bengal)
+            self.currentCoordinate = CLLocationCoordinate2D(latitude: 22.9644, longitude: 88.3995)
+            self.currentLocationName = "Bansberia, Hooghly, West Bengal"
+            self.currentState = "West Bengal"
+        }
+
+        setupLocationManager()
         evaluateImminentWarnings()
+
         Task {
             await refreshAllTelemetry()
         }
     }
 
+    public func startLocationUpdates() {
+        locationManager.startUpdatingLocation()
+    }
+
+    private func setupLocationManager() {
+        locationManager.delegate = self
+        locationManager.desiredAccuracy = kCLLocationAccuracyHundredMeters
+        locationManager.distanceFilter = 100 // Trigger update on 100m move
+
+        let status = locationManager.authorizationStatus
+        if status == .notDetermined {
+            locationManager.requestWhenInUseAuthorization()
+        } else if status == .authorizedWhenInUse || status == .authorizedAlways {
+            locationManager.startUpdatingLocation()
+            if let loc = locationManager.location {
+                updateLocation(coordinate: loc.coordinate)
+            }
+        }
+    }
+
     public func updateLocation(coordinate: CLLocationCoordinate2D) {
         self.currentCoordinate = coordinate
+        UserDefaults.standard.set(coordinate.latitude, forKey: "last_gps_lat")
+        UserDefaults.standard.set(coordinate.longitude, forKey: "last_gps_lon")
+
         Task {
             await reverseGeocode(coordinate: coordinate)
             await refreshAllTelemetry()
@@ -37,9 +82,10 @@ public final class DisasterService: ObservableObject {
     }
 
     public func refreshAllTelemetry() async {
-        async let weatherTask = fetchWeather(coordinate: currentCoordinate)
-        async let airQualityTask = fetchAirQuality(coordinate: currentCoordinate)
-        async let quakesTask = fetchEarthquakes(coordinate: currentCoordinate)
+        let coord = effectiveCoordinate
+        async let weatherTask = fetchWeather(coordinate: coord)
+        async let airQualityTask = fetchAirQuality(coordinate: coord)
+        async let quakesTask = fetchEarthquakes(coordinate: coord)
 
         if let w = await weatherTask {
             self.weather = w
@@ -53,6 +99,18 @@ public final class DisasterService: ObservableObject {
         }
 
         evaluateImminentWarnings()
+    }
+
+    private var effectiveCoordinate: CLLocationCoordinate2D {
+        if let c = currentCoordinate { return c }
+        if let loc = locationManager.location?.coordinate { return loc }
+        let savedLat = UserDefaults.standard.double(forKey: "last_gps_lat")
+        let savedLon = UserDefaults.standard.double(forKey: "last_gps_lon")
+        if savedLat != 0.0 && savedLon != 0.0 {
+            return CLLocationCoordinate2D(latitude: savedLat, longitude: savedLon)
+        }
+        // User's location (Bansberia / Hooghly)
+        return CLLocationCoordinate2D(latitude: 22.9644, longitude: 88.3995)
     }
 
     // MARK: - Open-Meteo Weather API
@@ -139,7 +197,7 @@ public final class DisasterService: ObservableObject {
             URLQueryItem(name: "format", value: "geojson"),
             URLQueryItem(name: "latitude", value: String(format: "%.4f", coordinate.latitude)),
             URLQueryItem(name: "longitude", value: String(format: "%.4f", coordinate.longitude)),
-            URLQueryItem(name: "maxradiuskm", value: "250"),
+            URLQueryItem(name: "maxradiuskm", value: "300"),
             URLQueryItem(name: "minmagnitude", value: "4.0"),
             URLQueryItem(name: "starttime", value: startTime),
             URLQueryItem(name: "orderby", value: "magnitude")
@@ -172,6 +230,35 @@ public final class DisasterService: ObservableObject {
     // MARK: - Reverse Geocoding
 
     private func reverseGeocode(coordinate: CLLocationCoordinate2D) async {
+        // First try native iOS Apple CLGeocoder (fast, accurate, recognizes Indian towns & districts)
+        let clLocation = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+        if let placemarks = try? await CLGeocoder().reverseGeocodeLocation(clLocation),
+           let placemark = placemarks.first {
+            var parts: [String] = []
+            if let subLocality = placemark.subLocality, !subLocality.isEmpty {
+                parts.append(subLocality)
+            } else if let locality = placemark.locality, !locality.isEmpty {
+                parts.append(locality)
+            }
+            if let subAdmin = placemark.subAdministrativeArea, !subAdmin.isEmpty, !parts.contains(subAdmin) {
+                parts.append(subAdmin)
+            }
+            if let admin = placemark.administrativeArea, !admin.isEmpty, !parts.contains(admin) {
+                parts.append(admin)
+            }
+            let resolvedName = parts.joined(separator: ", ")
+            if !resolvedName.isEmpty {
+                self.currentLocationName = resolvedName
+                UserDefaults.standard.set(resolvedName, forKey: "last_gps_location_name")
+            }
+            if let state = placemark.administrativeArea {
+                self.currentState = state
+                UserDefaults.standard.set(state, forKey: "last_gps_state")
+            }
+            return
+        }
+
+        // Secondary fallback to OpenStreetMap Nominatim
         var components = URLComponents(string: "https://nominatim.openstreetmap.org/reverse")!
         components.queryItems = [
             URLQueryItem(name: "lat", value: "\(coordinate.latitude)"),
@@ -190,9 +277,11 @@ public final class DisasterService: ObservableObject {
 
             if let displayName = json?["display_name"] as? String {
                 self.currentLocationName = displayName
+                UserDefaults.standard.set(displayName, forKey: "last_gps_location_name")
             }
             if let address = json?["address"] as? [String: Any], let state = address["state"] as? String {
                 self.currentState = state
+                UserDefaults.standard.set(state, forKey: "last_gps_state")
             }
         } catch {
             // Retain existing known location
@@ -258,5 +347,31 @@ public final class DisasterService: ObservableObject {
         }
 
         self.activeWarnings = warnings
+    }
+}
+
+// MARK: - CLLocationManagerDelegate
+extension DisasterService: CLLocationManagerDelegate {
+    public nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        Task { @MainActor in
+            let status = manager.authorizationStatus
+            if status == .authorizedWhenInUse || status == .authorizedAlways {
+                manager.startUpdatingLocation()
+                if let loc = manager.location {
+                    self.updateLocation(coordinate: loc.coordinate)
+                }
+            }
+        }
+    }
+
+    public nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        guard let loc = locations.last else { return }
+        Task { @MainActor in
+            self.updateLocation(coordinate: loc.coordinate)
+        }
+    }
+
+    public nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        // Location hardware error handled gracefully
     }
 }

@@ -17,22 +17,38 @@ public struct InsightEngine {
         var results: [Insight] = []
 
         // 1. Vital Signs
-        if let v = vitals, v.fingerPresent {
-            let hr = v.heartRate
-            let ceiling = HealthThresholds.heartRateCeiling(for: activity)
+        if let v = vitals {
+            if v.hasHeartRate {
+                let hr = v.heartRate
+                let ceiling = HealthThresholds.heartRateCeiling(for: activity)
 
-            if hr < HealthThresholds.heartRateFloor || hr > ceiling {
-                results.append(Insight(
-                    id: "vitals.hr.range",
-                    title: hr < HealthThresholds.heartRateFloor ? "Low heart rate" : "High heart rate",
-                    message: String(format: "%.0f bpm is outside normal bounds (%.0f–%.0f bpm for current activity).", hr, HealthThresholds.heartRateFloor, ceiling),
-                    severity: .warning,
-                    category: .vitals,
-                    iconName: "heart.fill"
-                ))
+                if hr < HealthThresholds.heartRateFloor || hr > ceiling {
+                    results.append(Insight(
+                        id: "vitals.hr.range",
+                        title: hr < HealthThresholds.heartRateFloor ? "Low heart rate" : "High heart rate",
+                        message: String(format: "%.0f bpm is outside normal bounds (%.0f–%.0f bpm for current activity).", hr, HealthThresholds.heartRateFloor, ceiling),
+                        severity: .warning,
+                        category: .vitals,
+                        iconName: "heart.fill"
+                    ))
+                }
+
+                if let base = baselineHeartRateMean {
+                    let diff = Double(hr) - base
+                    if abs(diff) > 20.0 {
+                        results.append(Insight(
+                            id: "vitals.hr.baseline",
+                            title: diff > 0 ? "Elevated from baseline" : "Below resting baseline",
+                            message: String(format: "Heart rate is %.0f bpm higher than your baseline average (%.0f bpm).", abs(diff), base),
+                            severity: .info,
+                            category: .vitals,
+                            iconName: "chart.line.uptrend.xyaxis"
+                        ))
+                    }
+                }
             }
 
-            if v.spo2 < HealthThresholds.spo2Floor {
+            if v.hasSpo2 && v.spo2 < HealthThresholds.spo2Floor {
                 results.append(Insight(
                     id: "vitals.spo2.low",
                     title: "Low blood oxygen",
@@ -43,7 +59,7 @@ public struct InsightEngine {
                 ))
             }
 
-            if v.bodyTempC < HealthThresholds.bodyTempLowC || v.bodyTempC > HealthThresholds.bodyTempHighC {
+            if v.hasBodyTemp && (v.bodyTempC < HealthThresholds.bodyTempLowC || v.bodyTempC > HealthThresholds.bodyTempHighC) {
                 results.append(Insight(
                     id: "vitals.temp.range",
                     title: v.bodyTempC < HealthThresholds.bodyTempLowC ? "Low body temperature" : "Elevated temperature",
@@ -52,20 +68,6 @@ public struct InsightEngine {
                     category: .vitals,
                     iconName: "thermometer.medium"
                 ))
-            }
-
-            if let base = baselineHeartRateMean {
-                let diff = Double(hr) - base
-                if abs(diff) > 20.0 {
-                    results.append(Insight(
-                        id: "vitals.hr.baseline",
-                        title: diff > 0 ? "Elevated from baseline" : "Below resting baseline",
-                        message: String(format: "Heart rate is %.0f bpm higher than your baseline average (%.0f bpm).", abs(diff), base),
-                        severity: .info,
-                        category: .vitals,
-                        iconName: "chart.line.uptrend.xyaxis"
-                    ))
-                }
             }
         }
 

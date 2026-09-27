@@ -26,25 +26,27 @@
 	<string>ForeverFit connects to the ForeverBand wearable to monitor vital signs, environment, and motion telemetry in real time.</string>
 	<key>NSBluetoothPeripheralUsageDescription</key>
 	<string>ForeverFit communicates with your ESP32 ForeverBand to stream vitals and synchronize clock and settings.</string>
-	<key>NSMotionUsageDescription</key>
-	<string>ForeverFit utilizes motion sensors for 20Hz continuous fall detection, activity recognition, and step counting.</string>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>ForeverFit uses your location to deliver hyper-local disaster alerts, seismic warnings, and automated emergency SOS dispatch.</string>
-	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>ForeverFit requires background location to transmit precise coordinates to responders in the event of an automated fall alert.</string>
-	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Enables hands-free voice commands and queries with the AI Health Companion.</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>Captures spoken questions for real-time speech-to-text with the on-device AI assistant.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Allows scanning medical prescriptions and lab reports for AI health analysis.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>ForeverFit requires background location to transmit precise coordinates to responders in the event of an automated fall alert.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>ForeverFit uses your location to deliver hyper-local disaster alerts, seismic warnings, and automated emergency SOS dispatch.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Captures spoken questions for real-time speech-to-text with the on-device AI assistant.</string>
+	<key>NSMotionUsageDescription</key>
+	<string>ForeverFit utilizes motion sensors for 20Hz continuous fall detection, activity recognition, and step counting.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Select medical records and images for health report insights.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Enables hands-free voice commands and queries with the AI Health Companion.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>bluetooth-central</string>
 		<string>location</string>
 		<string>processing</string>
+		<string>bluetooth-peripheral</string>
+		<string>nearby-interaction</string>
 	</array>
 	<key>UILaunchScreen</key>
 	<dict/>

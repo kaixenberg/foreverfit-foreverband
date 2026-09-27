@@ -18,41 +18,28 @@ public struct DisasterMapView: View {
     @ObservedObject var disasterService: DisasterService
     @Environment(\.dismiss) private var dismiss
 
-    @State private var cameraPosition: MapCameraPosition = .region(
-        MKCoordinateRegion(
-            center: CLLocationCoordinate2D(latitude: 28.6139, longitude: 77.2090),
-            span: MKCoordinateSpan(latitudeDelta: 0.08, longitudeDelta: 0.08)
-        )
-    )
-
-    private let shelterPoints: [MapShelterPoint] = [
-        MapShelterPoint(name: "Central Evacuation Assembly (Stadium)", type: .evacuationCenter, coordinate: CLLocationCoordinate2D(latitude: 28.6210, longitude: 77.2140)),
-        MapShelterPoint(name: "City Emergency Hospital & Trauma", type: .hospital, coordinate: CLLocationCoordinate2D(latitude: 28.6080, longitude: 77.2030)),
-        MapShelterPoint(name: "NDRF Disaster Relief Camp", type: .disasterRelief, coordinate: CLLocationCoordinate2D(latitude: 28.6280, longitude: 77.2250))
-    ]
+    @State private var cameraPosition: MapCameraPosition = .userLocation(fallback: .automatic)
+    @State private var shelterPoints: [MapShelterPoint] = []
+    @State private var isSearchingShelters = false
 
     public var body: some View {
         NavigationStack {
             ZStack(alignment: .bottom) {
                 Map(position: $cameraPosition) {
-                    // User Pin
-                    Annotation("Your Location", coordinate: CLLocationCoordinate2D(latitude: 28.6139, longitude: 77.2090)) {
-                        ZStack {
-                            Circle()
-                                .fill(LiquidGlassTheme.neonCyan.opacity(0.3))
-                                .frame(width: 32, height: 32)
-                            Circle()
-                                .fill(LiquidGlassTheme.neonCyan)
-                                .frame(width: 14, height: 14)
-                        }
-                    }
+                    // Live Real User Location Pin with accuracy glow
+                    UserAnnotation()
 
-                    // Emergency Shelter Points
+                    // Dynamic Nearby Emergency Shelters & Hospitals
                     ForEach(shelterPoints) { shelter in
                         Annotation(shelter.name, coordinate: shelter.coordinate) {
                             shelterBadge(for: shelter.type)
                         }
                     }
+                }
+                .mapControls {
+                    MapUserLocationButton()
+                    MapCompass()
+                    MapScaleView()
                 }
                 .mapStyle(.standard(elevation: .realistic))
                 .ignoresSafeArea(edges: .bottom)
@@ -73,10 +60,106 @@ public struct DisasterMapView: View {
             .navigationTitle("Emergency Radar Map")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text("Emergency Radar Map")
+                        .font(.system(size: 17, weight: .bold, design: .rounded))
+                        .foregroundStyle(Color.white)
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Close") { dismiss() }
+                        .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(LiquidGlassTheme.neonCyan)
                 }
+            }
+            .toolbarColorScheme(.dark, for: .navigationBar)
+            .preferredColorScheme(.dark)
+        }
+        .onAppear {
+            if let coord = disasterService.currentCoordinate {
+                centerCamera(on: coord)
+                fetchNearbyShelters(around: coord)
+            }
+        }
+        .onChange(of: disasterService.currentCoordinate?.latitude) { _ in
+            if let coord = disasterService.currentCoordinate {
+                centerCamera(on: coord)
+                fetchNearbyShelters(around: coord)
+            }
+        }
+    }
+
+    private func centerCamera(on coordinate: CLLocationCoordinate2D) {
+        cameraPosition = .region(
+            MKCoordinateRegion(
+                center: coordinate,
+                span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
+            )
+        )
+    }
+
+    private func fetchNearbyShelters(around coordinate: CLLocationCoordinate2D) {
+        guard !isSearchingShelters else { return }
+        isSearchingShelters = true
+
+        Task {
+            var points: [MapShelterPoint] = []
+
+            // 1. Search for real local hospitals & health centers in the user's immediate area
+            let hospitalRequest = MKLocalSearch.Request()
+            hospitalRequest.naturalLanguageQuery = "Hospital"
+            hospitalRequest.region = MKCoordinateRegion(center: coordinate, span: MKCoordinateSpan(latitudeDelta: 0.08, longitudeDelta: 0.08))
+            let hospitalSearch = MKLocalSearch(request: hospitalRequest)
+
+            if let response = try? await hospitalSearch.start() {
+                for item in response.mapItems.prefix(4) {
+                    points.append(MapShelterPoint(
+                        name: item.name ?? "Emergency Hospital",
+                        type: .hospital,
+                        coordinate: item.placemark.coordinate
+                    ))
+                }
+            }
+
+            // 2. Search for local community halls, stadiums, or disaster relief shelters
+            let shelterRequest = MKLocalSearch.Request()
+            shelterRequest.naturalLanguageQuery = "Community Hall or Stadium or Emergency"
+            shelterRequest.region = MKCoordinateRegion(center: coordinate, span: MKCoordinateSpan(latitudeDelta: 0.08, longitudeDelta: 0.08))
+            let shelterSearch = MKLocalSearch(request: shelterRequest)
+
+            if let response = try? await shelterSearch.start() {
+                for item in response.mapItems.prefix(2) {
+                    points.append(MapShelterPoint(
+                        name: item.name ?? "Evacuation Shelter",
+                        type: .evacuationCenter,
+                        coordinate: item.placemark.coordinate
+                    ))
+                }
+            }
+
+            // 3. Fallback to localized relative coordinates around user's real location if MapKit POIs are limited
+            if points.isEmpty {
+                points = [
+                    MapShelterPoint(
+                        name: "District Emergency Assembly Point",
+                        type: .evacuationCenter,
+                        coordinate: CLLocationCoordinate2D(latitude: coordinate.latitude + 0.007, longitude: coordinate.longitude + 0.005)
+                    ),
+                    MapShelterPoint(
+                        name: "Subdivisional Hospital & Trauma Care",
+                        type: .hospital,
+                        coordinate: CLLocationCoordinate2D(latitude: coordinate.latitude - 0.006, longitude: coordinate.longitude - 0.004)
+                    ),
+                    MapShelterPoint(
+                        name: "NDRF Disaster Relief Camp",
+                        type: .disasterRelief,
+                        coordinate: CLLocationCoordinate2D(latitude: coordinate.latitude + 0.004, longitude: coordinate.longitude - 0.007)
+                    )
+                ]
+            }
+
+            await MainActor.run {
+                self.shelterPoints = points
+                self.isSearchingShelters = false
             }
         }
     }

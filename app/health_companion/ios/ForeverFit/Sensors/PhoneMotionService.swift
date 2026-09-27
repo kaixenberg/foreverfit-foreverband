@@ -30,6 +30,7 @@ public final class PhoneMotionService: ObservableObject {
 
     private let activityEngine = ActivityClassifierEngine()
     private let motionManager = CMMotionManager()
+    private let activityManager = CMMotionActivityManager()
     private var simulationTimer: AnyCancellable?
     private var simTick: Double = 0.0
 
@@ -41,6 +42,19 @@ public final class PhoneMotionService: ObservableObject {
     public func start() {
         guard !isRunning else { return }
         isRunning = true
+
+        if CMMotionActivityManager.isActivityAvailable() {
+            activityManager.startActivityUpdates(to: .main) { [weak self] activity in
+                guard let self = self, let a = activity else { return }
+                if a.running {
+                    self.currentActivity = .running
+                } else if a.walking {
+                    self.currentActivity = .walking
+                } else if a.stationary {
+                    self.currentActivity = .still
+                }
+            }
+        }
 
         if motionManager.isDeviceMotionAvailable {
             motionManager.deviceMotionUpdateInterval = sampleInterval
@@ -72,6 +86,9 @@ public final class PhoneMotionService: ObservableObject {
 
     public func stop() {
         isRunning = false
+        if CMMotionActivityManager.isActivityAvailable() {
+            activityManager.stopActivityUpdates()
+        }
         if motionManager.isDeviceMotionAvailable {
             motionManager.stopDeviceMotionUpdates()
         }

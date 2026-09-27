@@ -148,15 +148,26 @@ public final class GemmaModelManager: NSObject, ObservableObject, URLSessionDown
     }
 
     public nonisolated func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
-        Task { @MainActor in
-            do {
-                let destination = self.localModelURL
-                if FileManager.default.fileExists(atPath: destination.path) {
-                    try FileManager.default.removeItem(at: destination)
-                }
-                try FileManager.default.moveItem(at: location, to: destination)
+        let fileManager = FileManager.default
+        let docs = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let modelsDir = docs.appendingPathComponent("models", isDirectory: true)
+
+        do {
+            if !fileManager.fileExists(atPath: modelsDir.path) {
+                try fileManager.createDirectory(at: modelsDir, withIntermediateDirectories: true, attributes: nil)
+            }
+            let destination = modelsDir.appendingPathComponent(GemmaModelManager.modelFilename)
+            if fileManager.fileExists(atPath: destination.path) {
+                try fileManager.removeItem(at: destination)
+            }
+            // Move synchronously while temporary location is guaranteed to exist
+            try fileManager.moveItem(at: location, to: destination)
+
+            Task { @MainActor in
                 self.checkLocalModelFile()
-            } catch {
+            }
+        } catch {
+            Task { @MainActor in
                 self.status = .error("Failed to save downloaded model: \(error.localizedDescription)")
             }
         }

@@ -15,7 +15,6 @@ public struct DashboardView: View {
     @State private var showingWatchSettings: Bool = false
     @State private var showingSettings: Bool = false
     @State private var showingWellnessDetail: Bool = false
-    @State private var showingAiChat: Bool = false
     @State private var selectedMetricDetail: String? = nil
 
     public init(
@@ -50,24 +49,48 @@ public struct DashboardView: View {
         isConnected && vitals != nil && vitals!.fingerPresent
     }
 
+    private var hasHeartRate: Bool {
+        isConnected && vitals != nil && vitals!.hasHeartRate
+    }
+
+    private var hasSpo2: Bool {
+        isConnected && vitals != nil && vitals!.hasSpo2
+    }
+
+    private var hasBodyTempReading: Bool {
+        isConnected && vitals != nil && vitals!.hasBodyTemp
+    }
+
+    private var bodyTempPastEquilibrium: Bool {
+        guard let connectedAt = bleManager.connectedAt else { return true }
+        return Date().timeIntervalSince(connectedAt) >= 60.0
+    }
+
+    private var bodyTempWarnEligible: Bool {
+        hasBodyTempReading &&
+        (hasFingerReading || dataStore.watchSettings.ignoreBodyTempContactCheck) &&
+        !dataStore.watchSettings.ignoreBodyTempContactCheck &&
+        bodyTempPastEquilibrium
+    }
+
     private var currentCeiling: Float {
         HealthThresholds.heartRateCeiling(for: motionService.currentActivity)
     }
 
     private var heartRateWarn: Bool {
-        guard let v = vitals, hasFingerReading else { return false }
+        guard let v = vitals, hasHeartRate else { return false }
         return v.heartRate < HealthThresholds.heartRateFloor ||
                v.heartRate > currentCeiling ||
                baselineService.isAnomalous(v.heartRate)
     }
 
     private var spo2Warn: Bool {
-        guard let v = vitals, hasFingerReading else { return false }
-        return v.spo2 > 0 && v.spo2 < HealthThresholds.spo2FloorPercent
+        guard let v = vitals, hasSpo2 else { return false }
+        return v.spo2 < HealthThresholds.spo2FloorPercent
     }
 
     private var bodyTempWarn: Bool {
-        guard let v = vitals, hasFingerReading else { return false }
+        guard let v = vitals, bodyTempWarnEligible else { return false }
         return v.bodyTempC > HealthThresholds.bodyTempHighC || v.bodyTempC < HealthThresholds.bodyTempLowC
     }
 
@@ -106,15 +129,29 @@ public struct DashboardView: View {
     }
 
     private var heatStressWarn: Bool {
-        guard let temp = resolvedAmbientTemp, let hum = resolvedHumidity, let v = vitals, hasFingerReading else { return false }
+        guard let temp = resolvedAmbientTemp, let hum = resolvedHumidity, let v = vitals, bodyTempWarnEligible else { return false }
         let idx = HeatIndex.compute(tempC: Double(temp), relativeHumidity: Double(hum))
         let risk = HeatIndex.stressLevel(heatIndexC: idx)
         return (risk == .caution || risk == .extremeCaution || risk == .danger) && v.bodyTempC > HealthThresholds.bodyTempHighC
     }
 
+    private func ppgUnit(vitals: VitalsReading?, unit: String, ready: Bool) -> String {
+        guard let vitals = vitals else { return unit }
+        if !vitals.fingerPresent { return "no finger" }
+        if !ready {
+            if vitals.ppgSaturated { return "adjust fit" }
+            return vitals.ppgSettling ? "settling" : "measuring"
+        }
+        return unit
+    }
+
+    private var hasVitalsForScoring: Bool {
+        isConnected && hasFingerReading
+    }
+
     private var wellnessScore: Int? {
         HealthThresholds.computeWellnessScore(
-            hasVitals: hasFingerReading,
+            hasVitals: hasVitalsForScoring,
             heartRateWarn: heartRateWarn,
             spo2Warn: spo2Warn,
             bodyTempWarn: bodyTempWarn,
@@ -126,7 +163,11 @@ public struct DashboardView: View {
     private var wellnessSnapshot: WellnessSnapshot {
         HealthThresholds.buildWellnessSnapshot(
             score: wellnessScore,
+            connected: isConnected,
             hasFingerReading: hasFingerReading,
+            hasHeartRate: hasHeartRate,
+            hasSpo2: hasSpo2,
+            hasBodyTempReading: hasBodyTempReading,
             heartRate: vitals?.heartRate ?? 0,
             heartRateCeiling: currentCeiling,
             heartRateWarn: heartRateWarn,
@@ -134,7 +175,9 @@ public struct DashboardView: View {
             spo2Warn: spo2Warn,
             bodyTemp: vitals?.bodyTempC ?? 0,
             bodyTempWarn: bodyTempWarn,
+            ambientDataAvailable: resolvedAmbientTemp != nil && resolvedHumidity != nil,
             ambientWarn: ambientWarn,
+            heatStressDataAvailable: bodyTempWarnEligible && resolvedAmbientTemp != nil && resolvedHumidity != nil,
             heatStressWarn: heatStressWarn
         )
     }
@@ -446,8 +489,8 @@ public struct DashboardView: View {
 
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
                 // Heart Rate
-                let hrVal = hasFingerReading ? String(format: "%.0f", vitals!.heartRate) : "--"
-                let hrUnit = (isConnected && vitals != nil && !vitals!.fingerPresent) ? "no finger" : "bpm"
+                let hrVal = hasHeartRate ? String(format: "%.0f", vitals!.heartRate) : "--"
+                let hrUnit = ppgUnit(vitals: vitals, unit: "bpm", ready: hasHeartRate)
                 MetricCardView(
                     icon: "heart.fill",
                     iconColor: LiquidGlassTheme.alertCrimson,
@@ -459,8 +502,8 @@ public struct DashboardView: View {
                 )
 
                 // SpO2
-                let spo2Val = hasFingerReading ? String(format: "%.0f", vitals!.spo2) : "--"
-                let spo2Unit = (isConnected && vitals != nil && !vitals!.fingerPresent) ? "no finger" : "%"
+                let spo2Val = hasSpo2 ? String(format: "%.0f", vitals!.spo2) : "--"
+                let spo2Unit = ppgUnit(vitals: vitals, unit: "%", ready: hasSpo2)
                 MetricCardView(
                     icon: "lungs.fill",
                     iconColor: LiquidGlassTheme.neonCyan,
@@ -472,11 +515,11 @@ public struct DashboardView: View {
                 )
 
                 // Body Temp
-                let tempVal = hasFingerReading
-                    ? UnitFormatter.formatTemperatureC(Double(vitals!.bodyTempC), system: dataStore.unitSystem).value.formatted()
+                let tempVal = hasBodyTempReading
+                    ? String(format: "%.1f", UnitFormatter.formatTemperatureC(Double(vitals!.bodyTempC), system: dataStore.unitSystem).value)
                     : "--"
-                let tempUnit = (isConnected && vitals != nil && !vitals!.fingerPresent)
-                    ? "no finger"
+                let tempUnit = !hasBodyTempReading
+                    ? "no reading"
                     : UnitFormatter.temperatureUnit(dataStore.unitSystem)
                 MetricCardView(
                     icon: "thermometer.medium",
@@ -489,11 +532,14 @@ public struct DashboardView: View {
                 )
 
                 // Ambient Temp
-                let ambVal = resolvedAmbientTemp != nil
-                    ? UnitFormatter.formatTemperatureC(Double(resolvedAmbientTemp!), system: dataStore.unitSystem).value.formatted()
+                let ambFormatted = resolvedAmbientTemp != nil
+                    ? UnitFormatter.formatTemperatureC(Double(resolvedAmbientTemp!), system: dataStore.unitSystem)
+                    : nil
+                let ambVal = ambFormatted != nil
+                    ? String(format: "%.1f", ambFormatted!.value)
                     : "--"
-                let ambUnit = resolvedAmbientTemp != nil
-                    ? UnitFormatter.formatTemperatureC(Double(resolvedAmbientTemp!), system: dataStore.unitSystem).unit
+                let ambUnit = ambFormatted != nil
+                    ? ambFormatted!.unit
                     : ""
                 MetricCardView(
                     icon: "sun.max.fill",
@@ -775,7 +821,11 @@ public struct DashboardView: View {
 
     private var floatingAiBubble: some View {
         Button {
-            showingAiChat = true
+            withAnimation(.spring(response: 0.38, dampingFraction: 0.70)) {
+                selectedTab = .aiAssistant
+            }
+            let impact = UIImpactFeedbackGenerator(style: .medium)
+            impact.impactOccurred()
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "sparkles")
@@ -795,6 +845,17 @@ public struct DashboardView: View {
                             endPoint: .bottomTrailing
                         )
                     )
+                    .overlay {
+                        Capsule()
+                            .strokeBorder(
+                                LinearGradient(
+                                    colors: [Color.white.opacity(0.6), Color.white.opacity(0.1)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ),
+                                lineWidth: 1.0
+                            )
+                    }
                     .shadow(color: LiquidGlassTheme.neonCyan.opacity(0.5), radius: 10, x: 0, y: 4)
             }
         }

@@ -19,7 +19,9 @@ public final class ForeverBandBLEManager: NSObject, ObservableObject {
     @Published public var rssi: Int = -60
     @Published public var isSimulationMode: Bool = false
     @Published public var lastSyncTime: Date?
+    @Published public var connectedAt: Date?
 
+    @Published public var connectingPeripheralId: UUID?
     private var centralManager: CBCentralManager!
     @Published public var connectedPeripheral: CBPeripheral?
 
@@ -31,6 +33,11 @@ public final class ForeverBandBLEManager: NSObject, ObservableObject {
 
     private var simulationTimer: AnyCancellable?
     private var simTick: Double = 0.0
+    private var timeSyncTimer: Timer?
+    private var connectionTimeoutTimer: Timer?
+    public var pendingWatchSettings: WatchSettings?
+    public var onVitalsReceived: ((VitalsReading) -> Void)?
+    public var onEnvReceived: ((EnvReading) -> Void)?
 
     public override init() {
         super.init()
@@ -44,7 +51,10 @@ public final class ForeverBandBLEManager: NSObject, ObservableObject {
         discoveredPeripherals.removeAll()
         status = .scanning
         let serviceUUID = CBUUID(string: ForeverBandProtocol.serviceUUID)
-        centralManager.scanForPeripherals(withServices: [serviceUUID], options: [CBCentralManagerScanOptionAllowDuplicatesKey: false])
+        centralManager.scanForPeripherals(
+            withServices: [serviceUUID],
+            options: [CBCentralManagerScanOptionAllowDuplicatesKey: false]
+        )
     }
 
     public func startScan() {
@@ -53,9 +63,25 @@ public final class ForeverBandBLEManager: NSObject, ObservableObject {
 
     public func connect(to peripheral: CBPeripheral) {
         centralManager.stopScan()
+        connectionTimeoutTimer?.invalidate()
         connectedPeripheral = peripheral
+        connectingPeripheralId = peripheral.identifier
         status = .connecting
-        centralManager.connect(peripheral, options: nil)
+
+        // 10-second timeout guard to prevent infinite connecting loop
+        connectionTimeoutTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: false) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self = self, self.status == .connecting else { return }
+                self.centralManager.cancelPeripheralConnection(peripheral)
+                self.status = .disconnected
+                self.connectingPeripheralId = nil
+                self.connectedPeripheral = nil
+            }
+        }
+
+        centralManager.connect(peripheral, options: [
+            CBConnectPeripheralOptionNotifyOnDisconnectionKey: true
+        ])
     }
 
     public func stopScanning() {
@@ -66,10 +92,16 @@ public final class ForeverBandBLEManager: NSObject, ObservableObject {
     }
 
     public func disconnect() {
+        connectionTimeoutTimer?.invalidate()
+        connectionTimeoutTimer = nil
+        connectingPeripheralId = nil
+        timeSyncTimer?.invalidate()
+        timeSyncTimer = nil
         if let p = connectedPeripheral {
             centralManager.cancelPeripheralConnection(p)
         }
         connectedPeripheral = nil
+        connectedAt = nil
         status = .disconnected
     }
 
@@ -176,28 +208,75 @@ extension ForeverBandBLEManager: CBCentralManagerDelegate {
         rssi RSSI: NSNumber
     ) {
         Task { @MainActor in
+            let name = peripheral.name ?? (advertisementData[CBAdvertisementDataLocalNameKey] as? String) ?? ""
+            let serviceUUIDs = (advertisementData[CBAdvertisementDataServiceUUIDsKey] as? [CBUUID])?.map { $0.uuidString.uppercased() } ?? []
+            let targetUUIDString = ForeverBandProtocol.serviceUUID.uppercased()
+            let isTarget = name.localizedCaseInsensitiveContains("ForeverBand")
+                || name.localizedCaseInsensitiveContains("ForeverFit")
+                || name.localizedCaseInsensitiveContains("ESP32")
+                || serviceUUIDs.contains(targetUUIDString)
+
+            // Strictly filter out non-ForeverBand peripherals
+            guard isTarget else { return }
+
             if !self.discoveredPeripherals.contains(where: { $0.identifier == peripheral.identifier }) {
                 self.discoveredPeripherals.append(peripheral)
             }
-            let name = peripheral.name ?? (advertisementData[CBAdvertisementDataLocalNameKey] as? String) ?? ""
-            if name.contains("ForeverBand") || name.contains("ESP32") {
-                self.rssi = RSSI.intValue
+
+            self.rssi = RSSI.intValue
+            // If not yet connected and not in simulation, auto-connect to the ForeverBand
+            if self.connectedPeripheral == nil && !self.isSimulationMode {
+                self.connect(to: peripheral)
             }
         }
     }
 
     public nonisolated func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
         Task { @MainActor in
+            self.connectionTimeoutTimer?.invalidate()
+            self.connectionTimeoutTimer = nil
+            self.connectingPeripheralId = nil
             self.status = .connected
+            self.connectedAt = Date()
             peripheral.delegate = self
             peripheral.discoverServices([CBUUID(string: ForeverBandProtocol.serviceUUID)])
+
+            // Start 5-minute periodic clock sync so millis()-based firmware doesn't drift
+            self.timeSyncTimer?.invalidate()
+            self.timeSyncTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.syncTimeToWatch()
+                }
+            }
+        }
+    }
+
+    public nonisolated func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
+        Task { @MainActor in
+            self.connectionTimeoutTimer?.invalidate()
+            self.connectionTimeoutTimer = nil
+            self.connectingPeripheralId = nil
+            self.connectedPeripheral = nil
+            self.status = .disconnected
         }
     }
 
     public nonisolated func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
         Task { @MainActor in
+            self.connectionTimeoutTimer?.invalidate()
+            self.connectionTimeoutTimer = nil
+            self.connectingPeripheralId = nil
             self.status = .disconnected
             self.connectedPeripheral = nil
+            self.connectedAt = nil
+            self.timeSyncTimer?.invalidate()
+            self.timeSyncTimer = nil
+            self.vitalsCharacteristic = nil
+            self.envCharacteristic = nil
+            self.motionCharacteristic = nil
+            self.timeCharacteristic = nil
+            self.watchSettingsCharacteristic = nil
+
             if !self.isSimulationMode {
                 self.startScanning()
             }
@@ -234,6 +313,9 @@ extension ForeverBandBLEManager: CBPeripheralDelegate {
                     self.syncTimeToWatch()
                 } else if uuid == ForeverBandProtocol.watchSettingsCharUUID {
                     self.watchSettingsCharacteristic = char
+                    if let s = self.pendingWatchSettings {
+                        self.updateWatchSettings(s)
+                    }
                 }
             }
         }
@@ -247,10 +329,12 @@ extension ForeverBandBLEManager: CBPeripheralDelegate {
             if uuid == ForeverBandProtocol.vitalsCharUUID {
                 if let v = ForeverBandProtocol.parseVitals(data: data) {
                     self.latestVitals = v
+                    self.onVitalsReceived?(v)
                 }
             } else if uuid == ForeverBandProtocol.envCharUUID {
                 if let e = ForeverBandProtocol.parseEnv(data: data) {
                     self.latestEnv = e
+                    self.onEnvReceived?(e)
                 }
             } else if uuid == ForeverBandProtocol.motionCharUUID {
                 if let m = ForeverBandProtocol.parseMotion(data: data) {

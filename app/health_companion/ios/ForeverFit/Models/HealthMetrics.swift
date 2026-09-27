@@ -218,19 +218,134 @@ public struct SleepEntry: Identifiable, Codable {
     }
 }
 
+public enum MedicationType: String, Codable, CaseIterable {
+    case pill
+    case capsule
+    case drops
+    case liquid
+    case injection
+    case topical
+    case unspecified
+
+    public var label: String {
+        switch self {
+        case .pill: return "Pill(s)"
+        case .capsule: return "Capsule(s)"
+        case .drops: return "Drops"
+        case .liquid: return "Liquid"
+        case .injection: return "Injection"
+        case .topical: return "Topical/Cream"
+        case .unspecified: return "Unspecified"
+        }
+    }
+
+    public var units: [String] {
+        switch self {
+        case .pill: return ["pill(s)", "mg"]
+        case .capsule: return ["capsule(s)", "mg"]
+        case .drops: return ["drops"]
+        case .liquid: return ["ml", "mg"]
+        case .injection: return ["ml", "mg", "IU"]
+        case .topical: return ["application(s)"]
+        case .unspecified: return ["dose(s)"]
+        }
+    }
+}
+
+public struct MedicationSchedule: Identifiable, Codable, Equatable, Hashable {
+    public var id: String { "\(hour):\(minute)" }
+    public let hour: Int
+    public let minute: Int
+
+    public init(hour: Int, minute: Int) {
+        self.hour = hour
+        self.minute = minute
+    }
+
+    public var label: String {
+        String(format: "%02d:%02d", hour, minute)
+    }
+}
+
 public struct Medication: Identifiable, Codable {
-    public var id: UUID = UUID()
+    public var id: UUID
     public var name: String
-    public var dosage: String
-    public var frequency: String
+    public var amount: String
+    public var unit: String
+    public var type: MedicationType
+    public var isActive: Bool
+    public var notes: String
+    public var schedules: [MedicationSchedule]
     public var dateAdded: Date
 
-    public init(id: UUID = UUID(), name: String, dosage: String, frequency: String, dateAdded: Date = Date()) {
+    public init(
+        id: UUID = UUID(),
+        name: String,
+        amount: String = "",
+        unit: String = "",
+        type: MedicationType = .unspecified,
+        isActive: Bool = true,
+        notes: String = "",
+        schedules: [MedicationSchedule] = [],
+        dateAdded: Date = Date()
+    ) {
         self.id = id
         self.name = name
-        self.dosage = dosage
-        self.frequency = frequency
+        self.amount = amount
+        self.unit = unit
+        self.type = type
+        self.isActive = isActive
+        self.notes = notes
+        self.schedules = schedules
         self.dateAdded = dateAdded
+    }
+
+    public var dosage: String {
+        if unit.isEmpty {
+            return amount
+        }
+        return "\(amount) \(unit)".trimmingCharacters(in: .whitespaces)
+    }
+
+    public var frequency: String {
+        if !schedules.isEmpty {
+            return schedules.map { $0.label }.joined(separator: ", ")
+        }
+        return notes
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, amount, unit, type, isActive, notes, schedules, dateAdded, dosage, frequency
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        self.name = try container.decode(String.self, forKey: .name)
+        let legacyDosage = try container.decodeIfPresent(String.self, forKey: .dosage)
+        self.amount = try container.decodeIfPresent(String.self, forKey: .amount) ?? legacyDosage ?? ""
+        self.unit = try container.decodeIfPresent(String.self, forKey: .unit) ?? ""
+        self.type = try container.decodeIfPresent(MedicationType.self, forKey: .type) ?? .unspecified
+        self.isActive = try container.decodeIfPresent(Bool.self, forKey: .isActive) ?? true
+        let legacyFrequency = try container.decodeIfPresent(String.self, forKey: .frequency)
+        self.notes = try container.decodeIfPresent(String.self, forKey: .notes) ?? legacyFrequency ?? ""
+        self.schedules = try container.decodeIfPresent([MedicationSchedule].self, forKey: .schedules) ?? []
+        self.dateAdded = try container.decodeIfPresent(Date.self, forKey: .dateAdded) ?? Date()
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encode(amount, forKey: .amount)
+        try container.encode(unit, forKey: .unit)
+        try container.encode(type, forKey: .type)
+        try container.encode(isActive, forKey: .isActive)
+        try container.encode(notes, forKey: .notes)
+        try container.encode(schedules, forKey: .schedules)
+        try container.encode(dateAdded, forKey: .dateAdded)
+        try container.encode(dosage, forKey: .dosage)
+        try container.encode(frequency, forKey: .frequency)
     }
 }
 
@@ -299,44 +414,52 @@ public struct WellnessFactor: Identifiable, Codable {
     public var id: String { label }
     public let label: String
     public let warn: Bool
+    public let scored: Bool
     public let detail: String
 
-    public init(label: String, warn: Bool, detail: String) {
+    public init(label: String, warn: Bool, detail: String, scored: Bool = true) {
         self.label = label
         self.warn = warn
         self.detail = detail
+        self.scored = scored
     }
 }
 
 public struct WellnessSnapshot: Codable {
     public let score: Int?
     public let factors: [WellnessFactor]
+    public let connected: Bool
 
-    public init(score: Int?, factors: [WellnessFactor]) {
+    public init(score: Int?, factors: [WellnessFactor], connected: Bool = false) {
         self.score = score
         self.factors = factors
+        self.connected = connected
     }
 
     public var headline: String {
-        guard let score = score else { return "Nothing to score yet" }
-        if score >= 90 { return "Optimal condition" }
-        if score >= 75 { return "Normal condition" }
-        if score >= 50 { return "Moderate stress detected" }
+        guard let score = score else {
+            return connected ? "Wear your wearable" : "Connect your wearable"
+        }
+        if score >= 90 { return "All clear" }
+        if score >= 70 { return "Doing fine" }
+        if score >= 50 { return "Take it easy" }
         return "Elevated risk flagged"
     }
 
     public var summary: String {
         guard let score = score else {
-            return "Wearable is not connected or no finger is detected. Put on your ForeverBand to view your live score."
+            return connected
+                ? "Wellness needs skin contact to read vitals — put the wearable on your wrist to start scoring."
+                : "Wellness needs live vitals from the wearable to compute — connect it from the Dashboard to start scoring."
         }
-        let warnCount = factors.filter { $0.warn }.count
-        if warnCount == 0 {
+        let concerning = factors.filter { $0.warn }
+        if concerning.isEmpty {
             return "All vital and environmental signals are currently within healthy clinical reference bounds."
-        } else if warnCount == 1 {
-            let item = factors.first(where: { $0.warn })?.label ?? "signal"
+        } else if concerning.count == 1 {
+            let item = concerning.first!.label
             return "\(item) is currently flagged outside target parameters. Monitor your reading closely."
         } else {
-            return "\(warnCount) signals are currently elevated or outside clinical target ranges."
+            return "\(concerning.count) signals are currently elevated or outside clinical target ranges."
         }
     }
 }

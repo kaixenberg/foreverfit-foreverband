@@ -39,6 +39,7 @@ public struct WatchSettings: Codable, Equatable {
     public var use24HourFormat: Bool
     public var dateFormat: WatchDateFormat
     public var showSeconds: Bool
+    public var ignoreBodyTempContactCheck: Bool
 
     public init(
         selectedFace: WatchFace = .primary,
@@ -46,7 +47,8 @@ public struct WatchSettings: Codable, Equatable {
         autoCycleIntervalSeconds: UInt16 = 10,
         use24HourFormat: Bool = true,
         dateFormat: WatchDateFormat = .weekdayShortWithYear,
-        showSeconds: Bool = false
+        showSeconds: Bool = false,
+        ignoreBodyTempContactCheck: Bool = false
     ) {
         self.selectedFace = selectedFace
         self.autoCycleEnabled = autoCycleEnabled
@@ -54,6 +56,7 @@ public struct WatchSettings: Codable, Equatable {
         self.use24HourFormat = use24HourFormat
         self.dateFormat = dateFormat
         self.showSeconds = showSeconds
+        self.ignoreBodyTempContactCheck = ignoreBodyTempContactCheck
     }
 
     public static let defaults = WatchSettings()
