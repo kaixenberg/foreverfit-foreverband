@@ -13,6 +13,7 @@ public final class AppState: ObservableObject {
     @Published public var emergencyWorkflow = EmergencyWorkflowService()
     @Published public var dataStore = HealthDataStore()
     @Published public var aiChatService = AiChatService()
+    @Published public var medicationReminders = MedicationReminderService()
 
     private var cancellables = Set<AnyCancellable>()
 
@@ -30,6 +31,8 @@ public final class AppState: ObservableObject {
             self.emergencyWorkflow.startEmergencyWorkflow(
                 triggerReason: reason,
                 vitals: self.bleManager.latestVitals,
+                connectedAt: self.bleManager.connectedAt,
+                watchSettings: self.dataStore.watchSettings,
                 baseline: self.baselineService,
                 primaryContact: primary
             )
@@ -41,17 +44,32 @@ public final class AppState: ObservableObject {
             .sink { [weak self] vitals in
                 guard let self = self else { return }
                 self.dataStore.recordVitalsSample(vitals)
-                if vitals.fingerPresent {
+                if vitals.hasHeartRate {
                     self.baselineService.addRestingReading(Double(vitals.heartRate))
                 }
+            }
+            .store(in: &cancellables)
+
+        // Reschedule medication reminders whenever medications list updates
+        dataStore.$medications
+            .sink { [weak self] _ in
+                self?.medicationReminders.rescheduleSystemNotifications()
             }
             .store(in: &cancellables)
     }
 
     private func startAllServices() {
+        medicationReminders.start(dataStore: dataStore)
         motionService.start()
         pedometerService.start()
-        fallDetector.start(with: motionService)
+        if dataStore.fallDetectionEnabled {
+            fallDetector.start(
+                sensorSource: dataStore.fallDetectionSensorSource,
+                motionService: motionService,
+                bleManager: bleManager
+            )
+        }
+        disasterService.startLocationUpdates()
         bleManager.startScanning()
     }
 }

@@ -53,12 +53,14 @@ public struct WellnessDetailView: View {
                                 .foregroundStyle(Color.white.opacity(0.6))
                                 .textCase(.uppercase)
 
-                            VStack(spacing: 10) {
                                 ForEach(snapshot.factors) { factor in
+                                    let icon: String = !factor.scored ? "minus.circle.fill" : (factor.warn ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                                    let iconColor: Color = !factor.scored ? Color.white.opacity(0.4) : (factor.warn ? LiquidGlassTheme.alertCrimson : LiquidGlassTheme.emeraldGreen)
+
                                     HStack(alignment: .top, spacing: 14) {
-                                        Image(systemName: factor.warn ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                                        Image(systemName: icon)
                                             .font(.system(size: 20))
-                                            .foregroundStyle(factor.warn ? LiquidGlassTheme.alertCrimson : LiquidGlassTheme.emeraldGreen)
+                                            .foregroundStyle(iconColor)
 
                                         VStack(alignment: .leading, spacing: 4) {
                                             Text(factor.label)
@@ -76,7 +78,6 @@ public struct WellnessDetailView: View {
                                 }
                             }
                         }
-                    }
 
                     // Disclaimer Footer
                     Text("A transparent, explainable formula rather than a black-box model — starts at 100 and deducts points per signal currently outside healthy clinical parameters.")

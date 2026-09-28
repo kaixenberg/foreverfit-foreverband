@@ -68,6 +68,19 @@ public struct DisasterCenterView: View {
                 .font(.system(size: 28, weight: .black, design: .rounded))
                 .foregroundStyle(Color.white)
 
+            HStack(spacing: 6) {
+                Image(systemName: "location.fill")
+                    .font(.system(size: 11))
+                    .foregroundStyle(LiquidGlassTheme.neonCyan)
+                Text(disasterService.currentLocationName)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.white.opacity(0.85))
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(Capsule().fill(.ultraThinMaterial))
+            .padding(.top, 2)
+
             Text("Offline India BIS IS 1893:2016 baseline + Live Open-Meteo & USGS feeds.")
                 .font(.system(size: 12))
                 .foregroundStyle(Color.white.opacity(0.6))
@@ -201,9 +214,14 @@ public struct DisasterCenterView: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text(disasterService.currentState)
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundStyle(Color.white)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(disasterService.currentState)
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundStyle(Color.white)
+                        Text(disasterService.currentLocationName)
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color.white.opacity(0.6))
+                    }
                     Spacer()
                     Text(profile.seismicZone.rawValue)
                         .font(.system(size: 12, weight: .bold))

@@ -8,6 +8,7 @@ public struct AiAssistantSettingsView: View {
     @State private var showingDownloadConfirm = false
     @State private var showingRemoveConfirm = false
     @State private var errorMessage: String?
+    @Environment(\.dismiss) private var dismiss
 
     public var body: some View {
         NavigationStack {
@@ -72,6 +73,22 @@ public struct AiAssistantSettingsView: View {
             }
             .navigationTitle("AI Assistant")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text("AI Assistant")
+                        .font(.system(size: 17, weight: .bold, design: .rounded))
+                        .foregroundStyle(Color.white)
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(LiquidGlassTheme.neonCyan)
+                }
+            }
+            .toolbarColorScheme(.dark, for: .navigationBar)
+            .preferredColorScheme(.dark)
             .alert("Download on-device AI assistant?", isPresented: $showingDownloadConfirm) {
                 Button("Cancel", role: .cancel) {}
                 Button("Download") {

@@ -63,7 +63,7 @@ public struct ScanConnectView: View {
                                     .foregroundStyle(LiquidGlassTheme.neonCyan)
 
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(peripheral.name ?? "ForeverBand")
+                                    Text(displayName(for: peripheral))
                                         .font(.system(size: 16, weight: .bold))
                                         .foregroundStyle(Color.white)
                                     Text(peripheral.identifier.uuidString)
@@ -73,7 +73,7 @@ public struct ScanConnectView: View {
 
                                 Spacer()
 
-                                if bleManager.status == .connecting {
+                                if bleManager.status == .connecting && bleManager.connectingPeripheralId == peripheral.identifier {
                                     ProgressView()
                                         .tint(LiquidGlassTheme.neonCyan)
                                 } else if bleManager.status == .connected && bleManager.connectedPeripheral?.identifier == peripheral.identifier {
@@ -87,6 +87,7 @@ public struct ScanConnectView: View {
                                     .font(.system(size: 12, weight: .bold))
                                     .buttonStyle(.borderedProminent)
                                     .tint(LiquidGlassTheme.neonCyan)
+                                    .disabled(bleManager.status == .connecting)
                                 }
                             }
                             .padding(.vertical, 4)
@@ -132,11 +133,19 @@ public struct ScanConnectView: View {
             .navigationTitle("Wearable Pairing")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text("Wearable Pairing")
+                        .font(.system(size: 17, weight: .bold, design: .rounded))
+                        .foregroundStyle(Color.white)
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Close") { dismiss() }
+                        .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(LiquidGlassTheme.neonCyan)
                 }
             }
+            .toolbarColorScheme(.dark, for: .navigationBar)
+            .preferredColorScheme(.dark)
             .background(MeshGradientBackground())
         }
         .onAppear {
@@ -144,5 +153,12 @@ public struct ScanConnectView: View {
                 bleManager.startScan()
             }
         }
+    }
+
+    private func displayName(for peripheral: CBPeripheral) -> String {
+        if let name = peripheral.name, !name.isEmpty {
+            return name
+        }
+        return "ForeverBand (\(peripheral.identifier.uuidString.prefix(4)))"
     }
 }

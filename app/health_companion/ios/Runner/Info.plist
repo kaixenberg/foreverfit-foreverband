@@ -30,6 +30,14 @@
 	<string>Used to read the phone's accelerometer and gyroscope for on-device fall detection.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Used to show your location on the map and check disaster risk (earthquake, flood, cyclone, rain) for your area.</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>ForeverFit connects to the ForeverBand wearable via Bluetooth Low Energy to stream live vitals, environmental telemetry, and wrist motion sensor readings.</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>ForeverFit connects to the ForeverBand wearable via Bluetooth Low Energy to stream live vitals and telemetry.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>bluetooth-central</string>
+	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -60,8 +68,6 @@
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>UISupportedInterfaceOrientations~ipad</key>
 	<array>

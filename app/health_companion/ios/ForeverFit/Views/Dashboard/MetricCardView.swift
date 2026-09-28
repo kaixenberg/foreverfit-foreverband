@@ -46,8 +46,10 @@ public struct MetricCardView<Accessory: View>: View {
                 }
 
                 Text(title)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Color.white.opacity(0.75))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
 
                 Spacer()
 
@@ -59,7 +61,7 @@ public struct MetricCardView<Accessory: View>: View {
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(statusColor)
                 }
-                .padding(.horizontal, 8)
+                .padding(.horizontal, 7)
                 .padding(.vertical, 3)
                 .background {
                     Capsule()
@@ -69,12 +71,15 @@ public struct MetricCardView<Accessory: View>: View {
 
             HStack(alignment: .lastTextBaseline, spacing: 4) {
                 Text(value)
-                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .font(.system(size: 26, weight: .bold, design: .rounded))
                     .foregroundStyle(Color.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
 
                 Text(unit)
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(Color.white.opacity(0.6))
+                    .lineLimit(1)
 
                 Spacer()
 

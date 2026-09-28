@@ -12,15 +12,22 @@ public struct ForeverBandProtocol {
     public static let watchSettingsCharUUID = "6E400006-B5A3-F393-E0A9-E50E24DCCA9E"
     public static let deviceName            = "ForeverBand"
 
-    public static let vitalsPacketLength       = 17
-    public static let envPacketLength          = 16
-    public static let motionPacketLength       = 28
-    public static let timeSyncPacketLength     = 8
-    public static let watchSettingsPacketLength = 7
+    public static let vitalsPacketLength                 = 17
+    public static let vitalsPacketLengthWithPpgFlags     = 18
+    public static let envPacketLength                    = 16
+    public static let motionPacketLength                 = 28
+    public static let timeSyncPacketLength               = 8
+    public static let watchSettingsPacketLength          = 8
+
+    /// ppgFlags bits — MUST match PPG_FLAG_* in health_companion.ino.
+    public static let ppgFlagHrReady: UInt8   = 1 << 0 // 0x01
+    public static let ppgFlagSpo2Ready: UInt8 = 1 << 1 // 0x02
+    public static let ppgFlagSettling: UInt8  = 1 << 2 // 0x04
+    public static let ppgFlagSaturated: UInt8 = 1 << 3 // 0x08
 
     // MARK: - Parsing
 
-    /// VitalsPacket: uint32 tMs; float heartRate; float spo2; float bodyTempC; uint8 fingerPresent;
+    /// VitalsPacket: uint32 tMs; float heartRate; float spo2; float bodyTempC; uint8 fingerPresent; [uint8 ppgFlags]
     public static func parseVitals(data: Data) -> VitalsReading? {
         guard data.count >= vitalsPacketLength else { return nil }
 
@@ -30,13 +37,25 @@ public struct ForeverBandProtocol {
         let temp = data.withUnsafeBytes { $0.load(fromByteOffset: 12, as: Float.self) }
         let finger = data[16] != 0
 
+        let hasFlags = data.count >= vitalsPacketLengthWithPpgFlags
+        let flags: UInt8 = hasFlags ? data[17] : 0
+
+        let hrReady = hasFlags ? ((flags & ppgFlagHrReady) != 0) : finger
+        let spo2Ready = hasFlags ? ((flags & ppgFlagSpo2Ready) != 0) : finger
+        let ppgSettling = hasFlags ? ((flags & ppgFlagSettling) != 0) : false
+        let ppgSaturated = hasFlags ? ((flags & ppgFlagSaturated) != 0) : false
+
         return VitalsReading(
             deviceTimeMs: UInt32(littleEndian: tMs),
             receivedAt: Date(),
             heartRate: Float(bitPattern: UInt32(littleEndian: hr.bitPattern)),
             spo2: Float(bitPattern: UInt32(littleEndian: spo2.bitPattern)),
             bodyTempC: Float(bitPattern: UInt32(littleEndian: temp.bitPattern)),
-            fingerPresent: finger
+            fingerPresent: finger,
+            hrReady: hrReady,
+            spo2Ready: spo2Ready,
+            ppgSettling: ppgSettling,
+            ppgSaturated: ppgSaturated
         )
     }
 
@@ -110,8 +129,8 @@ public struct ForeverBandProtocol {
         return data
     }
 
-    /// Builds WatchSettingsPacket (7 bytes, Little Endian):
-    /// uint8 selectedFace; uint8 autoCycle; uint16 autoCycleIntervalSec; uint8 use24h; uint8 dateFormat; uint8 showSeconds
+    /// Builds WatchSettingsPacket (8 bytes, Little Endian):
+    /// uint8 selectedFace; uint8 autoCycle; uint16 autoCycleIntervalSec; uint8 use24h; uint8 dateFormat; uint8 showSeconds; uint8 ignoreBodyTempContactCheck
     public static func buildWatchSettingsPacket(settings: WatchSettings) -> Data {
         var data = Data(count: watchSettingsPacketLength)
         data[0] = settings.selectedFace.rawValue
@@ -126,6 +145,7 @@ public struct ForeverBandProtocol {
         data[4] = settings.use24HourFormat ? 1 : 0
         data[5] = settings.dateFormat.rawValue
         data[6] = settings.showSeconds ? 1 : 0
+        data[7] = settings.ignoreBodyTempContactCheck ? 1 : 0
 
         return data
     }

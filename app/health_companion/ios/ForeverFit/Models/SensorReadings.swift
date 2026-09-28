@@ -10,6 +10,25 @@ public struct VitalsReading: Identifiable, Codable {
     public let spo2: Float
     public let bodyTempC: Float
     public let fingerPresent: Bool
+    public let hrReady: Bool
+    public let spo2Ready: Bool
+    public let ppgSettling: Bool
+    public let ppgSaturated: Bool
+
+    /// A heart-rate value that's safe to display, store, and warn on.
+    public var hasHeartRate: Bool {
+        fingerPresent && hrReady && heartRate > 0
+    }
+
+    /// An SpO2 value that's safe to display, store, and warn on.
+    public var hasSpo2: Bool {
+        fingerPresent && spo2Ready && spo2 > 0
+    }
+
+    /// A body temperature that is nonzero.
+    public var hasBodyTemp: Bool {
+        bodyTempC > 0
+    }
 
     public init(
         id: UUID = UUID(),
@@ -18,7 +37,11 @@ public struct VitalsReading: Identifiable, Codable {
         heartRate: Float,
         spo2: Float,
         bodyTempC: Float,
-        fingerPresent: Bool
+        fingerPresent: Bool,
+        hrReady: Bool = false,
+        spo2Ready: Bool = false,
+        ppgSettling: Bool = false,
+        ppgSaturated: Bool = false
     ) {
         self.id = id
         self.deviceTimeMs = deviceTimeMs
@@ -27,6 +50,10 @@ public struct VitalsReading: Identifiable, Codable {
         self.spo2 = spo2
         self.bodyTempC = bodyTempC
         self.fingerPresent = fingerPresent
+        self.hrReady = hrReady
+        self.spo2Ready = spo2Ready
+        self.ppgSettling = ppgSettling
+        self.ppgSaturated = ppgSaturated
     }
 }
 

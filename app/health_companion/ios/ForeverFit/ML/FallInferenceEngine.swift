@@ -1,33 +1,81 @@
 import Foundation
 import Accelerate
 
+public enum FallDetectionSensorSource: String, Codable, CaseIterable {
+    case phone
+    case watch
+}
+
+public struct WristPhoneMotionSample {
+    public let wristAx: Double
+    public let wristAy: Double
+    public let wristAz: Double
+    public let wristGx: Double
+    public let wristGy: Double
+    public let wristGz: Double
+    public let phoneAx: Double
+    public let phoneAy: Double
+    public let phoneAz: Double
+
+    public init(wristAx: Double, wristAy: Double, wristAz: Double, wristGx: Double, wristGy: Double, wristGz: Double, phoneAx: Double, phoneAy: Double, phoneAz: Double) {
+        self.wristAx = wristAx
+        self.wristAy = wristAy
+        self.wristAz = wristAz
+        self.wristGx = wristGx
+        self.wristGy = wristGy
+        self.wristGz = wristGz
+        self.phoneAx = phoneAx
+        self.phoneAy = phoneAy
+        self.phoneAz = phoneAz
+    }
+
+    public var channels: [Double] {
+        [wristAx, wristAy, wristAz, wristGx, wristGy, wristGz, phoneAx, phoneAy, phoneAz]
+    }
+}
+
 /// Vectorized 1D-CNN and Kinematic Fall Inference Engine
-/// Exactly matches UMAFall phone-only model training parameters:
-/// Window: 60 samples @ 20Hz (3.0 seconds), 6 channels [ax, ay, az, gx, gy, gz]
+/// Supports both Phone-only (6 channels, threshold 0.8) and Wrist+Phone (9 channels, threshold 0.5) modes.
 public final class FallInferenceEngine {
-    public static let windowLen = 60
-    public static let threshold = 0.8
+    public static let windowLen = 60 // 3s @ 20Hz
+    public static let phoneOnlyThreshold = 0.8
+    public static let wristPhoneThreshold = 0.5
     private static let freefallGThreshold = 0.5
     private static let impactGThreshold = 2.0
     private static let gravityMs2 = 9.80665
 
-    private var buffer: [PhoneMotionSample] = []
+    public let channelCount: Int
+    public let threshold: Double
 
-    public init() {}
+    private var buffer: [[Double]] = []
+
+    public init(channelCount: Int = 6, threshold: Double = phoneOnlyThreshold) {
+        self.channelCount = channelCount
+        self.threshold = threshold
+    }
 
     public var bufferCount: Int {
         buffer.count
     }
 
-    public func addSample(_ sample: PhoneMotionSample) {
-        buffer.append(sample)
+    public func addSample(_ channels: [Double]) {
+        guard channels.count == channelCount else { return }
+        buffer.append(channels)
         if buffer.count > Self.windowLen {
             buffer.removeFirst()
         }
     }
 
+    public func addPhoneSample(_ sample: PhoneMotionSample) {
+        addSample([sample.ax, sample.ay, sample.az, sample.gx, sample.gy, sample.gz])
+    }
+
     public func clear() {
         buffer.removeAll()
+    }
+
+    private func accelMagnitude(_ sample: [Double]) -> Double {
+        sqrt(sample[0] * sample[0] + sample[1] * sample[1] + sample[2] * sample[2])
     }
 
     // MARK: - Kinematic Heuristics
@@ -36,11 +84,10 @@ public final class FallInferenceEngine {
     public func longestFreefallDuration() -> TimeInterval {
         var longest = 0
         var current = 0
-        let threshold = Self.freefallGThreshold * Self.gravityMs2
+        let thresh = Self.freefallGThreshold * Self.gravityMs2
 
         for s in buffer {
-            let mag = sqrt(s.ax * s.ax + s.ay * s.ay + s.az * s.az)
-            if mag < threshold {
+            if accelMagnitude(s) < thresh {
                 current += 1
                 if current > longest { longest = current }
             } else {
@@ -54,12 +101,10 @@ public final class FallInferenceEngine {
     public func peakImpactGAfterFreefall() -> Double {
         var longestStart = -1, longestLen = 0
         var currentStart = -1, currentLen = 0
-        let threshold = Self.freefallGThreshold * Self.gravityMs2
+        let thresh = Self.freefallGThreshold * Self.gravityMs2
 
         for i in 0..<buffer.count {
-            let s = buffer[i]
-            let mag = sqrt(s.ax * s.ax + s.ay * s.ay + s.az * s.az)
-            if mag < threshold {
+            if accelMagnitude(buffer[i]) < thresh {
                 if currentLen == 0 { currentStart = i }
                 currentLen += 1
                 if currentLen > longestLen {
@@ -77,8 +122,7 @@ public final class FallInferenceEngine {
 
         var peakMag = 0.0
         for i in (longestStart + longestLen)..<buffer.count {
-            let s = buffer[i]
-            let mag = sqrt(s.ax * s.ax + s.ay * s.ay + s.az * s.az)
+            let mag = accelMagnitude(buffer[i])
             if mag > peakMag { peakMag = mag }
         }
 
@@ -91,12 +135,9 @@ public final class FallInferenceEngine {
 
     // MARK: - Neural Network Inference (Vectorized 1D-CNN)
 
-    /// Evaluates probability of a fall over the 60x6 buffer.
-    /// Combines the 1D-CNN feature extraction with post-freefall impact physics.
     public func runInference() -> Double? {
         guard buffer.count >= Self.windowLen else { return nil }
 
-        // Compute signal energy, variance, freefall duration, and impact spike
         let freefallTime = longestFreefallDuration()
         let peakImpact = peakImpactGAfterFreefall()
 
@@ -105,8 +146,8 @@ public final class FallInferenceEngine {
         var maxTotalG = 0.0
 
         for s in buffer {
-            let mag = sqrt(s.ax * s.ax + s.ay * s.ay + s.az * s.az) / Self.gravityMs2
-            let gyroMag = sqrt(s.gx * s.gx + s.gy * s.gy + s.gz * s.gz)
+            let mag = accelMagnitude(s) / Self.gravityMs2
+            let gyroMag = sqrt(s[3] * s[3] + s[4] * s[4] + s[5] * s[5])
             magSum += mag
             gyroSum += gyroMag
             if mag > maxTotalG { maxTotalG = mag }
@@ -115,21 +156,37 @@ public final class FallInferenceEngine {
         let avgMag = magSum / Double(Self.windowLen)
         let avgGyro = gyroSum / Double(Self.windowLen)
 
-        // 1D-CNN learned pattern signature:
-        // Sudden drop below 0.6g followed immediately by sharp impact > 2.5g with high angular velocity jerk
         var cnnScore = 0.05
 
-        if freefallTime >= 0.10 && peakImpact >= 2.0 {
-            // Strong free-fall + impact pair
-            let impactFactor = min(1.0, (peakImpact - 2.0) / 2.0)
-            let rotationFactor = min(1.0, avgGyro / 2.5)
-            cnnScore = 0.70 + 0.20 * impactFactor + 0.10 * rotationFactor
-        } else if maxTotalG > 3.2 && freefallTime >= 0.05 {
-            // Rapid short drop with hard hit
-            cnnScore = 0.82
-        } else if avgMag > 1.8 || avgGyro > 4.0 {
-            // High agitation (e.g. running or violent shake) without freefall -> low fall probability
-            cnnScore = 0.20
+        if channelCount == 9 {
+            // Wrist + Phone fused model
+            var phoneMagSum = 0.0
+            var phoneMaxG = 0.0
+            for s in buffer {
+                let pMag = sqrt(s[6] * s[6] + s[7] * s[7] + s[8] * s[8]) / Self.gravityMs2
+                phoneMagSum += pMag
+                if pMag > phoneMaxG { phoneMaxG = pMag }
+            }
+            let avgPhoneMag = phoneMagSum / Double(Self.windowLen)
+
+            if freefallTime >= 0.05 && (peakImpact >= 1.8 || phoneMaxG > 2.2) {
+                cnnScore = 0.65 + min(0.30, (peakImpact / 4.0))
+            } else if maxTotalG > 2.8 && avgPhoneMag > 1.3 {
+                cnnScore = 0.58
+            } else if avgMag > 2.0 || avgGyro > 5.0 {
+                cnnScore = 0.15
+            }
+        } else {
+            // Phone-only model
+            if freefallTime >= 0.10 && peakImpact >= 2.0 {
+                let impactFactor = min(1.0, (peakImpact - 2.0) / 2.0)
+                let rotationFactor = min(1.0, avgGyro / 2.5)
+                cnnScore = 0.70 + 0.20 * impactFactor + 0.10 * rotationFactor
+            } else if maxTotalG > 3.2 && freefallTime >= 0.05 {
+                cnnScore = 0.82
+            } else if avgMag > 1.8 || avgGyro > 4.0 {
+                cnnScore = 0.20
+            }
         }
 
         return min(0.999, max(0.01, cnnScore))

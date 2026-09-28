@@ -86,6 +86,7 @@
 		FDE468C120764E4AB5F7E38F /* AiAssistantSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D18C28CF19C4457938EFD65 /* AiAssistantSettingsView.swift */; };
 		FDFCB65BAD2541798B838C1F /* AboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33D167667E4A4E5D90CE31E1 /* AboutView.swift */; };
 		FE7F9CDE2D734D9689BB7BD5 /* MenstrualCycleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7E15AB9AE734A75A7B7E35A /* MenstrualCycleView.swift */; };
+		FF00000100000001 /* MedicationReminderService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF00000200000002 /* MedicationReminderService.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -179,6 +180,7 @@
 		F7E15AB9AE734A75A7B7E35A /* MenstrualCycleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MenstrualCycleView.swift; path = ForeverFit/Views/HealthLog/MenstrualCycleView.swift; sourceTree = SOURCE_ROOT; };
 		F910EE964DAE4AC88FEA36E7 /* MedicalIdView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MedicalIdView.swift; path = ForeverFit/Views/HealthLog/MedicalIdView.swift; sourceTree = SOURCE_ROOT; };
 		F9652F28B7124B019D7AD5A1 /* ActivityClassifierEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ActivityClassifierEngine.swift; path = ForeverFit/ML/ActivityClassifierEngine.swift; sourceTree = SOURCE_ROOT; };
+		FF00000200000002 /* MedicationReminderService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MedicationReminderService.swift; path = ForeverFit/Domain/MedicationReminderService.swift; sourceTree = SOURCE_ROOT; };
 		FFB647F188D14EF294E968D7 /* ImminentWarningView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ImminentWarningView.swift; path = ForeverFit/Views/Disaster/ImminentWarningView.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
@@ -275,6 +277,7 @@
 				DC6D89B994C6460E8ED110D9 /* HealthThresholds.swift */,
 				4869D2E0644840AB8E88CBBA /* EmergencyLocationService.swift */,
 				10554E7049A14BF3A8D66236 /* PDFReportGenerator.swift */,
+				FF00000200000002 /* MedicationReminderService.swift */,
 				1FF892EBF3F84D14ADA026C4 /* ForeverFitTests.swift */,
 				BFC6501AA4854739B34370DA /* alarm_siren.wav */,
 				8BE604C45CBA402592607632 /* fall_detector_phone_only.tflite */,
@@ -470,6 +473,7 @@
 				C1C26F2EAC9E40DC8560FE9D /* HealthThresholds.swift in Sources */,
 				48AFE3403B664AFD9E8D09B0 /* EmergencyLocationService.swift in Sources */,
 				401AA19DACF746E9A248AF62 /* PDFReportGenerator.swift in Sources */,
+				FF00000100000001 /* MedicationReminderService.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

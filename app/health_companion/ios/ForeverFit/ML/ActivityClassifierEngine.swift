@@ -7,7 +7,7 @@ public enum ActivityState: String, CaseIterable, Codable {
 }
 
 public final class ActivityClassifierEngine {
-    public static let windowLen = 60
+    public static let windowLen = 45 // ~2.2 seconds at 20Hz for fast real-time responsiveness
     private var buffer: [PhoneMotionSample] = []
 
     public init() {}
@@ -19,40 +19,67 @@ public final class ActivityClassifierEngine {
         }
     }
 
-    /// Evaluates 3-class activity probabilities [still, walking, running]
+    /// Evaluates 3-class activity [still, walking, running] from phone accelerometer and gyroscope
     public func classify() -> (activity: ActivityState, confidence: Double)? {
         guard buffer.count >= Self.windowLen else { return nil }
 
         var accelMagnitudes: [Double] = []
+        var gyroMagnitudes: [Double] = []
         accelMagnitudes.reserveCapacity(Self.windowLen)
+        gyroMagnitudes.reserveCapacity(Self.windowLen)
 
         for s in buffer {
-            let mag = sqrt(s.ax * s.ax + s.ay * s.ay + s.az * s.az)
-            accelMagnitudes.append(mag)
+            let aMag = sqrt(s.ax * s.ax + s.ay * s.ay + s.az * s.az)
+            let gMag = sqrt(s.gx * s.gx + s.gy * s.gy + s.gz * s.gz)
+            accelMagnitudes.append(aMag)
+            gyroMagnitudes.append(gMag)
         }
 
-        // Calculate variance & dynamic range
+        // Statistical distribution
         let mean = accelMagnitudes.reduce(0, +) / Double(Self.windowLen)
         let variance = accelMagnitudes.reduce(0) { $0 + pow($1 - mean, 2) } / Double(Self.windowLen)
         let stdDev = sqrt(variance)
 
-        // Peak-to-peak amplitude
         let minVal = accelMagnitudes.min() ?? mean
         let maxVal = accelMagnitudes.max() ?? mean
         let dynamicRange = maxVal - minVal
 
-        if stdDev < 0.6 && dynamicRange < 2.0 {
-            // Very low motion energy -> Still
-            let conf = min(0.98, max(0.70, 1.0 - (stdDev / 1.0)))
-            return (.still, conf)
-        } else if stdDev >= 0.6 && stdDev < 3.2 && dynamicRange < 12.0 {
-            // Rhythmic moderate cadence -> Walking
-            let conf = min(0.96, max(0.65, 0.85))
-            return (.walking, conf)
+        let avgGyro = gyroMagnitudes.reduce(0, +) / Double(Self.windowLen)
+        let maxGyro = gyroMagnitudes.max() ?? 0.0
+
+        // Step peak detection: local maxima with refractory period of 5 samples (0.25s)
+        var stepCount = 0
+        var lastPeakIdx = -10
+        let peakThreshold = mean + max(1.0, stdDev * 0.45)
+
+        for i in 1..<(accelMagnitudes.count - 1) {
+            let prev = accelMagnitudes[i - 1]
+            let curr = accelMagnitudes[i]
+            let next = accelMagnitudes[i + 1]
+
+            if curr > peakThreshold && curr > prev && curr > next && (i - lastPeakIdx) >= 5 {
+                stepCount += 1
+                lastPeakIdx = i
+            }
+        }
+
+        // Wrist/Hand shake detection:
+        // Pure hand shaking generates rapid rotational angular rates without rhythmic locomotive translation
+        let isHandShake = (maxGyro > 6.0 && stepCount < 2) || (avgGyro > 4.2 && dynamicRange < 7.0)
+        if isHandShake {
+            return (.still, 0.85)
+        }
+
+        // Locomotion Classification
+        if stdDev >= 2.2 && dynamicRange >= 7.0 && maxVal >= 13.0 && stepCount >= 4 {
+            // Running: High dynamic acceleration impact + rapid cadence (at least 4 steps in ~2.2s)
+            return (.running, 0.90)
+        } else if (stdDev >= 0.40 && dynamicRange >= 1.5) || stepCount >= 2 {
+            // Walking: Rhythmic footfall displacement or cadence
+            return (.walking, 0.85)
         } else {
-            // High energy oscillations -> Running
-            let conf = min(0.99, max(0.75, 0.90))
-            return (.running, conf)
+            // Still: Hand holding, sitting, standing, resting
+            return (.still, 0.95)
         }
     }
 }

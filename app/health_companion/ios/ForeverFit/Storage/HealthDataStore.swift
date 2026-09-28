@@ -17,6 +17,7 @@ public final class HealthDataStore: ObservableObject {
     @Published public var notifyHazards: Bool = true
     @Published public var notifyReminders: Bool = true
     @Published public var fallDetectionEnabled: Bool = true
+    @Published public var fallDetectionSensorSource: FallDetectionSensorSource = .phone
 
     // Emergency Contact Settings
     @Published public var emergencyContactName: String = ""
@@ -73,6 +74,9 @@ public final class HealthDataStore: ObservableObject {
         self.notifyHazards = userDefaults.object(forKey: "notify_hazards") as? Bool ?? true
         self.notifyReminders = userDefaults.object(forKey: "notify_reminders") as? Bool ?? true
         self.fallDetectionEnabled = userDefaults.object(forKey: "fall_detection_enabled") as? Bool ?? true
+        if let s = userDefaults.string(forKey: "fall_detection_sensor_source"), let parsed = FallDetectionSensorSource(rawValue: s) {
+            self.fallDetectionSensorSource = parsed
+        }
 
         self.emergencyContactName = userDefaults.string(forKey: "emergency_name") ?? ""
         self.emergencyContactPhone = userDefaults.string(forKey: "emergency_phone") ?? ""
@@ -177,6 +181,11 @@ public final class HealthDataStore: ObservableObject {
         userDefaults.set(val, forKey: "fall_detection_enabled")
     }
 
+    public func setFallDetectionSensorSource(_ val: FallDetectionSensorSource) {
+        self.fallDetectionSensorSource = val
+        userDefaults.set(val.rawValue, forKey: "fall_detection_sensor_source")
+    }
+
     public func saveEmergencyContact(name: String, phone: String, customNumber: String? = nil) {
         self.emergencyContactName = name
         self.emergencyContactPhone = phone
@@ -244,9 +253,58 @@ public final class HealthDataStore: ObservableObject {
     }
 
     public func addMedication(name: String, dosage: String, frequency: String) {
-        let med = Medication(name: name, dosage: dosage, frequency: frequency)
+        let med = Medication(name: name, amount: dosage, notes: frequency)
         medications.append(med)
         saveList(medications, key: "medications")
+    }
+
+    @discardableResult
+    public func saveMedication(
+        id: UUID? = nil,
+        name: String,
+        amount: String = "",
+        unit: String = "",
+        type: MedicationType = .unspecified,
+        isActive: Bool = true,
+        notes: String = "",
+        schedules: [MedicationSchedule] = []
+    ) -> UUID {
+        let resolvedId = id ?? UUID()
+        if let idx = medications.firstIndex(where: { $0.id == resolvedId }) {
+            medications[idx] = Medication(
+                id: resolvedId,
+                name: name,
+                amount: amount,
+                unit: unit,
+                type: type,
+                isActive: isActive,
+                notes: notes,
+                schedules: schedules,
+                dateAdded: medications[idx].dateAdded
+            )
+        } else {
+            let med = Medication(
+                id: resolvedId,
+                name: name,
+                amount: amount,
+                unit: unit,
+                type: type,
+                isActive: isActive,
+                notes: notes,
+                schedules: schedules,
+                dateAdded: Date()
+            )
+            medications.append(med)
+        }
+        saveList(medications, key: "medications")
+        return resolvedId
+    }
+
+    public func setMedicationActive(id: UUID, isActive: Bool) {
+        if let idx = medications.firstIndex(where: { $0.id == id }) {
+            medications[idx].isActive = isActive
+            saveList(medications, key: "medications")
+        }
     }
 
     public func removeMedication(id: UUID) {
@@ -273,7 +331,7 @@ public final class HealthDataStore: ObservableObject {
     }
 
     public func recordVitalsSample(_ vitals: VitalsReading) {
-        guard vitals.fingerPresent else { return }
+        guard vitals.hasHeartRate || vitals.hasSpo2 || vitals.bodyTempC != 0 else { return }
         vitalsHistory.append(vitals)
         if vitalsHistory.count > 500 {
             vitalsHistory.removeFirst()

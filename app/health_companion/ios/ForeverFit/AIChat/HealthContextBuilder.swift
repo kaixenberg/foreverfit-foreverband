@@ -26,15 +26,32 @@ public struct HealthContextBuilder {
         lines.append("User: \(userProfile.name), age \(age), \(userProfile.sex).")
 
         // Wearable Live Vitals
-        if let v = vitals, v.fingerPresent {
-            let baseText = baseline.heartRateMean != nil
-                ? " (personal baseline resting avg \(Int(baseline.heartRateMean!)) bpm)"
-                : ""
-            lines.append("Live vitals right now: heart rate \(Int(v.heartRate)) bpm\(baseText), SpO2 \(Int(v.spo2))%, body temperature \(String(format: "%.1f", v.bodyTempC))°C.")
+        let hasFingerReading = vitals != nil && vitals!.fingerPresent
+        let hasBodyTempReading = vitals != nil && vitals!.bodyTempC != 0
+        if hasFingerReading || hasBodyTempReading {
+            var segments: [String] = []
+            if let v = vitals {
+                if v.hasHeartRate {
+                    let baseText = baseline.heartRateMean != nil
+                        ? " (personal baseline avg \(Int(baseline.heartRateMean!)) bpm)"
+                        : ""
+                    segments.append("heart rate \(Int(v.heartRate)) bpm\(baseText)")
+                }
+                if v.hasSpo2 {
+                    segments.append("SpO2 \(Int(v.spo2))%")
+                }
+                if hasFingerReading && !v.hasHeartRate {
+                    segments.append("heart rate and SpO2 still being measured")
+                }
+                if hasBodyTempReading {
+                    segments.append("body temperature \(String(format: "%.1f", v.bodyTempC))°C")
+                }
+            }
+            lines.append("Live vitals right now: \(segments.joined(separator: ", ")).")
         } else if vitals != nil {
-            lines.append("Wearable connected but no skin contact detected — no live PPG vitals right now.")
+            lines.append("Wearable connected but no finger/skin contact and no body-temp reading right now — no live vitals reading.")
         } else {
-            lines.append("No wearable connected right now.")
+            lines.append("No wearable connected right now — no live vitals reading.")
         }
 
         // Environment

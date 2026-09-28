@@ -87,7 +87,7 @@ public struct SettingsView: View {
                 icon: "figure.fall",
                 title: "Fall Detection",
                 subtitle: "Turn detection on/off, try the demo",
-                destination: FallDetectionSettingsView(fallDetector: fallDetector, dataStore: dataStore)
+                destination: FallDetectionSettingsView(fallDetector: fallDetector, dataStore: dataStore, bleManager: bleManager)
             ),
             SettingsCategoryItem(
                 icon: "checkmark.shield.fill",
@@ -105,7 +105,7 @@ public struct SettingsView: View {
                 icon: "hammer.fill",
                 title: "Developer / Demo",
                 subtitle: "Test mode and full-screen warning previews",
-                destination: DeveloperDemoView(dataStore: dataStore, fallDetector: fallDetector)
+                destination: DeveloperDemoView(dataStore: dataStore, fallDetector: fallDetector, bleManager: bleManager)
             ),
             SettingsCategoryItem(
                 icon: "info.circle.fill",
@@ -155,11 +155,19 @@ public struct SettingsView: View {
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text("Settings")
+                        .font(.system(size: 17, weight: .bold, design: .rounded))
+                        .foregroundStyle(Color.white)
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { dismiss() }
+                        .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(LiquidGlassTheme.neonCyan)
                 }
             }
+            .toolbarColorScheme(.dark, for: .navigationBar)
+            .preferredColorScheme(.dark)
             .background(MeshGradientBackground())
         }
     }

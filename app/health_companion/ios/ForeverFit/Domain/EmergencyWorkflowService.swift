@@ -45,6 +45,8 @@ public final class EmergencyWorkflowService: ObservableObject {
     public func startEmergencyWorkflow(
         triggerReason: String,
         vitals: VitalsReading?,
+        connectedAt: Date? = nil,
+        watchSettings: WatchSettings = WatchSettings.defaults,
         baseline: BaselineService,
         primaryContact: EmergencyContact?,
         isDemo: Bool = false
@@ -67,6 +69,8 @@ public final class EmergencyWorkflowService: ObservableObject {
             self.state = .generatingMessage
             let summary = EmergencySummaryBuilder.build(
                 vitals: vitals,
+                connectedAt: connectedAt,
+                watchSettings: watchSettings,
                 baseline: baseline,
                 location: location,
                 triggerReason: triggerReason
