@@ -51,6 +51,13 @@ class WatchSettings {
   /// trusting an unverified reading — see dashboard_screen.dart.
   final bool ignoreBodyTempContactCheck;
 
+  /// Developer/demo toggle: the wearable simulates a wearer — reports skin
+  /// contact plus a healthy, slowly varying HR/SpO2/body temp that it
+  /// generates itself instead of reading its sensors, and streams them as
+  /// normal vitals. For demos without anyone wearing the band. Off by
+  /// default; see health_companion.ino's applyDummyVitalsIfEnabled().
+  final bool bodyStatsDemoMode;
+
   const WatchSettings({
     required this.selectedFace,
     required this.autoCycleEnabled,
@@ -59,6 +66,7 @@ class WatchSettings {
     required this.dateFormat,
     required this.showSeconds,
     required this.ignoreBodyTempContactCheck,
+    required this.bodyStatsDemoMode,
   });
 
   static const defaults = WatchSettings(
@@ -69,6 +77,7 @@ class WatchSettings {
     dateFormat: WatchDateFormat.weekdayShortWithYear,
     showSeconds: false,
     ignoreBodyTempContactCheck: false,
+    bodyStatsDemoMode: false,
   );
 
   WatchSettings copyWith({
@@ -79,6 +88,7 @@ class WatchSettings {
     WatchDateFormat? dateFormat,
     bool? showSeconds,
     bool? ignoreBodyTempContactCheck,
+    bool? bodyStatsDemoMode,
   }) =>
       WatchSettings(
         selectedFace: selectedFace ?? this.selectedFace,
@@ -90,5 +100,6 @@ class WatchSettings {
         showSeconds: showSeconds ?? this.showSeconds,
         ignoreBodyTempContactCheck:
             ignoreBodyTempContactCheck ?? this.ignoreBodyTempContactCheck,
+        bodyStatsDemoMode: bodyStatsDemoMode ?? this.bodyStatsDemoMode,
       );
 }

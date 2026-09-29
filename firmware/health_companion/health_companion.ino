@@ -159,7 +159,14 @@ struct __attribute__((packed)) WatchSettingsPacket {
   // MAX30102 also detects contact, since it's the only way this firmware
   // has to tell "on a wrist" from "lying on a table."
   uint8_t ignoreBodyTempContactCheck; // 0/1
+  // Developer/demo toggle — simulate a wearer: skin contact plus a healthy
+  // HR/SpO2/body temp, generated here instead of read from the sensors
+  // (see applyDummyVitalsIfEnabled()). Appended last, so an older app's
+  // 8-byte packet (without it) is still accepted and just means "off".
+  uint8_t bodyStatsDemoMode; // 0/1
 };
+// Length of the packet before bodyStatsDemoMode was added.
+const size_t WATCH_SETTINGS_MIN_LEN = 8;
 
 // ---------------------------------------------------------------------------
 // Globals
@@ -207,6 +214,7 @@ bool use24HourFormat = true;
 uint8_t dateFormatSetting = 1; // 1 = weekdayShortWithYear, see formatDate()
 bool showSecondsSetting = false;
 bool ignoreBodyTempContactCheck = false;
+bool bodyStatsDemoMode = false;
 
 // --- HR + SpO2: MAX30102 PPG pipeline, ported from the bench-tuned
 // standalone sketch max30102_pulse_spo2_v4.ino. Timing is counted in SENSOR
@@ -327,25 +335,40 @@ float readBodyTempC() {
 }
 
 // ---------------------------------------------------------------------------
-// Dummy HR/SpO2 (see USE_DUMMY_HR_SPO2 above) — overrides currentBpm/
-// currentSpo2 in place, right before anything reads them, so neither the
-// real PPG pipeline below nor its FIFO draining (still needed every loop
-// to keep the sensor's buffer from overflowing) had to change
-// at all. Same smooth-random-walk-around-a-baseline style as
-// readBodyTempC()'s existing stub. Only overrides while fingerPresent is
-// true — with no finger, the real algorithm has already zeroed both via
-// resetHrSpo2State(), and this leaves that alone.
+// Dummy vitals — two ways in:
+//  - USE_DUMMY_HR_SPO2 (compile time): fake HR/SpO2 numbers, but only while
+//    the MAX30102 really detects a finger. Body temp stays real.
+//  - bodyStatsDemoMode (runtime, from the app's Developer / demo screen):
+//    simulates a wearer outright — contact, HR, SpO2 and body temp are all
+//    generated, whatever the sensors see. See wearerPresent().
+// Overrides currentBpm/currentSpo2 in place, right after the real PPG
+// pipeline writes them, so neither the pipeline nor its FIFO draining
+// (still needed every loop to keep the sensor's buffer from overflowing)
+// had to change. The values random-walk once a second inside a healthy
+// resting range, so they look like a live reading rather than a constant.
 // ---------------------------------------------------------------------------
+float demoBodyTempC = 36.7f;
+
+bool wearerPresent() { return fingerPresent || bodyStatsDemoMode; }
+
 void applyDummyVitalsIfEnabled() {
-  if (!USE_DUMMY_HR_SPO2 || !fingerPresent) return;
+  bool fakeHrSpo2 = bodyStatsDemoMode || (USE_DUMMY_HR_SPO2 && fingerPresent);
+  if (!fakeHrSpo2) return;
 
-  static float dummyBpm = 74.0f;
+  static float dummyBpm = 72.0f;
   static float dummySpo2 = 98.0f;
+  static uint32_t lastStepMs = 0;
 
-  dummyBpm += (random(-30, 31) / 10.0f);  // +/- 3.0 bpm jitter
-  dummyBpm = constrain(dummyBpm, 65.0f, 85.0f);
-  dummySpo2 += (random(-10, 11) / 10.0f); // +/- 1.0% jitter
-  dummySpo2 = constrain(dummySpo2, 96.0f, 99.0f);
+  uint32_t now = millis();
+  if (now - lastStepMs >= 1000) {
+    lastStepMs = now;
+    dummyBpm += (random(-20, 21) / 10.0f);  // +/- 2.0 bpm per second
+    dummyBpm = constrain(dummyBpm, 64.0f, 82.0f);
+    dummySpo2 += (random(-5, 6) / 10.0f);   // +/- 0.5% per second
+    dummySpo2 = constrain(dummySpo2, 96.0f, 99.0f);
+    demoBodyTempC += (random(-5, 6) / 100.0f); // +/- 0.05 C per second
+    demoBodyTempC = constrain(demoBodyTempC, 36.4f, 37.0f);
+  }
 
   currentBpm = dummyBpm;
   currentSpo2 = dummySpo2;
@@ -437,9 +460,9 @@ class TimeCallbacks : public NimBLECharacteristicCallbacks {
 class WatchSettingsCallbacks : public NimBLECharacteristicCallbacks {
   void onWrite(NimBLECharacteristic* c, NimBLEConnInfo& connInfo) override {
     NimBLEAttValue value = c->getValue();
-    if (value.length() < sizeof(WatchSettingsPacket)) return;
-    WatchSettingsPacket pkt;
-    memcpy(&pkt, value.data(), sizeof(WatchSettingsPacket));
+    if (value.length() < WATCH_SETTINGS_MIN_LEN) return;
+    WatchSettingsPacket pkt = {};
+    memcpy(&pkt, value.data(), min((size_t)value.length(), sizeof(WatchSettingsPacket)));
 
     showSecondaryFace = pkt.selectedFace != 0;
     autoCycleEnabled = pkt.autoCycleEnabled != 0;
@@ -448,13 +471,22 @@ class WatchSettingsCallbacks : public NimBLECharacteristicCallbacks {
     dateFormatSetting = pkt.dateFormat;
     showSecondsSetting = pkt.showSeconds != 0;
     ignoreBodyTempContactCheck = pkt.ignoreBodyTempContactCheck != 0;
+    bool demoWasOn = bodyStatsDemoMode;
+    bodyStatsDemoMode = pkt.bodyStatsDemoMode != 0;
+    if (demoWasOn && !bodyStatsDemoMode) {
+      // Drop the simulated values now — pollHeartRateSensor() republishes
+      // real ones on its next pass, but returns early without a MAX30102.
+      currentBpm = currentSpo2 = 0;
+      hrReady = spo2Ready = false;
+    }
     lastFaceCycleMs = millis();
 
     Serial.printf("[WATCH] settings: face=%d autoCycle=%d/%us 24h=%d "
-                  "dateFmt=%d seconds=%d ignoreBodyTempContact=%d\n",
+                  "dateFmt=%d seconds=%d ignoreBodyTempContact=%d "
+                  "bodyStatsDemo=%d\n",
                   pkt.selectedFace, autoCycleEnabled, autoCycleIntervalSec,
                   use24HourFormat, dateFormatSetting, showSecondsSetting,
-                  ignoreBodyTempContactCheck);
+                  ignoreBodyTempContactCheck, bodyStatsDemoMode);
   }
 };
 
@@ -989,14 +1021,22 @@ void notifyVitals() {
   // developer/demo override for when that sensor is unavailable/broken;
   // the app disables the low/high-temp WARNING outright while it's on,
   // rather than trusting an unverified reading — see dashboard_screen.dart.
-  bool bodyTempContactOk = fingerPresent || ignoreBodyTempContactCheck;
-  lastBodyTempC = (ds18b20Ok && bodyTempContactOk) ? readBodyTempC() : 0;
+  // bodyStatsDemoMode bypasses all of this: a simulated wearer, with the
+  // generated body temp from applyDummyVitalsIfEnabled().
+  if (bodyStatsDemoMode) {
+    lastBodyTempC = demoBodyTempC;
+  } else {
+    bool bodyTempContactOk = fingerPresent || ignoreBodyTempContactCheck;
+    lastBodyTempC = (ds18b20Ok && bodyTempContactOk) ? readBodyTempC() : 0;
+  }
   pkt.bodyTempC = lastBodyTempC;
-  pkt.fingerPresent = fingerPresent ? 1 : 0;
+  pkt.fingerPresent = wearerPresent() ? 1 : 0;
   pkt.ppgFlags = (hrReady ? PPG_FLAG_HR_READY : 0) |
-                 (spo2Ready ? PPG_FLAG_SPO2_READY : 0) |
-                 (ppgSettling() ? PPG_FLAG_SETTLING : 0) |
-                 (ppgSaturatedRecently() ? PPG_FLAG_SATURATED : 0);
+                 (spo2Ready ? PPG_FLAG_SPO2_READY : 0);
+  if (!bodyStatsDemoMode) {
+    pkt.ppgFlags |= (ppgSettling() ? PPG_FLAG_SETTLING : 0) |
+                    (ppgSaturatedRecently() ? PPG_FLAG_SATURATED : 0);
+  }
   vitalsChar->setValue((uint8_t*)&pkt, sizeof(pkt));
   if (deviceConnected) vitalsChar->notify();
 }
@@ -1156,10 +1196,11 @@ void drawSecondaryFace() {
   // HR/SpO2 need contact, ~2 s of settling, then PPG_READY_BEATS good
   // beats before they mean anything — show which stage it's in rather than
   // a bare "--" or a half-formed number. Hold still while it measures.
-  if (!fingerPresent) {
+  // bodyStatsDemoMode: simulated wearer, HR/SpO2 already marked ready.
+  if (!wearerPresent()) {
     display.println("HR: -- (no finger)");
     display.println("SpO2: --");
-  } else if (ppgSettling()) {
+  } else if (!bodyStatsDemoMode && ppgSettling()) {
     display.println("HR: settling...");
     display.println("SpO2: hold still");
   } else {
@@ -1174,11 +1215,13 @@ void drawSecondaryFace() {
       display.println("SpO2: ... %");
     }
   }
-  if (ppgSaturatedRecently()) display.println("PPG: too bright");
+  if (!bodyStatsDemoMode && ppgSaturatedRecently()) display.println("PPG: too bright");
   // Body temp has its own contact gate (see notifyVitals()) — same
   // fingerPresent/ignoreBodyTempContactCheck logic, own line, own message,
   // not nested under the HR/SpO2 finger check above.
-  if (!ds18b20Ok) {
+  if (bodyStatsDemoMode) {
+    display.printf("Body: %.1f C\n", lastBodyTempC);
+  } else if (!ds18b20Ok) {
     display.println("Body: sensor unavailable");
   } else if (!fingerPresent && !ignoreBodyTempContactCheck) {
     display.println("Body: -- (no contact)");

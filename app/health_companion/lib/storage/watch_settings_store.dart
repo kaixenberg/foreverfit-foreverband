@@ -37,6 +37,7 @@ class WatchSettingsStore extends ChangeNotifier {
       showSeconds: saved['showSeconds'] as bool? ?? false,
       ignoreBodyTempContactCheck:
           saved['ignoreBodyTempContactCheck'] as bool? ?? false,
+      bodyStatsDemoMode: saved['bodyStatsDemoMode'] as bool? ?? false,
     );
   }
 
@@ -54,6 +55,7 @@ class WatchSettingsStore extends ChangeNotifier {
       'dateFormat': settings.dateFormat.name,
       'showSeconds': settings.showSeconds,
       'ignoreBodyTempContactCheck': settings.ignoreBodyTempContactCheck,
+      'bodyStatsDemoMode': settings.bodyStatsDemoMode,
     });
     notifyListeners();
   }

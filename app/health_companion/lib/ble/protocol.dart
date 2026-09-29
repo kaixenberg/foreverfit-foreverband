@@ -55,10 +55,14 @@ class HealthCompanionProtocol {
   /// index — must stay in the same order there); uint8 showSeconds(0/1);
   /// uint8 ignoreBodyTempContactCheck(0/1) — developer/demo override, see
   /// WatchSettings.ignoreBodyTempContactCheck and health_companion.ino's
-  /// WatchSettingsPacket for what it does on the firmware side.
+  /// WatchSettingsPacket for what it does on the firmware side; uint8
+  /// bodyStatsDemoMode(0/1) — simulated wearer, see
+  /// WatchSettings.bodyStatsDemoMode. Firmware older than that last byte
+  /// just ignores it (it only reads the first 8), and newer firmware
+  /// treats a missing 9th byte as off.
   /// Pushed on connect and again whenever a setting changes while
   /// connected — see BleService.syncWatchSettings().
-  static const int watchSettingsPacketLength = 8;
+  static const int watchSettingsPacketLength = 9;
 
   static List<int> buildWatchSettingsPacket(WatchSettings settings) {
     final data = ByteData(watchSettingsPacketLength);
@@ -69,6 +73,7 @@ class HealthCompanionProtocol {
     data.setUint8(5, settings.dateFormat.index);
     data.setUint8(6, settings.showSeconds ? 1 : 0);
     data.setUint8(7, settings.ignoreBodyTempContactCheck ? 1 : 0);
+    data.setUint8(8, settings.bodyStatsDemoMode ? 1 : 0);
     return data.buffer.asUint8List();
   }
 

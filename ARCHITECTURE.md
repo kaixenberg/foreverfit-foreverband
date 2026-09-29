@@ -39,7 +39,7 @@ of truth; the firmware (`firmware/health_companion/health_companion.ino`) and ap
 | `6e400003-...` | Environment | notify | ~1 Hz | `uint32 tMs; float ambientTempC; float humidity; float pressureHPa;` (16 bytes) |
 | `6e400004-...` | Motion | notify | ~20 Hz | `uint32 tMs; float ax,ay,az; float gx,gy,gz;` (28 bytes) |
 | `6e400005-...` | Time sync | write | on connect + every 5 min | `uint8 hour,minute,second,day,month; uint16 year; uint8 weekday(0=Sun)` (8 bytes) — see "Watch faces + time sync" below |
-| `6e400006-...` | Watch settings | write | on connect + on change | `uint8 selectedFace; uint8 autoCycleEnabled; uint16 autoCycleIntervalSec; uint8 use24HourFormat; uint8 dateFormat; uint8 showSeconds; uint8 ignoreBodyTempContactCheck;` (8 bytes) — see "Watch customization" below |
+| `6e400006-...` | Watch settings | write | on connect + on change | `uint8 selectedFace; uint8 autoCycleEnabled; uint16 autoCycleIntervalSec; uint8 use24HourFormat; uint8 dateFormat; uint8 showSeconds; uint8 ignoreBodyTempContactCheck; uint8 bodyStatsDemoMode;` (9 bytes; firmware still accepts the older 8-byte form as demo off) — see "Watch customization" below |
 
 Motion is notified faster than the others because fall-detection needs
 enough samples per window (~40–60 samples over 2–3s) to see the
@@ -60,6 +60,18 @@ free-fall-then-impact signature.
   smooth random walk around a healthy resting range (65-85 bpm, 96-99%
   SpO2). It only overrides the two output values (and marks them ready)
   while contact is detected — contact detection is real either way.
+- **Body stats demo mode** (runtime, no reflash): Settings → Developer /
+  demo → "Enable demo mode for body stats" sets
+  `WatchSettings.bodyStatsDemoMode`, sent as `WatchSettingsPacket`'s 9th
+  byte. The firmware then simulates a wearer outright: `wearerPresent()`
+  is true, HR/SpO2 are marked ready and random-walk once a second inside
+  64-82 bpm / 96-99%, body temp inside 36.4-37.0 °C, and the settling/
+  saturated PPG flags are suppressed. The real PPG pipeline keeps running
+  (its FIFO must still be drained); its outputs are just overwritten in
+  `applyDummyVitalsIfEnabled()`. Turning it off zeroes the published
+  values immediately. The app treats the stream as ordinary vitals —
+  displayed, warned on and saved to history — which is the point, so
+  leave it off outside demos.
 
 **MAX30102 PPG pipeline** (`ppgProcessSample()`/`pollHeartRateSensor()` in
 `health_companion.ino`), ported from the bench-tuned standalone sketch
@@ -1885,6 +1897,8 @@ over the new `6e400006-...` characteristic (BLE protocol table above).
   - **Update**: `WatchSettingsPacket` grew an 8th byte,
     `ignoreBodyTempContactCheck`, later — see "Body temperature is gated
     on `fingerPresent`" above for what it does.
+  - **Update**: and a 9th, `bodyStatsDemoMode` — see "Body stats demo
+    mode" above.
 
 ## On-device AI assistant (implemented, opt-in "wow" feature)
 

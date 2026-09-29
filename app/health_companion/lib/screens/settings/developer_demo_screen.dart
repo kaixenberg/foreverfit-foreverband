@@ -54,6 +54,13 @@ class DeveloperDemoScreen extends StatelessWidget {
     await context.read<BleService>().syncWatchSettings();
   }
 
+  Future<void> _setBodyStatsDemoMode(BuildContext context, bool value) async {
+    final store = context.read<WatchSettingsStore>();
+    await store.update(store.settings.copyWith(bodyStatsDemoMode: value));
+    if (!context.mounted) return;
+    await context.read<BleService>().syncWatchSettings();
+  }
+
   @override
   Widget build(BuildContext context) {
     final contactStore = context.watch<EmergencyContactStore>();
@@ -65,6 +72,32 @@ class DeveloperDemoScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          Text('Body stats demo mode',
+              style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 4),
+          Text(
+            watchSettings.bodyStatsDemoMode
+                ? 'On — the watch behaves as if someone is wearing it: it '
+                    'reports skin contact and streams a healthy heart rate, '
+                    'SpO2 and body temperature that it generates itself. '
+                    'These simulated values are shown and saved to history '
+                    'like real readings.'
+                : 'Off (default) — HR, SpO2 and body temperature come from '
+                    'the real sensors, and only while the watch is worn.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: watchSettings.bodyStatsDemoMode
+                      ? Theme.of(context).colorScheme.error
+                      : null,
+                ),
+          ),
+          SwitchListTile(
+            title: const Text('Enable demo mode for body stats'),
+            subtitle: const Text(
+                'Simulates a wearer on the watch. Takes effect when connected.'),
+            value: watchSettings.bodyStatsDemoMode,
+            onChanged: (value) => _setBodyStatsDemoMode(context, value),
+          ),
+          const SizedBox(height: 24),
           Text('Body-temp contact check',
               style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 4),

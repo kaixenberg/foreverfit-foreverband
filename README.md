@@ -88,7 +88,9 @@ images in [`docs/screenshots/`](docs/screenshots/)).
   from the bench-tuned `max30102_pulse_spo2_v4.ino` sketch (2 s settle,
   then 4 good beats before any value is reported — see ARCHITECTURE.md's
   "MAX30102 PPG pipeline"); `USE_DUMMY_HR_SPO2` in `health_companion.ino`
-  (off by default) is kept as a demo fallback
+  (off by default) is kept as a demo fallback, and Settings → Developer /
+  demo → "Enable demo mode for body stats" makes the band simulate a
+  wearer at runtime (healthy HR, SpO2 and body temp, streamed as normal)
 - DS18B20 — body temperature, on its own 1-Wire GPIO (replaced the
   MAX30205, which never worked on this build), see `readBodyTempC()` in
   `health_companion.ino` — only reported while a finger is present, same
