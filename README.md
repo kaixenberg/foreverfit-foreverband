@@ -525,3 +525,23 @@ tiles + a static state-level hazard baseline) and prefers live data
       show "settling"/"measuring" instead of a half-formed number, and
       only ready values are warned on, scored, stored, or spoken — see
       ARCHITECTURE.md's "MAX30102 PPG pipeline"
+
+## License
+
+Copyright 2026 Team ABBOY and contributors.
+
+The code, firmware, ML training scripts and the trained models in this
+repository (`*.tflite`) are licensed under the
+[Apache License, Version 2.0](LICENSE).
+
+Third-party pieces keep their own terms:
+
+- **Gemma 4 E2B** is not in this repo. The app downloads it at runtime
+  from Hugging Face (`litert-community/gemma-4-E2B-it-litert-lm`), and
+  its use is governed by Google's license for Gemma.
+- **UMAFall** and **MotionSense**, the datasets used to train the fall and
+  activity models, are not redistributed here (`ml/data/` is ignored).
+  `ml/download_*.py` fetches them from their original sources under their
+  own terms.
+- Flutter, Arduino and other library dependencies are under their own
+  licenses.
