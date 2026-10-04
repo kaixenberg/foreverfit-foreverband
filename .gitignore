@@ -21,3 +21,6 @@ app/**/.idea/
 # General
 .DS_Store
 *.log
+
+# Personal scratch folder (decks, write-ups, thumbnails)
+dump(ignore)/

@@ -10,6 +10,14 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full system design, BLE
 protocol spec, and the roadmap for ML-based anomaly detection, disaster
 heuristics, offline maps, and SOS.
 
+## Demo video and pitch deck
+
+- **Demo video:** [youtu.be/iUX2lkdWSqk](https://youtu.be/iUX2lkdWSqk),
+  a walkthrough of the ForeverBand hardware and the app
+- **SIH 2026 idea deck (PDF):**
+  [docs/ABBOY_SIH26181_IdeaPPT.pdf](docs/ABBOY_SIH26181_IdeaPPT.pdf),
+  the six-page Team ABBOY submission for PS 26181
+
 ## Screenshots
 
 Real screens from the Android build running on a physical phone (full-size
